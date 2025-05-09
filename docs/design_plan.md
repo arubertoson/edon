@@ -2,136 +2,92 @@
 
 **Phase 1: Core Node and Socket Rendering**
 
-1.  **`SocketItem` Class (`src/edon_ui/socket_item.py`)**:
-    *   **Purpose**: Represents a single input or output socket on a node.
-    *   **Inheritance**: `QGraphicsObject` (to allow signals, e.g., for hover or connection events).
-    *   **Properties**:
-        *   `socket_data`: Reference to the logical socket definition from `edon.socket.Socket` (or similar).
-        *   `is_input`: Boolean.
-        *   `data_type`: (e.g., "int", "string", "any") - influences color/shape.
-        *   `label`: Optional text label for the socket.
-        *   `index`: Order of the socket on the node.
-        *   `position`: Relative to its parent `NodeItem`.
-    *   **Drawing (`paint` method)**:
-        *   Draw a shape (e.g., circle, square) based on `data_type` or `is_input`.
-        *   Fill with a color from `theme.py` based on `data_type` and connection status.
-        *   Draw an outline.
-        *   Optionally draw the `label` next to the socket.
-    *   **Interaction**:
-        *   `hoverEnterEvent`, `hoverLeaveEvent`: Change appearance (e.g., highlight).
-        *   `mousePressEvent`, `mouseMoveEvent`, `mouseReleaseEvent`: Handle the start, dragging, and completion of creating a connection.
-    *   **Parenting**: Will be a child item of `NodeItem`.
+1.  **`SocketCircleItem` and `SocketRowItem` Classes (in `src/edon_ui/socket.py`)**:
+    *   **`SocketCircleItem` (formerly `SocketItem`)**:
+        *   **Purpose**: Represents *only* the interactive circular connection point. (Done)
+        *   **Inheritance**: `QGraphicsObject`. (Done)
+        *   **Properties**: `is_input`, `identifier`, `visual_type_key`. (Done)
+        *   **Drawing (`paint` method)**: Draws a themed circle. (Done)
+        *   **Interaction**: `hoverEnter/Leave`, mouse events for connections. (Partially done - hover acceptance set; events to be fully implemented for connections).
+        *   **Parenting**: Child of `SocketRowItem`. (Done)
+    *   **`SocketRowItem` (New Class)**:
+        *   **Purpose**: Represents a full row for a socket, containing the `SocketCircleItem` and a placeholder for content (currently a `QGraphicsRectItem`, intended to be a label and/or widget). (Done)
+        *   **Inheritance**: `QGraphicsObject`. (Done)
+        *   **Properties**: `is_input`, `socket_identifier`, `socket_visual_type`, placeholder content attributes. (Done)
+        *   **Self-Sizing**: `get_required_height()`, `get_required_width()` based on its internal components (circle, placeholder content/label, padding). (Done)
+        *   **Internal Layout (`_layout_socket_row` or `_do_layout`)**: Positions its `SocketCircleItem` and placeholder content/label. (Done)
+        *   **Parenting**: Child of `NodeItem`. (Done)
 
 2.  **Enhance `NodeItem` Class (`src/edon_ui/node_item.py`)**:
-    *   **Socket Management**:
-        *   `self._input_sockets`: List of `SocketItem` instances.
-        *   `self._output_sockets`: List of `SocketItem` instances.
-        *   `add_socket(socket_data)`: Method to create a `SocketItem` from logical socket data and add it to the appropriate list and as a child QGraphicsItem.
-        *   `layout_sockets()`: Method to calculate and set the positions of all `SocketItem`s. This needs to be called during initialization and potentially on resize or content changes. Sockets are typically aligned to the left (inputs) and right (outputs) edges of the node, distributed vertically.
+    *   **Socket Row Management**:
+        *   `self._input_sockets`, `self._output_sockets` lists now store `SocketRowItem` instances. (Done)
+        *   `add_socket_row(logical_socket_data)`: (Conceptual - placeholder `SocketRowItem`s are created directly for now. This method will be for logical node integration).
+        *   `layout_socket_rows()` (formerly `layout_sockets`): Calculates and sets positions of `SocketRowItem`s. (Done)
     *   **Title Area Refinement**:
-        *   The `paint()` method will still draw the title bar background.
-        *   The `self.title_text_item` will continue to display the title.
-        *   Consider adding a small clickable icon area (e.g., a triangle placeholder) in the title bar for future collapsibility. This icon would initially do nothing.
-        *   Ensure `theme.NODE_TITLE_HEIGHT` provides enough space for text and potential icons.
+        *   `paint()` draws title bar background. (Done, improved)
+        *   `title_text_item` displays title, centered. (Done)
+        *   Collapsibility icon placeholder. (Not started)
+    *   **Dynamic Sizing**:
+        *   `_height` is dynamically calculated based on title, `SocketRowItem` heights, and padding. (Done)
+        *   `_width` is dynamically calculated based on the maximum `SocketRowItem` width, node padding, and minimums. (Done)
+        *   `prepareGeometryChange()` is used correctly before setting final dimensions. (Done)
+    *   **`boundingRect()`**: Returns dynamic `QRectF(0, 0, self._width, self._height)`. (Done)
     *   **Content Area and `content_rect()`**:
-        *   Reaffirm that `content_rect()` defines the usable space *below* the title bar and *inside* any node padding.
-        *   This is where node-specific UI elements will be placed.
-    *   **Abstract Content Rendering (Initial Stub)**:
-        *   Add a `draw_content(self, painter, option, widget)` method to `NodeItem`.
-        *   Initially, this method can be empty or draw a placeholder text like "Node Content Area".
-        *   The actual rendering of specific content (dropdowns, etc.) will be deferred to Phase 2.
+        *   Defines usable space. (Basic version exists; needs refinement when central content renderers are added if socket rows don't span full width).
+    *   **Abstract Content Rendering (Initial Stub)**: (Not started)
     *   **Initialization**:
-        *   `__init__` will take an `edon.node.Node` instance.
-        *   It will set its title from the node.
-        *   It will iterate through the logical node's sockets and call `add_socket()` for each.
-        *   Call `layout_sockets()`.
+        *   `__init__` takes title, x, y, min_width, min_height. (Done)
+        *   (Future) Will take an `edon.node.Node` instance (from the core library).
+        *   (Future) Will iterate through the logical node's sockets to create `SocketRowItem`s, translating data.
+        *   Calls `layout_socket_rows()` and `_update_title_text_position()`. (Done)
 
-3.  **`ConnectionItem` Class (`src/edon_ui/connection_item.py`)**:
-    *   **Purpose**: Represents a visual connection (line/curve) between two `SocketItem`s.
-    *   **Inheritance**: `QGraphicsPathItem` (ideal for drawing curves).
-    *   **Properties**:
-        *   `source_socket_item`: Reference to the starting `SocketItem`.
-        *   `target_socket_item`: Reference to the ending `SocketItem` (can be `None` while dragging).
-        *   `_source_pos`: `QPointF`, scene position of the source socket.
-        *   `_target_pos`: `QPointF`, scene position of the target socket or current mouse cursor during drag.
-    *   **Drawing (`paint` method and `setPath`)**:
-        *   Draw a Bezier curve (or straight line) between `_source_pos` and `_target_pos`.
-        *   Style (color, thickness) can be from `theme.py`.
-    *   **Updating**:
-        *   `update_positions()`: Method to be called when connected nodes or sockets move. It will get the current scene positions of its `source_socket_item` and `target_socket_item` and update its path.
-        *   If connected to `SocketItem.parentItem().positionChanged` (which is `NodeItem.positionChanged`), it can auto-update.
-    *   **Interaction**:
-        *   Allow selection and deletion (e.g., pressing Delete key when selected).
+3.  **`ConnectionItem` Class (`src/edon_ui/connection_item.py`)**: (Not started)
+    *   **Purpose**: Represents a visual connection (line/curve) between two `SocketCircleItem`s.
+    *   **Inheritance**: `QGraphicsPathItem`.
+    *   **Properties**: `source_socket_circle_item`, `target_socket_circle_item`, positions.
+    *   **Drawing**: Bezier curve or straight line.
+    *   **Updating**: `update_positions()` method.
+    *   **Interaction**: Selection, deletion.
 
-4.  **`GraphicsScene` Enhancements (`src/edon_ui/graphics_scene.py`)**:
-    *   **Connection Management**:
-        *   `self.connection_items`: List to track `ConnectionItem` instances.
-        *   `self.temp_connection`: Stores the `ConnectionItem` being dragged before it's finalized.
-    *   **Connection Logic**:
-        *   `start_connection(socket_item)`: Called by `SocketItem` on mouse press. Creates a `ConnectionItem`, sets its source, adds it to the scene, and stores it in `self.temp_connection`.
-        *   `update_dragged_connection(mouse_scene_pos)`: Called by `SocketItem` or `GraphicsScene` on mouse move during connection drag. Updates the target position of `self.temp_connection`.
-        *   `finish_connection(target_socket_item)`: Called by `SocketItem` on mouse release over a valid target.
-            *   Validates if the connection is allowed (e.g., input to output, data type compatibility - this logic might reside in `edon.graph.Graph` or a validation helper).
-            *   If valid:
-                *   Finalizes the `self.temp_connection` by setting its `target_socket_item`.
-                *   Adds it to `self.connection_items`.
-                *   Updates the underlying logical graph in `edon.graph.Graph`.
-            *   If invalid or dropped on empty space: Removes `self.temp_connection` from the scene.
-        *   `cancel_connection()`: If drag ends not on a socket.
-    *   **Node Deletion**: When a `NodeItem` is deleted, any connected `ConnectionItem`s must also be removed from the scene and the logical graph.
+4.  **`GraphicsScene` Enhancements (`src/edon_ui/graphics_scene.py`)**: (Not started for connections)
+    *   **Connection Management**: `connection_items` list, `temp_connection`.
+    *   **Connection Logic**: `start_connection(socket_circle_item)`, `update_dragged_connection`, `finish_connection(target_socket_circle_item)`, `cancel_connection`.
+    *   **Node Deletion**: Handle removal of connected `ConnectionItem`s.
+    *   Signal for view updates (`scene_changed`) for general scene state. (Done)
 
-**Phase 2: Node-Specific Content Rendering**
+**Phase 2: Node-Specific Content Rendering** (Not started)
+    *   ... (details remain largely the same, focusing on the area *not* occupied by `SocketRowItem`s if they are compact, or integrating with `SocketRowItem`s if they contain more complex widgets) ...
 
-1.  **Content Renderer Design**:
-    *   Define a base class `BaseNodeContentRenderer` in a new file, e.g., `src/edon_ui/content_renderers.py`.
-        *   `__init__(self, node_item, node_data)`
-        *   `paint(self, painter, content_rect, option)`: Abstract method to draw content.
-        *   `layout_widgets(self, content_rect)`: Method to position any child QGraphicsWidgets if used.
-        *   `desired_height(self)`: Method to suggest how tall the content area needs to be. `NodeItem` can use this to adjust its own height dynamically.
-    *   Create concrete renderer implementations for different node types:
-        *   `DefaultContentRenderer`: Shows basic properties or a placeholder.
-        *   `LabelContentRenderer`: Displays simple text labels.
-        *   `DropdownContentRenderer`: Would involve creating/managing a `QGraphicsProxyWidget` embedding a `QComboBox` or a custom painted dropdown.
-        *   `TextInputContentRenderer`: Similar, for `QLineEdit`.
-2.  **`NodeItem` Content Integration**:
-    *   `NodeItem.__init__`: Instantiate the appropriate `ContentRenderer` based on `node_data.type`.
-    *   `NodeItem.paint`: Call `self.content_renderer.paint(...)` if it exists, passing the `content_rect()`.
-    *   `NodeItem.boundingRect`: May need to be adjusted if content can dynamically change the node's height. The `desired_height()` from the renderer will be key.
-    *   The `ContentRenderer` will be responsible for creating and managing any child `QGraphicsItem`s or `QGraphicsWidget`s that represent the node's specific UI. These items should be added as children to the `NodeItem` to be part of its coordinate system and rendering.
+**Phase 3: UI Polish and Advanced Features** (Not started)
+    *   ... (details remain largely the same) ...
 
-**Phase 3: UI Polish and Advanced Features**
+**Updated Workflow for Implementation (Reflecting Current State & Next Steps):**
 
-1.  **Collapsible Nodes**:
-    *   Add a boolean `is_collapsed` property to `NodeItem`.
-    *   Modify `NodeItem.paint()`: If collapsed, only draw the title bar. Sockets and content are hidden.
-    *   Modify `NodeItem.boundingRect()`: Return a smaller rect if collapsed.
-    *   The clickable icon in the title bar toggles `is_collapsed` and triggers an update/layout.
-    *   Connections should ideally still attach to the "logical" socket positions even if the socket visuals are hidden, or they might visually "snap" to the collapsed node's edge.
-2.  **Dynamic Node Resizing**:
-    *   `NodeItem`'s height could be dynamically calculated based on:
-        *   Title bar height.
-        *   Number of sockets and their vertical spacing.
-        *   `desired_height()` of its `ContentRenderer`.
-    *   Implement a `update_node_layout()` method in `NodeItem` that recalculates total height, re-layouts sockets, and informs its content renderer about the new `content_rect()`.
-3.  **Context Menus**:
-    *   Refine `context_menu.py` for nodes, sockets, and connections (e.g., "Delete Node", "Disconnect Socket").
-4.  **Theming and Styling**:
-    *   Expand `theme.py` with more options for connection appearance (e.g., different colors for different data types), socket states (hovered, connected), and content elements.
-
-**Workflow for Implementation:**
-
-1.  **Start with `SocketItem`**: Create the file, define the class, and implement basic drawing (shape, color).
-2.  **Modify `NodeItem`**:
-    *   Add socket lists and `add_socket`, `layout_sockets`.
-    *   In `__init__`, create placeholder `SocketItem`s (e.g., 2 inputs, 1 output for testing) and position them.
-    *   Ensure `NodeItem.paint()` is called and sockets (as child items) are also painted.
-3.  **Implement `ConnectionItem`**: Basic drawing of a line/curve.
-4.  **Integrate into `GraphicsScene`**:
+1.  **Define Core Socket UI Elements (in `src/edon_ui/socket.py`)**:
+    *   `SocketCircleItem`: Visual representation of the connection point. (Done)
+    *   `SocketRowItem`: Container for a `SocketCircleItem` and its associated content (currently a placeholder rect, to be a label/widget area), manages its own internal layout and required dimensions. (Done)
+2.  **Modify `NodeItem` (`src/edon_ui/node_item.py`)**:
+    *   Manage lists of `SocketRowItem`s. (Done)
+    *   Implement `layout_socket_rows()` to position `SocketRowItem`s. (Done)
+    *   Implement dynamic calculation of `_width` and `_height` based on `SocketRowItem` dimensions, title, padding, and minimums. Use `prepareGeometryChange()`. (Done)
+    *   Create placeholder `SocketRowItem`s in `__init__` for testing. (Done)
+    *   Ensure `NodeItem.paint()` correctly draws the node frame (border, title bar background). (Done, improved)
+3.  **Refine Visuals & Basic Interaction (Current Focus/Next Minor Steps):**
+    *   Ensure `SocketRowItem` internal layout (circle and placeholder/label) is visually correct and robust for both inputs and outputs, aligning with the target UI style (e.g., "Mesh Boolean" node). (Ongoing refinement based on visual feedback)
+    *   Re-integrate `QGraphicsTextItem` for labels within `SocketRowItem` (replacing or complementing the placeholder rect), ensuring `get_required_width()` correctly uses the label's `boundingRect()`.
+    *   (Optional) Add simple hover effects to `SocketCircleItem` (e.g., slight color change).
+4.  **Implement `ConnectionItem` (`src/edon_ui/connection_item.py`)**: Basic drawing of a line/curve between `SocketCircleItem`s.
+5.  **Integrate Connection Logic into `GraphicsScene` (`src/edon_ui/graphics_scene.py`)**:
     *   Implement `start_connection`, `update_dragged_connection`, `finish_connection`.
-    *   Basic mouse interaction in `SocketItem` to trigger these scene methods.
-    *   At this stage, you should be able to draw nodes, see sockets, and drag lines between them.
-5.  **Refine Connection Logic**: Add validation, logical graph updates.
-6.  **Implement `BaseNodeContentRenderer` and a `DefaultContentRenderer`**:
-    *   Modify `NodeItem` to use a content renderer.
-    *   Update `NodeItem.paint()` to call the renderer's paint method.
-7.  **Iterate**: Add more content renderers, refine drawing, add features from Phase 3. 
+    *   Add mouse press/move/release event handling to `SocketCircleItem` to initiate and manage connection dragging via scene methods.
+    *   At this stage, you should be able to draw nodes with socket rows, and drag connection lines between `SocketCircleItem`s.
+6.  **Dynamic `NodeItem` based on Logical `edon.node.Node`**:
+    *   Modify `NodeItem.__init__` to accept an `edon.node.Node` instance (from the core library).
+    *   Iterate through the logical node's sockets (from `edon.node.Node.input_sockets` / `output_sockets`).
+    *   For each logical socket, create a `SocketRowItem`, translating logical data (name, type, default value, etc.) to UI parameters (`label_text`, `socket_visual_type`, initial widget state). This is the adapter/bridge step.
+7.  **Refine Connection Logic**: Add validation (e.g., input to output, data type compatibility based on logical socket data), and update the underlying logical graph (`edon.graph.Graph`).
+8.  **Implement Node Content Renderers / Rich `SocketRowItem`s**:
+    *   For simple nodes, `SocketRowItem`s might be sufficient.
+    *   For nodes with central content (like dropdowns in "Mesh Boolean" not tied to one socket row), implement a `NodeContentRenderer` system.
+    *   For sockets with inline editable values (e.g., an int input field directly in the row), create specialized `SocketRowItem` subclasses that embed `QGraphicsProxyWidget`s for `QLineEdit`, `QSpinBox`, `QComboBox`, etc. These subclasses will override `get_required_width/height` and `_do_layout`.
+9.  **Iterate**: Add features from Phase 3 (collapsible nodes, context menus, etc.).

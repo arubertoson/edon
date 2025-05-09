@@ -32,48 +32,61 @@ class GraphicsView(QGraphicsView):
         self._right_click_pos = None
         self._right_click_moved = False
 
-        self._interaction_enabled = True  # Initialized here
-        self._update_view_behavior()  # Call after scene is set
+        self._interaction_enabled = True
+        self._update_view_behavior()
+
+        if self.scene() and hasattr(self.scene(), 'scene_changed'):
+            self.scene().scene_changed.connect(self._update_view_behavior)
 
     def _update_view_behavior(self):
         current_scene = self.scene()
-        if not current_scene or not hasattr(current_scene, "node_items"):
-            self._interaction_enabled = False
-            self.setDragMode(QGraphicsView.NoDrag)  # Disable rubber band when no interaction
-            return
 
-        if not current_scene.node_items:
+        has_nodes = False
+        if current_scene and hasattr(current_scene, "node_items"):
+            has_nodes = bool(current_scene.node_items)
+
+        if not has_nodes:
             self._interaction_enabled = False
             self.setDragMode(QGraphicsView.NoDrag)
         else:
             self._interaction_enabled = True
-            self.setDragMode(QGraphicsView.RubberBandDrag)  # Enable rubber band when nodes are present
+            self.setDragMode(QGraphicsView.RubberBandDrag)
 
     def _request_scene_rect_adjustment(self):
         """Helper method to get visible scene rect and request adjustment from the scene.
 
         This method calculates what portion of the scene is currently visible in the viewport
-        and requests the scene to adjust its boundaries accordingly. This is useful when:
-
-        1. The user zooms in/out - the visible area changes in scene coordinates
-        2. The user pans around - different parts of the scene become visible
-        3. The window is resized - the viewport shows a different area
-
-        The process:
-        1. Get the viewport's rectangle in view coordinates (pixels)
-        2. Convert this rectangle to scene coordinates, which gives us a polygon
-           (due to any rotations/transformations that might be applied)
-        3. Get the bounding rectangle of this polygon
-        4. Ask the scene to adjust its boundaries based on this visible area
-
-        This helps keep the scene's boundaries appropriate for the current view,
-        which is important for proper scrolling limits and visual feedback.
+        and then directly adjusts the scene's boundaries.
         """
-        if self.scene() and hasattr(self.scene(), "adjust_scene_rect_for_view"):
-            visible_rect_in_view_coords = self.viewport().rect()
-            visible_polygon_in_scene_coords = self.mapToScene(visible_rect_in_view_coords)
-            visible_rect_in_scene_coords = visible_polygon_in_scene_coords.boundingRect()
-            self.scene().adjust_scene_rect_for_view(visible_rect_in_scene_coords)
+        current_scene = self.scene()
+        if not current_scene:
+            return
+
+        visible_rect_in_view_coords = self.viewport().rect()
+        visible_polygon_in_scene_coords = self.mapToScene(visible_rect_in_view_coords)
+        visible_rect_in_scene_coords = visible_polygon_in_scene_coords.boundingRect()
+
+        current_s_rect = current_scene.sceneRect()
+
+        # Define padding in scene units. This ensures the sceneRect grows a bit beyond
+        # what's immediately visible, giving some buffer for panning.
+        # This padding logic is now part of the view's responsibility.
+        padding_w = visible_rect_in_scene_coords.width() * 0.5
+        padding_h = visible_rect_in_scene_coords.height() * 0.5
+        # Clamp padding to a reasonable min/max if necessary
+        min_padding = 200.0 # Minimum padding
+        padding_w = max(min_padding, padding_w)
+        padding_h = max(min_padding, padding_h)
+
+        # Create a new rect based on the view's visible area plus padding
+        padded_visible_rect = visible_rect_in_scene_coords.adjusted(-padding_w, -padding_h, padding_w, padding_h)
+
+        # Unite the current sceneRect with the padded visible rect to ensure the scene boundaries
+        # encompass both the existing scene area and the newly visible area.
+        new_scene_rect = current_s_rect.united(padded_visible_rect)
+
+        if new_scene_rect != current_s_rect:
+            current_scene.setSceneRect(new_scene_rect)
 
     def wheelEvent(self, event):
         if not self._interaction_enabled:
@@ -186,5 +199,7 @@ class GraphicsView(QGraphicsView):
         scene_pos = self.mapToScene(view_pos)
 
         # Delegate node creation to the scene
+        # This will trigger GraphicsScene.addItem -> _update_scene_appearance -> node_presence_changed signal
+        # which in turn calls self._update_view_behavior via the connection.
         self.scene().add_new_node_at(scene_pos)
-        self.scene_content_changed()
+        # self.scene_content_changed() # This call is now redundant due to the signal/slot mechanism

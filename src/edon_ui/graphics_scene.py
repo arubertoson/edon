@@ -1,4 +1,4 @@
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPen
 from PySide6.QtWidgets import (
     QGraphicsItem,
@@ -8,8 +8,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .node_item import NodeItem
-from . import theme # Import the theme module
+from .node import NodeItem
+from .socket import SocketCircleItem
+from .edge import EdgeItem
+from . import theme
 
 
 class EmptySceneTextItem(QGraphicsItem):
@@ -117,6 +119,11 @@ class GraphicsScene(QGraphicsScene):
     feedback when empty to guide users on how to begin using the editor.
     """
 
+    scene_changed = Signal()
+    edge_drag_started = Signal(SocketCircleItem)
+    edge_drag_updated = Signal(QPointF)
+    edge_drag_finished = Signal(object)
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -124,17 +131,20 @@ class GraphicsScene(QGraphicsScene):
         self.setSceneRect(
             -self.active_area_size / 2, -self.active_area_size / 2, self.active_area_size, self.active_area_size
         )
-        self.setBackgroundBrush(QBrush(theme.SCENE_BACKGROUND)) # Use theme color
+        self.setBackgroundBrush(QBrush(theme.SCENE_BACKGROUND))
 
         # Active area - initialized without specific rect, will be set by _update_scene_appearance
         self.active_area = QGraphicsRectItem()
-        self.active_area.setBrush(QBrush(theme.SCENE_ACTIVE_AREA_BACKGROUND)) # Use theme color
-        self.active_area.setPen(QPen(theme.SCENE_ACTIVE_AREA_BORDER, 1)) # Use theme color, border width 1
+        self.active_area.setBrush(QBrush(theme.SCENE_ACTIVE_AREA_BACKGROUND))
+        self.active_area.setPen(QPen(theme.SCENE_ACTIVE_AREA_BORDER, 1))
         self.active_area.setZValue(-100)  # Ensure it's behind all other items
 
         self.empty_scene_text = EmptySceneTextItem()
 
         self.node_items = []
+        self.edge_items = []
+        self.temp_edge: EdgeItem | None = None
+        self._currently_highlighted_target_socket: SocketCircleItem | None = None
 
         self._update_scene_appearance()
 
@@ -170,12 +180,28 @@ class GraphicsScene(QGraphicsScene):
         if isinstance(item, NodeItem) and item in self.node_items:
             try:
                 item.positionChanged.disconnect(self._update_scene_appearance)
-            except (AttributeError, RuntimeError):  # RuntimeError if connection doesn't exist or source deleted
-                pass  # Often safe to ignore disconnection errors
+            except (AttributeError, RuntimeError):
+                pass
 
             self.node_items.remove(item)
+            # Also remove connections associated with this node
+            edges_to_remove = [
+                edge
+                for edge in self.edge_items
+                if edge.source_socket_item.parentItem().parentItem() == item
+                or (edge.target_socket_item and edge.target_socket_item.parentItem().parentItem() == item)
+            ]
+            for edge in edges_to_remove:
+                self.edge_items.remove(edge)
+                super().removeItem(edge)  # Remove from scene
+                del edge  # Explicitly delete to trigger __del__ if defined
+
             super().removeItem(item)
             self._update_scene_appearance()
+        elif isinstance(item, EdgeItem) and item in self.edge_items:
+            self.edge_items.remove(item)
+            super().removeItem(item)
+            del item  # Explicitly delete
         else:
             super().removeItem(item)
 
@@ -186,7 +212,10 @@ class GraphicsScene(QGraphicsScene):
         self.addItem(new_node)
 
     def _update_scene_appearance(self):
-        if not self.node_items:
+        # This method is called on init, when NodeItems are added/removed, or when they move.
+        current_has_nodes = bool(self.node_items)
+
+        if not current_has_nodes:
             if self.active_area.scene() == self:
                 super().removeItem(self.active_area)
             if self.empty_scene_text.scene() != self:
@@ -197,13 +226,24 @@ class GraphicsScene(QGraphicsScene):
                 self.empty_scene_text.setVisible(False)
             if self.active_area.scene() != self:
                 super().addItem(self.active_area)
-            self._calculate_active_area_rect()
+            self._calculate_active_area_rect()  # Ensure this is called when nodes are present
+
+        # Update all finalized connections as their nodes might have moved
+        for edge_item in self.edge_items:
+            edge_item.update_path()
+
+        # Update the temporary connection if it's being dragged
+        if self.temp_edge:
+            # Its _target_pos is the mouse cursor. update_path() will use the
+            # current _source_socket_item.scenePos() and this _target_pos.
+            self.temp_edge.update_path()
+
+        # Emit the general scene_changed signal whenever this update logic runs.
+        self.scene_changed.emit()
 
     def _calculate_active_area_rect(self):
         """Calculate the active area rectangle based on the current node positions"""
         if not self.node_items:  # Should not be called if no nodes, but as a safeguard
-            # Default small rect if called erroneously, though _update_scene_appearance handles this path.
-            # self.active_area.setRect(0,0,0,0) # Effectively hide it or set minimal
             return
 
         padding = 100
@@ -227,28 +267,116 @@ class GraphicsScene(QGraphicsScene):
         height = max(max_y - min_y, 400)
         self.active_area.setRect(min_x, min_y, width, height)
 
-    def adjust_scene_rect_for_view(self, visible_scene_rect: QRectF):
-        """
-        Adjusts the sceneRect to ensure it encompasses the given visible_scene_rect
-        from a view, plus some padding.
-        """
-        current_s_rect = self.sceneRect()
+    # --- Connection Management Methods ---
 
-        # Define padding in scene units. This ensures the sceneRect grows a bit beyond
-        # what's immediately visible, giving some buffer for panning.
-        padding = min(visible_scene_rect.width(), visible_scene_rect.height()) * 0.5  # 50% of smallest view dimension
-        # Clamp padding to a reasonable min/max if necessary, e.g. max(500, min(padding, 5000))
-        padding = max(200.0, padding)  # Ensure a minimum padding
+    def _get_socket_at_pos(self, scene_pos: QPointF) -> SocketCircleItem | None:
+        """Helper to get a SocketCircleItem at a specific scene position."""
+        items_at_pos = self.items(scene_pos)
+        for item in items_at_pos:
+            if isinstance(item, SocketCircleItem):
+                return item
+        return None
 
-        # Create a new rect based on the view's visible area plus padding
-        # QRectF.adjusted returns a new QRectF
-        padded_visible_rect = visible_scene_rect.adjusted(-padding, -padding, padding, padding)
+    def is_dragging_edge(self) -> bool:
+        """Returns True if an edge is currently being dragged."""
+        return self.temp_edge is not None
 
-        # Unite the current sceneRect with the padded visible rect to ensure the scene boundaries
-        # encompass both the existing scene area and the newly visible area.
-        # This prevents the scene from shrinking when panning/zooming and maintains context.
-        # QRectF.united returns a new QRectF containing both input rectangles.
-        new_scene_rect = current_s_rect.united(padded_visible_rect)
+    def _is_valid_connection_target(
+        self, source_socket: SocketCircleItem, target_socket: SocketCircleItem | None
+    ) -> bool:
+        if not target_socket or target_socket == source_socket:
+            return False
+        # Basic validation: different sockets, different input/output type
+        if target_socket.is_input != source_socket.is_input:
+            # Prevent self-connection on the same node via parent check of NodeItem
+            # SocketCircleItem -> SocketRowItem -> NodeItem
+            if target_socket.parentItem().parentItem() != source_socket.parentItem().parentItem():
+                return True
+            # Allow connection on same node if it's input to output or vice-versa (different SocketRowItem)
+            elif target_socket.parentItem() != source_socket.parentItem():
+                return True
+        return False
 
-        if new_scene_rect != current_s_rect:
-            self.setSceneRect(new_scene_rect)
+    def start_edge_drag(self, source_socket_item: SocketCircleItem, drag_start_scene_pos: QPointF):
+        """Initiates a new edge drag from the given source socket."""
+        if self.temp_edge:
+            self.cancel_edge_drag()  # Should also clear any highlight
+
+        self.temp_edge = EdgeItem(source_socket_item, drag_start_scene_pos)
+        super().addItem(self.temp_edge)
+        self.edge_drag_started.emit(source_socket_item)
+        print(f"Scene: Edge drag started from {source_socket_item.identifier}")
+
+    def update_dragged_edge(self, current_scene_pos: QPointF):
+        """Updates the end point of the temporary edge being dragged."""
+        if not self.temp_edge:
+            return
+
+        self.temp_edge.set_target_pos(current_scene_pos)
+        self.edge_drag_updated.emit(current_scene_pos)
+
+        potential_target_socket = self._get_socket_at_pos(current_scene_pos)
+        source_socket = self.temp_edge.source_socket_item
+
+        is_valid_target = self._is_valid_connection_target(source_socket, potential_target_socket)
+
+        # If there was a previously highlighted socket and it's not the current one, or current is not valid
+        if self._currently_highlighted_target_socket and (
+            self._currently_highlighted_target_socket != potential_target_socket or not is_valid_target
+        ):
+            self._currently_highlighted_target_socket.set_drop_target_highlight(False)
+            self._currently_highlighted_target_socket = None
+
+        # If the current potential target is valid and not already highlighted as such (or is a new one)
+        if (
+            is_valid_target
+            and potential_target_socket
+            and self._currently_highlighted_target_socket != potential_target_socket
+        ):
+            potential_target_socket.set_drop_target_highlight(True)
+            self._currently_highlighted_target_socket = potential_target_socket
+
+    def finish_edge_drag(self, event_scene_pos: QPointF):
+        """Attempts to finalize the edge to a target socket at the given scene position."""
+        if not self.temp_edge:
+            return
+
+        target_socket_item = self._get_socket_at_pos(
+            event_scene_pos
+        )  # This could be self._currently_highlighted_target_socket if logic is tight
+        source_socket_item = self.temp_edge.source_socket_item
+
+        # Unhighlight regardless of outcome
+        if self._currently_highlighted_target_socket:
+            self._currently_highlighted_target_socket.set_drop_target_highlight(False)
+            self._currently_highlighted_target_socket = None
+
+        if self._is_valid_connection_target(source_socket_item, target_socket_item) and target_socket_item:
+            print(f"Scene: Attempting to connect {source_socket_item.identifier} to {target_socket_item.identifier}")
+            self.temp_edge.set_target_socket(target_socket_item)
+            self.temp_edge.settle_z_value()
+            self.edge_items.append(self.temp_edge)
+            print(
+                f"Scene: Edge finalized between {source_socket_item.identifier} and {target_socket_item.identifier}"
+            )
+            self.edge_drag_finished.emit(target_socket_item)
+            self.temp_edge = None
+        else:
+            print(
+                f"Scene: Edge drag cancelled. Target: {target_socket_item.identifier if target_socket_item else 'None'}"
+            )
+            # cancel_connection will be called, which also handles unhighlighting (though redundant here, it's safe)
+            self.cancel_edge_drag()
+
+    def cancel_edge_drag(self):
+        """Cancels the current edge drag operation."""
+        if self._currently_highlighted_target_socket:
+            self._currently_highlighted_target_socket.set_drop_target_highlight(False)
+            self._currently_highlighted_target_socket = None
+
+        if self.temp_edge:
+            print(f"Scene: Cancelling edge from {self.temp_edge.source_socket_item.identifier}")
+            super().removeItem(self.temp_edge)
+            del self.temp_edge
+            self.temp_edge = None
+            self.edge_drag_finished.emit(None)

@@ -24,6 +24,12 @@ NODE_BACKGROUND = COLOR_BACKGROUND_MEDIUM
 NODE_BORDER_DEFAULT = NODE_BACKGROUND.lighter(110) # Subtle darker border
 NODE_BORDER_SELECTED = QColor("#5F9FDF") # A distinct blue for selection
 NODE_BORDER_RADIUS = 8.0
+NODE_BORDER_WIDTH_DEFAULT = 1.5
+NODE_BORDER_WIDTH_SELECTED = 2.0
+
+NODE_HORIZONTAL_PADDING = 10.0 # Padding inside the node, before socket row content starts
+NODE_MIN_WIDTH = 150.0         # Minimum overall width for a node
+NODE_MIN_HEIGHT = 60.0         # Minimum overall height for a node
 
 NODE_TITLE_BACKGROUND = COLOR_BACKGROUND_DARK.darker(200)
 NODE_TITLE_TEXT = COLOR_TEXT_LIGHT
@@ -61,3 +67,33 @@ INPUT_BORDER_COLOR = COLOR_BACKGROUND_MEDIUM.darker(120)
 SCENE_BACKGROUND = QColor(30, 30, 30) # Very dark gray for the furthest background
 SCENE_ACTIVE_AREA_BACKGROUND = QColor(40, 40, 40) # Background for the area where nodes primarily reside
 SCENE_ACTIVE_AREA_BORDER = QColor(1, 1, 1)     # Border for the active area
+
+# Socket Colors
+SOCKET_BORDER_COLOR = QColor("#FF000000") # Black
+SOCKET_FILL_COLOR_DEFAULT = QColor("#FFAAAAAA") # Light Gray
+
+# Colors per socket type (using string keys)
+SOCKET_FILL_COLORS = {
+    "default": QColor("#FFAAAAAA"), # Light Gray
+    "integer": QColor("#FF007ACC"),  # Blue
+    "float": QColor("#FF00A000"),   # Green
+    "string": QColor("#FFFFA500"),  # Orange
+    "boolean": QColor("#FFD60000"), # Red
+    "trigger": QColor("#FFFFFFFF"),  # White (often used for execution flow)
+    # Add more as needed
+}
+
+# Socket Properties
+SOCKET_RADIUS = 6.0 # pixels
+SOCKET_ROW_HEIGHT = 25.0 # Total vertical space for a socket row (for circle + label/widget)
+SOCKET_PADDING = 5.0 # Padding around sockets for layout (e.g., above first socket row)
+SOCKET_SPACING = 10.0 # Vertical spacing between socket visual elements (DEPRECATED if using ROW_HEIGHT consistently)
+                        # We'll keep it for now but SOCKET_ROW_HEIGHT will be the primary driver for layout
+
+# New theme constants
+SOCKET_HOVER_FILL_COLOR = QColor("#FF0000") # Example: Bright red for hover
+EDGE_Z_VALUE = -1 # For finalized connections (currently drawn below nodes)
+EDGE_Z_VALUE_DRAGGING = 100 # For connections being actively dragged
+EDGE_COLOR_DEFAULT = QColor("#F0F0F0") # Example: Light gray/white
+EDGE_THICKNESS = 2.0
+EDGE_COLOR_SELECTED = QColor("#FF0000") # Example: Bright red for selected
