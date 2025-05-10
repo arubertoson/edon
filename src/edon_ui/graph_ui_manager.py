@@ -9,11 +9,11 @@ from edon_ui.item.edge import EdgeItem
 from edon_ui.item.node import NodeItem
 
 if TYPE_CHECKING:
-    from .graphics_scene import GraphicsScene
+    from edon_ui.graphics_scene import GraphicsScene
 
     # EntityNode is already imported, but for consistency if it wasn't:
     # from edon.node import Node as EntityNode
-    from .socket import SocketCircleItem  # For type hinting if needed
+    from edon_ui.item.socket import SocketCircleItem  # For type hinting if needed
 
 # Define a type alias for the edge key for clarity
 EdgeKeyType = Tuple[Tuple[str, str], Tuple[str, str]]

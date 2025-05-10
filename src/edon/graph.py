@@ -1,12 +1,12 @@
 from dataclasses import dataclass, field
-from typing import Any  # Added Tuple, Any for type hint flexibility
+
 # Optional is no longer needed from typing if we use Node | None
 # from typing import Optional
-
 # Assuming node.py and socket.py are accessible
 from edon.node import Node
 from edon.socket import Socket, SocketDirection
-from .errors import SocketConnectionErrorReason, GraphObjectErrorReason, SocketDisconnectionErrorReason # Import enums
+
+from .errors import GraphObjectErrorReason, SocketConnectionErrorReason, SocketDisconnectionErrorReason  # Import enums
 
 
 @dataclass
@@ -90,7 +90,9 @@ class Graph:
         # Socket.add_connection now returns a tuple (bool, SocketConnectionErrorReason | None)
         return input_socket.add_connection(output_socket)
 
-    def disconnect_sockets(self, output_ref: tuple[str, str], input_ref: tuple[str, str]) -> tuple[bool, SocketDisconnectionErrorReason | GraphObjectErrorReason | None]:
+    def disconnect_sockets(
+        self, output_ref: tuple[str, str], input_ref: tuple[str, str]
+    ) -> tuple[bool, SocketDisconnectionErrorReason | GraphObjectErrorReason | None]:
         """
         Disconnects a specific connection between an output socket and an input socket.
         output_ref is (node_id, socket_name) for the output socket.

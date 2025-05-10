@@ -1,5 +1,4 @@
-from PySide6.QtCore import Qt, QPointF
-from PySide6.QtGui import QCursor
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from .graphics_scene import GraphicsScene
@@ -65,7 +64,7 @@ class MainWindow(QWidget):
 
     def is_position_on_resize_edge(self, global_pos: QPointF) -> bool:
         """Checks if a global position is on one of the window's resize edges."""
-        pos_in_local_coords = self.mapFromGlobal(global_pos).toPoint() # Convert QPointF to QPoint
+        pos_in_local_coords = self.mapFromGlobal(global_pos).toPoint()  # Convert QPointF to QPoint
         return self._detect_edge(pos_in_local_coords) != Qt.Edges()
 
     def contextMenuEvent(self, event):

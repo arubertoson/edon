@@ -1,5 +1,18 @@
-import sys
 import os
+import sys
+from typing import Any  # For data types
+
+from PySide6.QtWidgets import QApplication
+
+from edon.graph import Graph as EntityGraph
+from edon.node import Node as EntityNode
+from edon_ui.graph_ui_manager import GraphUIManager
+
+# QGraphicsView is not directly used here anymore, MainWindow handles it.
+# from PySide6.QtGui import QPainter # Not directly used here anymore
+# GraphicsScene is also not directly instantiated here, MainWindow creates it.
+# from edon_ui.graphics_scene import GraphicsScene
+from edon_ui.window import MainWindow
 
 # Adjust path to import from src
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -7,19 +20,6 @@ src_path = os.path.join(project_root, "src")
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
-from PySide6.QtWidgets import QApplication
-# QGraphicsView is not directly used here anymore, MainWindow handles it.
-# from PySide6.QtGui import QPainter # Not directly used here anymore
-
-# GraphicsScene is also not directly instantiated here, MainWindow creates it.
-# from edon_ui.graphics_scene import GraphicsScene
-from edon_ui.item.node import NodeItem
-from edon_ui.window import MainWindow
-from edon_ui.graph_ui_manager import GraphUIManager
-from edon.graph import Graph as EntityGraph
-from edon.node import Node as EntityNode
-from edon.socket import SocketDirection  # This is from edon.socket
-from typing import Any  # For data types
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

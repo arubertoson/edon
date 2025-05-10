@@ -1,4 +1,4 @@
-from typing import Any  # For typing.Any
+from typing import Any, TYPE_CHECKING
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen
@@ -9,7 +9,7 @@ from edon_ui import theme
 from edon_ui.item.socket import SocketRowItem
 
 # Forward type declaration for edon.node.Node to avoid circular import if it were to import NodeItem
-if False:  # TYPE_CHECKING block
+if TYPE_CHECKING:
     from edon.node import Node as EntityNode
 
 
@@ -138,17 +138,17 @@ class NodeItem(QGraphicsObject):
 
     def _map_entity_socket_type_to_visual_key(self, entity_data_type: type | Any) -> str:
         """Maps a Python type from an edon.socket.Socket to a string key for UI theming."""
-        if entity_data_type == int:
+        if entity_data_type is int:
             return "integer"
-        elif entity_data_type == float:
+        elif entity_data_type is float:
             return "float"
-        elif entity_data_type == str:
+        elif entity_data_type is str:
             return "string"
-        elif entity_data_type == bool:
+        elif entity_data_type is bool:
             return "boolean"
         # Add more specific type mappings as needed from your edon.socket.Socket data_types
         # and theme.SOCKET_FILL_COLORS keys
-        elif entity_data_type == Any:
+        elif entity_data_type is Any:
             return "trigger"  # Or "any" or "default" depending on your theme preference for Any
         return "default"  # Fallback for unmapped types
 

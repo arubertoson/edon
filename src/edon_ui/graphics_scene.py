@@ -317,7 +317,7 @@ class GraphicsScene(QGraphicsScene):
 
                     # Request disconnection of the edge in the logical graph
                     self.edge_disconnection_requested.emit(self.temp_edge)
-                    print(f"  Requested disconnection of logical connection for this edge.")
+                    print("  Requested disconnection of logical connection for this edge.")
 
                     self.removeEdge(self.temp_edge)  # Removes from self.edge_items and from scene
 
