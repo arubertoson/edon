@@ -4,6 +4,7 @@ from typing import Any, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .node import Node  # Forward reference for type hinting
+from .errors import SocketConnectionErrorReason, SocketDisconnectionErrorReason
 
 
 class SocketDirection(Enum):
@@ -49,7 +50,7 @@ class Socket:
         """Checks if the socket is connected to any other socket."""
         return bool(self.connections)
 
-    def can_connect_to(self, other_socket: "Socket") -> bool:
+    def can_connect_to(self, other_socket: "Socket") -> tuple[bool, SocketConnectionErrorReason | None]:
         """
         Determines if this socket can connect to another socket.
         Rules:
@@ -61,21 +62,25 @@ class Socket:
              Output's data_type must be a subtype of Input's data_type,
              or either type is typing.Any.
         5. Input sockets are limited to one connection by default.
+        Returns:
+            A tuple: (bool_success, SocketConnectionErrorReason | None)
         """
+        if not other_socket:
+            return False, SocketConnectionErrorReason.TARGET_SOCKET_INVALID
+
         if self == other_socket:
-            return False
+            return False, SocketConnectionErrorReason.CANNOT_CONNECT_TO_SELF
         if self.direction == other_socket.direction:
-            return False
+            return False, SocketConnectionErrorReason.DIRECTIONS_NOT_OPPOSITE
         if self.parent_node == other_socket.parent_node:
-            return False
+            return False, SocketConnectionErrorReason.SAME_PARENT_NODE
 
         # Determine which socket is output and which is input for type checking
         output_socket = self if self.direction == SocketDirection.OUTPUT else other_socket
         input_socket = other_socket if self.direction == SocketDirection.OUTPUT else self
 
         if not (output_socket.direction == SocketDirection.OUTPUT and input_socket.direction == SocketDirection.INPUT):
-            # This case should ideally not be reached if directions are opposite, but as a safeguard:
-            return False
+            return False, SocketConnectionErrorReason.DIRECTIONS_NOT_OPPOSITE
 
         # Type compatibility check
         can_types_connect = False
@@ -83,52 +88,84 @@ class Socket:
             can_types_connect = True
         elif isinstance(output_socket.data_type, type) and isinstance(input_socket.data_type, type):
             try:
-                # Allow connecting if output type is a subclass of or same as input type
                 if issubclass(output_socket.data_type, input_socket.data_type):
                     can_types_connect = True
             except TypeError:
-                # issubclass can raise TypeError if args are not classes (e.g. generic aliases like list[int])
-                # For now, we'll require exact matches for complex generic types or handle them more specifically later
                 if output_socket.data_type == input_socket.data_type:
                     can_types_connect = True
-                else:  # Or if one of them is a generic alias that might be compatible
-                    pass  # Potentially more advanced logic needed here for generic types like List[int] vs List[Any]
 
         if not can_types_connect:
-            return False
+            return False, SocketConnectionErrorReason.TYPE_MISMATCH
 
         # Input sockets can generally only have one connection.
-        # (This check applies to the one being connected TO if it's an input)
-        if (
-            input_socket.is_connected() and input_socket not in self.connections
-        ):  # if input is already connected to something else
-            return False
-        # Also check from the perspective of 'self' if 'self' is an input socket.
-        if self.direction == SocketDirection.INPUT and self.is_connected() and other_socket not in self.connections:
-            return False
+        if self.direction == SocketDirection.INPUT and self.is_connected():
+            if not (len(self.connections) == 1 and other_socket in self.connections):
+                return False, SocketConnectionErrorReason.INPUT_SOCKET_FULL
 
-        return True
+        if other_socket.direction == SocketDirection.INPUT and other_socket.is_connected():
+            if not (len(other_socket.connections) == 1 and self in other_socket.connections):
+                return False, SocketConnectionErrorReason.INPUT_SOCKET_FULL
 
-    def add_connection(self, other_socket: "Socket") -> bool:
+        return True, None
+
+    def add_connection(self, other_socket: "Socket") -> tuple[bool, SocketConnectionErrorReason | None]:
         """
         Connects this socket to another socket if compatible.
         Ensures bidirectional connection.
-        Returns True if connection was successful, False otherwise.
+        Returns:
+            A tuple: (bool_success, SocketConnectionErrorReason | None)
         """
-        if self.can_connect_to(other_socket):
-            if other_socket not in self.connections:
-                self.connections.append(other_socket)
-            if self not in other_socket.connections:
-                other_socket.connections.append(self)
-            return True
-        return False
+        # Check compatibility first
+        can_connect_flag, reason = self.can_connect_to(other_socket)
+        if not can_connect_flag:
+            return False, reason
 
-    def remove_connection(self, other_socket: "Socket"):
-        """Removes a connection to another socket."""
+        # If already connected, it's a success (idempotent)
+        if other_socket in self.connections and self in other_socket.connections:
+            return True, None
+
+        # Proceed with connection
+        # Input socket specific check for arity (should be covered by can_connect_to, but good as a safeguard before modification)
+        # Considering `self` is the one on which `add_connection` is called (typically an input socket by convention from Graph.connect_sockets)
+        if self.direction == SocketDirection.INPUT and self.is_connected():
+            # This means self is an input, is_connected, but other_socket was not in its connections
+            # (otherwise the previous check would have caught it). This implies trying to add a second distinct connection.
+            return False, SocketConnectionErrorReason.INPUT_SOCKET_FULL
+
+        # Vice-versa for other_socket if it's an input
+        if other_socket.direction == SocketDirection.INPUT and other_socket.is_connected():
+            return False, SocketConnectionErrorReason.INPUT_SOCKET_FULL
+
+        if other_socket not in self.connections:
+            self.connections.append(other_socket)
+        if self not in other_socket.connections:
+            other_socket.connections.append(self)
+        return True, None
+
+    def remove_connection(self, other_socket: "Socket") -> tuple[bool, SocketDisconnectionErrorReason | None]:
+        """Removes a connection to another socket.
+        Returns:
+            A tuple: (bool_success, SocketDisconnectionErrorReason | None)
+        """
+        if not other_socket:
+            # This case should ideally not be hit if logic is sound elsewhere, but good to have.
+            return False, SocketDisconnectionErrorReason.UNKNOWN
+
+        removed_from_self = False
         if other_socket in self.connections:
             self.connections.remove(other_socket)
+            removed_from_self = True
+
+        removed_from_other = False
         if self in other_socket.connections:
             other_socket.connections.remove(self)
+            removed_from_other = True
+
+        if removed_from_self or removed_from_other:
+            return True, None  # Success if at least one side was cleaned up
+        else:
+            # If neither contained the other, they weren't connected
+            return False, SocketDisconnectionErrorReason.SOCKETS_NOT_CONNECTED
 
     def __repr__(self) -> str:
         parent_node_repr = "Detached"

@@ -1,11 +1,20 @@
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QPainter
+from PySide6.QtCore import QPoint, Qt, Signal, QPointF
+from PySide6.QtGui import QPainter, QKeyEvent, QMouseEvent, QCursor
 from PySide6.QtWidgets import QGraphicsView
+from typing import Any
 
 from .context_menu import AppContextMenu
 
 
 class GraphicsView(QGraphicsView):
+    # Signal emitted when the user requests to add a new node.
+    # Arguments:
+    #   - QPointF: The desired position in scene coordinates.
+    #   - str: A hint for the type of node to create (e.g., "default", "math_add").
+    new_node_requested_at_scene_pos = Signal(QPointF, str)
+    node_deletion_requested = Signal(list)  # List of node_entity_id strings
+    edge_deletion_requested = Signal(list)  # List of EdgeItem instances
+
     RIGHT_CLICK_MOVE_THRESHOLD = 5  # Pixels to move before considering it a drag for window move
 
     def __init__(self, scene, parent=None):
@@ -35,19 +44,17 @@ class GraphicsView(QGraphicsView):
         self._interaction_enabled = True
         self._update_view_behavior()
 
-        if self.scene() and hasattr(self.scene(), 'scene_changed'):
+        if self.scene() and hasattr(self.scene(), "scene_changed"):
             self.scene().scene_changed.connect(self._update_view_behavior)
 
     def _update_view_behavior(self):
         current_scene = self.scene()
-
-        has_nodes = False
-        if current_scene and hasattr(current_scene, "node_items"):
-            has_nodes = bool(current_scene.node_items)
-
-        if not has_nodes:
+        if not current_scene.node_items:
             self._interaction_enabled = False
             self.setDragMode(QGraphicsView.NoDrag)
+            self.resetTransform()
+            if current_scene and hasattr(current_scene, "empty_scene_text"):
+                self.centerOn(current_scene.empty_scene_text)
         else:
             self._interaction_enabled = True
             self.setDragMode(QGraphicsView.RubberBandDrag)
@@ -74,7 +81,7 @@ class GraphicsView(QGraphicsView):
         padding_w = visible_rect_in_scene_coords.width() * 0.5
         padding_h = visible_rect_in_scene_coords.height() * 0.5
         # Clamp padding to a reasonable min/max if necessary
-        min_padding = 200.0 # Minimum padding
+        min_padding = 200.0  # Minimum padding
         padding_w = max(min_padding, padding_w)
         padding_h = max(min_padding, padding_h)
 
@@ -100,6 +107,11 @@ class GraphicsView(QGraphicsView):
         self._request_scene_rect_adjustment()
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            main_window = self.window()
+            if main_window.is_position_on_resize_edge(event.globalPosition()):
+                return event.ignore()
+
         if event.button() == Qt.MiddleButton:
             if not self._interaction_enabled:
                 event.ignore()
@@ -189,17 +201,97 @@ class GraphicsView(QGraphicsView):
         """Public method that can be called if scene changes state externally"""
         self._update_view_behavior()
 
-    def _handle_request_add_new_node(self, global_pos: QPoint):
-        """Handles the request from the context menu to add a new node."""
+    def initiate_add_new_node_request(self, global_menu_pos: QPoint):
+        """
+        Called when a request to add a new node is initiated (e.g., from context menu).
+        This method calculates the scene position and emits the
+        new_node_requested_at_scene_pos signal.
+        """
         if not self.scene():
+            print("GraphicsView: No scene to add node to.")
             return
 
         # Map the global mouse position to view coordinates, then to scene coordinates
-        view_pos = self.mapFromGlobal(global_pos)
-        scene_pos = self.mapToScene(view_pos)
+        view_pos = self.mapFromGlobal(global_menu_pos)
+        scene_pos = self.mapToScene(view_pos)  # scene_pos is a QPointF
 
-        # Delegate node creation to the scene
-        # This will trigger GraphicsScene.addItem -> _update_scene_appearance -> node_presence_changed signal
-        # which in turn calls self._update_view_behavior via the connection.
-        self.scene().add_new_node_at(scene_pos)
-        # self.scene_content_changed() # This call is now redundant due to the signal/slot mechanism
+        # XXX: For now, use a placeholder node type hint.
+        # This can be made more dynamic later if the context menu offers choices.
+        node_type_hint = "MyTestNode"  # Let's use a hint that matches our test node class for now
+
+        self.new_node_requested_at_scene_pos.emit(scene_pos, node_type_hint)
+        print(f"GraphicsView: Emitted new_node_requested_at_scene_pos({scene_pos}, '{node_type_hint}')")
+
+    def get_command_context(self, event: QKeyEvent | QMouseEvent, command_name: str) -> Any:
+        """Get the appropriate context for a command
+
+        This method provides different contexts based on the command being executed:
+        - For selection-based commands: returns the selected items
+        - For view commands: returns self (the view)
+        - For window commands: returns the main window
+        - Default: returns a dict with common objects
+        """
+        if command_name == "add_node":
+            mouse_pos = self.mapFromGlobal(QCursor.pos())
+            scene_pos = self.mapToScene(mouse_pos)
+            return {'node_type': 'MyNodeType', 'position': scene_pos}
+
+        # Command-specific contexts
+        if command_name in ["delete_selection", "duplicate_selection", "cut", "copy"]:
+            return self.scene().selectedItems()
+
+        elif command_name in ["toggle_fullscreen", "window_maximize", "window_minimize"]:
+            return self.window()
+
+        elif command_name in ["zoom_in", "zoom_out", "reset_zoom", "pan_view"]:
+            return self  # The view itself
+
+        return {
+            "view": self,
+            "event": event,
+            "scene": self.scene(),
+            "window": self.window(),
+            "selected_items": self.scene().selectedItems(),
+        }
+
+    def keyPressEvent(self, event):
+        # Pass self as the context provider
+        if hasattr(self, "key_manager") and self.key_manager.handle_key_event(event, self):
+            return
+
+        # if event.key() == Qt.Key_Delete:
+        #     if not self._interaction_enabled:
+        #         event.ignore()
+        #         return
+
+        # current_scene = self.scene()
+        # if (
+        #     current_scene and hasattr(current_scene, "selectedItems") and hasattr(current_scene, "node_items")
+        # ):  # Ensure scene is valid
+        #     selected_items = current_scene.selectedItems()
+        #     node_entity_ids_to_delete = []
+        #     edges_to_delete = []
+
+        #     from .node import NodeItem  # Local import for type check
+        #     from .edge import EdgeItem  # Local import for type check
+
+        #     for item in selected_items:
+        #         if isinstance(item, NodeItem):
+        #             if hasattr(item, "node_entity_id") and item.node_entity_id:
+        #                 node_entity_ids_to_delete.append(item.node_entity_id)
+        #         elif isinstance(item, EdgeItem):
+        #             edges_to_delete.append(item)
+
+        #     if node_entity_ids_to_delete:
+        #         print(f"GraphicsView: Deletion requested for node IDs: {node_entity_ids_to_delete}")
+        #         self.node_deletion_requested.emit(node_entity_ids_to_delete)
+        #         event.accept()
+        #         return  # XXX: Nodes processed, don't process edges in same event for now
+
+        #     if edges_to_delete:
+        #         print(f"GraphicsView: Deletion requested for EdgeItems: {edges_to_delete}")
+        #         self.edge_deletion_requested.emit(edges_to_delete)
+        #         event.accept()
+        #         return
+
+        super().keyPressEvent(event)  # Pass to base class if not handled

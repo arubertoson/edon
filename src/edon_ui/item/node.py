@@ -1,23 +1,43 @@
-from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QPainter, QPen, QPainterPath
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsTextItem, QStyle, QGraphicsObject
+from typing import Any  # For typing.Any
 
-from . import theme
-from .socket import SocketRowItem
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsTextItem, QStyle
+
+
+from edon_ui import theme
+from edon_ui.item.socket import SocketRowItem
+
+# Forward type declaration for edon.node.Node to avoid circular import if it were to import NodeItem
+if False:  # TYPE_CHECKING block
+    from edon.node import Node as EntityNode
 
 
 class NodeItem(QGraphicsObject):
-    """A node in the editor"""
+    """A visual node item in the editor, representing a logical node entity."""
 
     positionChanged = Signal()
 
     # Define a minimum content height for the node, even if no sockets
     MIN_CONTENT_HEIGHT = 20.0
+    MIN_WIDTH_DESIGN = theme.NODE_MIN_WIDTH
+    MIN_HEIGHT_DESIGN = theme.NODE_MIN_HEIGHT
 
-    def __init__(self, title, x, y, width=theme.NODE_MIN_WIDTH, height=theme.NODE_MIN_HEIGHT):
+    def __init__(
+        self,
+        title: str,
+        x: float,
+        y: float,
+        node_entity_id: str,
+        width: float = theme.NODE_MIN_WIDTH,
+        height: float = theme.NODE_MIN_HEIGHT,
+        entity_node_ref: "EntityNode | None" = None,  # Added: reference to the logical node entity
+    ):
         super().__init__()
 
         self.title = title
+        self.node_entity_id = node_entity_id
+        self.entity_node_ref = entity_node_ref  # Store reference to the logical node
         # Store initial width/height params as minimums
         self._min_width_param = width
         self._min_height_param = height
@@ -25,9 +45,9 @@ class NodeItem(QGraphicsObject):
         # self._width and self._height will be calculated and finalized
 
         self.setPos(x, y)
-        self.setFlag(QGraphicsItem.ItemIsMovable)
-        self.setFlag(QGraphicsItem.ItemIsSelectable)
-        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges)  # Important for itemChange() and scene updates
+        self.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)  # For positionChanged signal
         self.setCacheMode(QGraphicsItem.ItemCoordinateCache)
 
         self.title_text_item = QGraphicsTextItem(self.title, self)
@@ -37,31 +57,67 @@ class NodeItem(QGraphicsObject):
         self._input_sockets = []
         self._output_sockets = []
 
-        row_in1 = SocketRowItem(
-            parent=self,
-            is_input=True,
-            socket_identifier="in1",
-            socket_visual_type="integer",
-            label_text="Value A Input",
-        )
-        self._input_sockets.append(row_in1)
-        row_in2 = SocketRowItem(
-            parent=self, is_input=True, socket_identifier="in2", socket_visual_type="float", label_text="Value B"
-        )
-        self._input_sockets.append(row_in2)
-        row_in3 = SocketRowItem(
-            parent=self, is_input=True, socket_identifier="in3", socket_visual_type="default", label_text="Control"
-        )
-        self._input_sockets.append(row_in3)
+        if entity_node_ref:  # If logical node provided, create sockets from it
+            for entity_socket in entity_node_ref.input_sockets.values():
+                socket_row = SocketRowItem(
+                    parent=self,
+                    is_input=True,
+                    socket_entity_name=entity_socket.name,
+                    parent_node_entity_id=self.node_entity_id,
+                    socket_visual_type=self._map_entity_socket_type_to_visual_key(entity_socket.data_type),
+                    label_text=entity_socket.name,
+                )
+                self._input_sockets.append(socket_row)
 
-        row_out1 = SocketRowItem(
-            parent=self,
-            is_input=False,
-            socket_identifier="out1",
-            socket_visual_type="string",
-            label_text="Result Output Long Name",
-        )
-        self._output_sockets.append(row_out1)
+            for entity_socket in entity_node_ref.output_sockets.values():
+                socket_row = SocketRowItem(
+                    parent=self,
+                    is_input=False,
+                    socket_entity_name=entity_socket.name,
+                    parent_node_entity_id=self.node_entity_id,
+                    socket_visual_type=self._map_entity_socket_type_to_visual_key(entity_socket.data_type),
+                    label_text=entity_socket.name,
+                )
+                self._output_sockets.append(socket_row)
+        else:  # XXX: Fallback to hardcoded sockets (temporary, for existing direct instantiations)
+            print(f"Warning: NodeItem '{self.title}' created without entity_node_ref. Using hardcoded sockets.")
+            row_in1 = SocketRowItem(
+                parent=self,
+                is_input=True,
+                socket_entity_name="in1",
+                parent_node_entity_id=self.node_entity_id,
+                socket_visual_type="integer",
+                label_text="Value A Input",
+            )
+            self._input_sockets.append(row_in1)
+            row_in2 = SocketRowItem(
+                parent=self,
+                is_input=True,
+                socket_entity_name="in2",
+                parent_node_entity_id=self.node_entity_id,
+                socket_visual_type="float",
+                label_text="Value B",
+            )
+            self._input_sockets.append(row_in2)
+            row_in3 = SocketRowItem(
+                parent=self,
+                is_input=True,
+                socket_entity_name="in3",
+                parent_node_entity_id=self.node_entity_id,
+                socket_visual_type="default",
+                label_text="Control",
+            )
+            self._input_sockets.append(row_in3)
+
+            row_out1 = SocketRowItem(
+                parent=self,
+                is_input=False,
+                socket_entity_name="out1",
+                parent_node_entity_id=self.node_entity_id,
+                socket_visual_type="string",
+                label_text="Result Output Long Name",
+            )
+            self._output_sockets.append(row_out1)
 
         # --- Calculate Dynamic Sizing (initial calculation) ---
         temp_height = self._calculate_dynamic_height()
@@ -79,6 +135,31 @@ class NodeItem(QGraphicsObject):
         # Update layout of children based on final size
         self.layout_socket_rows()
         self._update_title_text_position()
+
+    def _map_entity_socket_type_to_visual_key(self, entity_data_type: type | Any) -> str:
+        """Maps a Python type from an edon.socket.Socket to a string key for UI theming."""
+        if entity_data_type == int:
+            return "integer"
+        elif entity_data_type == float:
+            return "float"
+        elif entity_data_type == str:
+            return "string"
+        elif entity_data_type == bool:
+            return "boolean"
+        # Add more specific type mappings as needed from your edon.socket.Socket data_types
+        # and theme.SOCKET_FILL_COLORS keys
+        elif entity_data_type == Any:
+            return "trigger"  # Or "any" or "default" depending on your theme preference for Any
+        return "default"  # Fallback for unmapped types
+
+    # Add a helper to get a specific UI socket by its entity name (for GraphUIManager)
+    def get_ui_socket_row_by_name(self, socket_entity_name: str, is_input: bool) -> SocketRowItem | None:
+        socket_list = self._input_sockets if is_input else self._output_sockets
+        for socket_row in socket_list:
+            # SocketRowItem now stores socket_entity_name directly
+            if socket_row.socket_entity_name == socket_entity_name:
+                return socket_row
+        return None
 
     def _calculate_dynamic_height(self) -> float:
         input_rows_height = sum(row.get_required_height() for row in self._input_sockets)

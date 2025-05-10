@@ -1,10 +1,12 @@
 from dataclasses import dataclass, field
+from typing import Any  # Added Tuple, Any for type hint flexibility
 # Optional is no longer needed from typing if we use Node | None
 # from typing import Optional
 
 # Assuming node.py and socket.py are accessible
 from edon.node import Node
 from edon.socket import Socket, SocketDirection
+from .errors import SocketConnectionErrorReason, GraphObjectErrorReason, SocketDisconnectionErrorReason # Import enums
 
 
 @dataclass
@@ -45,62 +47,81 @@ class Graph:
         """Retrieves a node by its ID, returns None if not found."""
         return self.nodes.get(node_id)
 
-    def connect_sockets(self, output_ref: tuple[str, str], input_ref: tuple[str, str]) -> bool:
+    def connect_sockets(
+        self, output_ref: tuple[str, str], input_ref: tuple[str, str]
+    ) -> tuple[bool, SocketConnectionErrorReason | GraphObjectErrorReason | None]:
         """
         Connects an output socket of one node to an input socket of another node.
         output_ref is (node_id, socket_name) for the output socket.
         input_ref is (node_id, socket_name) for the input socket.
 
         Returns:
-            True if the connection was successfully made, False otherwise.
+            A tuple: (bool_success, ReasonEnum | None)
+            ReasonEnum can be SocketConnectionErrorReason or GraphObjectErrorReason.
         """
         output_node_id, output_socket_name = output_ref
         input_node_id, input_socket_name = input_ref
 
         output_node = self.get_node(output_node_id)
-        input_node = self.get_node(input_node_id)
+        if not output_node:
+            return False, GraphObjectErrorReason.NODE_NOT_FOUND
 
-        if not output_node or not input_node:
-            return False
-        if output_node == input_node:
-            return False  # Cannot connect a node to itself this way
+        input_node = self.get_node(input_node_id)
+        if not input_node:
+            return False, GraphObjectErrorReason.NODE_NOT_FOUND
+
+        # It's unusual to connect a node to itself this way, but Socket.can_connect_to handles this with SAME_PARENT_NODE.
+        # If we want a distinct Graph-level error for this, we can add it here, though it might be redundant.
+        # if output_node == input_node:
+        #     return False, GraphObjectErrorReason.SELF_CONNECTION_NOT_ALLOWED_AT_GRAPH_LEVEL (new enum value)
 
         output_socket = output_node.output_sockets.get(output_socket_name)
+        if not output_socket:
+            return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
+        if output_socket.direction != SocketDirection.OUTPUT:
+            return False, GraphObjectErrorReason.SOCKET_DIRECTION_INVALID
+
         input_socket = input_node.input_sockets.get(input_socket_name)
+        if not input_socket:
+            return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
+        if input_socket.direction != SocketDirection.INPUT:
+            return False, GraphObjectErrorReason.SOCKET_DIRECTION_INVALID
 
-        if not output_socket or output_socket.direction != SocketDirection.OUTPUT:
-            return False
-        if not input_socket or input_socket.direction != SocketDirection.INPUT:
-            return False
-
+        # Socket.add_connection now returns a tuple (bool, SocketConnectionErrorReason | None)
         return input_socket.add_connection(output_socket)
 
-    def disconnect_sockets(self, output_ref: tuple[str, str], input_ref: tuple[str, str]) -> bool:
+    def disconnect_sockets(self, output_ref: tuple[str, str], input_ref: tuple[str, str]) -> tuple[bool, SocketDisconnectionErrorReason | GraphObjectErrorReason | None]:
         """
         Disconnects a specific connection between an output socket and an input socket.
         output_ref is (node_id, socket_name) for the output socket.
         input_ref is (node_id, socket_name) for the input socket.
+
+        Returns:
+            A tuple: (bool_success, ReasonEnum | None)
+            ReasonEnum can be SocketDisconnectionErrorReason or GraphObjectErrorReason.
         """
         output_node_id, output_socket_name = output_ref
         input_node_id, input_socket_name = input_ref
 
         output_node = self.get_node(output_node_id)
-        input_node = self.get_node(input_node_id)
+        if not output_node:
+            return False, GraphObjectErrorReason.NODE_NOT_FOUND
 
-        if not output_node or not input_node:
-            return False
+        input_node = self.get_node(input_node_id)
+        if not input_node:
+            return False, GraphObjectErrorReason.NODE_NOT_FOUND
 
         output_socket = output_node.output_sockets.get(output_socket_name)
+        if not output_socket:
+            return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
+        # No direction check needed for disconnect, as long as sockets exist
+
         input_socket = input_node.input_sockets.get(input_socket_name)
+        if not input_socket:
+            return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
+        # No direction check needed for disconnect
 
-        if not output_socket or not input_socket:
-            return False
-
-        # Check if they are actually connected before trying to remove
-        if output_socket not in input_socket.connections:  # or input_socket not in output_socket.connections
-            return False
-
-        # Socket.remove_connection is bidirectional
+        # Socket.remove_connection is bidirectional and now returns (bool, SocketDisconnectionErrorReason | None)
         return input_socket.remove_connection(output_socket)
 
     def __repr__(self) -> str:

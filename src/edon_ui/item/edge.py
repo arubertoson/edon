@@ -2,8 +2,8 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QPainter, QPen, QPainterPath
 from PySide6.QtWidgets import QGraphicsPathItem, QStyleOptionGraphicsItem, QWidget, QGraphicsItem
 
-from .socket import SocketCircleItem
-from . import theme
+from edon_ui import theme
+from edon_ui.item.socket import SocketCircleItem
 
 
 class EdgeItem(QGraphicsPathItem):
@@ -98,6 +98,11 @@ class EdgeItem(QGraphicsPathItem):
         self._target_pos = self._target_socket_item.scenePos()
         self.update_path()
 
+    def clear_target_socket(self):
+        """Clears the target socket of this edge, making its target end floating."""
+        self._target_socket_item = None
+        # self.update_path() # Not strictly necessary here as set_target_pos will follow
+
     def update_path(self):
         """
         Recalculates and sets the QPainterPath for the edge.
@@ -156,8 +161,3 @@ class EdgeItem(QGraphicsPathItem):
         path_rect = self.path().boundingRect()
         padding = self._pen.widthF() * 4
         return path_rect.adjusted(-padding, -padding, padding, padding)
-
-    def __del__(self):
-        """Called when the EdgeItem is being deleted."""
-        # print(f"EdgeItem deleted: {self._source_socket_item.identifier} -> {self._target_socket_item.identifier if self._target_socket_item else 'floating'}")
-        pass 

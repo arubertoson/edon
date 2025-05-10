@@ -1,4 +1,5 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from .graphics_scene import GraphicsScene
@@ -14,7 +15,6 @@ class MainWindow(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setMinimumSize(200, 200)
         self.resize(1000, 800)
-        # self.setStyleSheet("background-color: #333333;")
 
         # Layout and canvas
         layout = QVBoxLayout(self)
@@ -36,16 +36,16 @@ class MainWindow(QWidget):
             if self._resize_edge != Qt.Edges():  # Check if any edge was detected
                 self._resizing = True
                 self.windowHandle().startSystemResize(self._resize_edge)
-                event.accept()
-                return  # Consume the event
+
+                return event.accept()
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton and self._resizing:
             self._resizing = False
             self._resize_edge = Qt.Edges()  # Reset
-            event.accept()
-            return  # Consume the event
+
+            return event.accept()
         super().mouseReleaseEvent(event)
 
     def _detect_edge(self, pos):
@@ -62,6 +62,11 @@ class MainWindow(QWidget):
         if pos.y() >= rect.y() + rect.height() - margin:
             edges |= Qt.BottomEdge
         return edges
+
+    def is_position_on_resize_edge(self, global_pos: QPointF) -> bool:
+        """Checks if a global position is on one of the window's resize edges."""
+        pos_in_local_coords = self.mapFromGlobal(global_pos).toPoint() # Convert QPointF to QPoint
+        return self._detect_edge(pos_in_local_coords) != Qt.Edges()
 
     def contextMenuEvent(self, event):
         """Override to prevent default context menu from interfering"""

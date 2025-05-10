@@ -1,4 +1,3 @@
-
 from PySide6.QtCore import QPoint  # Added Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
@@ -26,7 +25,7 @@ class AppContextMenu(QMenu):
         if self.menu_position is None:
             add_node_action.setEnabled(False)  # Disable if we don't have a position
         else:
-            add_node_action.triggered.connect(lambda: self.view._handle_request_add_new_node(self.menu_position))
+            add_node_action.triggered.connect(lambda: self.view.initiate_add_new_node_request(self.menu_position))
         self.addAction(add_node_action)
 
     # Removed _request_add_new_node and _quit_application as they are now handled by emitting signals
