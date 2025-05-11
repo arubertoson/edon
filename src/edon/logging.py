@@ -1,3 +1,17 @@
+
+"""
+Logging for Edon
+================
+
+This module configures the global Loguru logger for the entire application.
+
+- Loguru's `logger` is a singleton: every `from loguru import logger` in the app refers to the same object.
+- `setup_logging()` configures this global logger (handlers, levels, formats, etc.).
+- Returning `logger` is optional and just for convenience; you can always use `from loguru import logger` anywhere after setup.
+- All logging in the app (core, UI, plugins) should use `from loguru import logger` for consistency.
+
+This ensures all logs are routed through the same system, with unified formatting and output.
+"""
 import os
 import sys
 from datetime import datetime
@@ -5,16 +19,20 @@ from datetime import datetime
 from loguru import logger
 
 
-def setup_logging(debug_mode=False):
-    """Set up Loguru logging for the application"""
+def setup_logging(debug_mode=False) -> None:
+    """
+    Set up Loguru logging for the application.
 
+    This function configures the global Loguru logger singleton. All imports of
+    `from loguru import logger` in the app refer to the same logger object, so
+    configuration here applies everywhere.
+    """
     # Remove default handler
     logger.remove()
 
     # Create logs directory if it doesn't exist
     logs_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
     logs_dir = os.environ.get("EDON_LOGS_DIR", logs_dir)
-
     os.makedirs(logs_dir, exist_ok=True)
 
     # Determine log file name with timestamp
@@ -51,11 +69,8 @@ def setup_logging(debug_mode=False):
             # Don't catch keyboard interrupt
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
-
         logger.opt(exception=(exc_type, exc_value, exc_traceback)).critical("Uncaught exception:")
 
     sys.excepthook = handle_exception
 
     logger.info(f"Logging initialized. Log file: {log_file}")
-
-    return logger
