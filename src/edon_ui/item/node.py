@@ -59,24 +59,26 @@ class NodeItem(QGraphicsObject):
 
         if entity_node_ref:  # If logical node provided, create sockets from it
             for entity_socket in entity_node_ref.input_sockets.values():
+                visual_type = self._map_entity_socket_type_to_visual_key(entity_socket.data_type)
                 socket_row = SocketRowItem(
                     parent=self,
                     is_input=True,
                     socket_entity_name=entity_socket.name,
                     parent_node_entity_id=self.node_entity_id,
-                    socket_visual_type=self._map_entity_socket_type_to_visual_key(entity_socket.data_type),
-                    label_text=entity_socket.name,
+                    socket_visual_type=visual_type,
+                    initial_value=entity_socket.value,
                 )
                 self._input_sockets.append(socket_row)
 
             for entity_socket in entity_node_ref.output_sockets.values():
+                visual_type = self._map_entity_socket_type_to_visual_key(entity_socket.data_type)
                 socket_row = SocketRowItem(
                     parent=self,
                     is_input=False,
                     socket_entity_name=entity_socket.name,
                     parent_node_entity_id=self.node_entity_id,
-                    socket_visual_type=self._map_entity_socket_type_to_visual_key(entity_socket.data_type),
-                    label_text=entity_socket.name,
+                    socket_visual_type=visual_type,
+                    initial_value=entity_socket.value,
                 )
                 self._output_sockets.append(socket_row)
         else:  # XXX: Fallback to hardcoded sockets (temporary, for existing direct instantiations)
@@ -87,7 +89,7 @@ class NodeItem(QGraphicsObject):
                 socket_entity_name="in1",
                 parent_node_entity_id=self.node_entity_id,
                 socket_visual_type="integer",
-                label_text="Value A Input",
+                initial_value=0,
             )
             self._input_sockets.append(row_in1)
             row_in2 = SocketRowItem(
@@ -96,7 +98,7 @@ class NodeItem(QGraphicsObject):
                 socket_entity_name="in2",
                 parent_node_entity_id=self.node_entity_id,
                 socket_visual_type="float",
-                label_text="Value B",
+                initial_value=0.0,
             )
             self._input_sockets.append(row_in2)
             row_in3 = SocketRowItem(
@@ -105,7 +107,7 @@ class NodeItem(QGraphicsObject):
                 socket_entity_name="in3",
                 parent_node_entity_id=self.node_entity_id,
                 socket_visual_type="default",
-                label_text="Control",
+                initial_value=None,
             )
             self._input_sockets.append(row_in3)
 
@@ -115,7 +117,7 @@ class NodeItem(QGraphicsObject):
                 socket_entity_name="out1",
                 parent_node_entity_id=self.node_entity_id,
                 socket_visual_type="string",
-                label_text="Result Output Long Name",
+                initial_value="",
             )
             self._output_sockets.append(row_out1)
 
@@ -192,14 +194,14 @@ class NodeItem(QGraphicsObject):
         """Positions SocketRowItems on the node in a single column."""
         current_row_top_y = theme.NODE_TITLE_HEIGHT + theme.SOCKET_PADDING
 
-        for row_item in self._input_sockets:
-            row_item.setPos(0, current_row_top_y)
-            current_row_top_y += row_item.get_required_height()
-
         # Outputs continue below inputs in the same column
         for row_item in self._output_sockets:
             row_x = self._width - row_item.get_required_width()
             row_item.setPos(row_x, current_row_top_y)
+            current_row_top_y += row_item.get_required_height()
+
+        for row_item in self._input_sockets:
+            row_item.setPos(0, current_row_top_y)
             current_row_top_y += row_item.get_required_height()
 
     def boundingRect(self):

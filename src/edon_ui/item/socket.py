@@ -2,12 +2,16 @@ from loguru import logger
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsObject, QGraphicsRectItem
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from edon_ui import theme
 
+# Import the new widget
+from edon_ui.item.socket_widgets import IntegerSocketWidget, FloatSocketWidget, StringSocketWidget
+
 if TYPE_CHECKING:
     from edon_ui.item.edge import EdgeItem
+
 
 class SocketCircleItem(QGraphicsEllipseItem):
     """Represents the interactive circular connection point of a socket.
@@ -136,6 +140,7 @@ class SocketCircleItem(QGraphicsEllipseItem):
         else:
             super().mouseReleaseEvent(event)  # Pass to parent if not left button
 
+
 class SocketRowItem(QGraphicsObject):
     """Represents a full row for a socket, including its placeholder content and connection circle.
     Its (0,0) is its top-left corner.
@@ -154,34 +159,77 @@ class SocketRowItem(QGraphicsObject):
         socket_entity_name: str,
         parent_node_entity_id: str,
         socket_visual_type: str = "default",
-        label_text: str = "",  # label_text will eventually come from the logical socket
+        # label_text is not used anymore, content comes from widget or placeholder
+        # label_text: str = "",
+        initial_value: Any = None,  # Added to pass initial value to specific widgets
     ):
         super().__init__(parent)
         self.is_input = is_input
-        # Store for potential direct access if needed, though primarily used for child SocketCircleItem
         self.socket_entity_name = socket_entity_name
         self.parent_node_entity_id = parent_node_entity_id
+        self.socket_visual_type = socket_visual_type  # Keep track for circle color
 
-        # Create placeholder content item (was label_item)
-        self.visual_content_item = QGraphicsRectItem(self)
+        # --- Create Content Item ---
+        # Decide which content item to create based on the socket_visual_type
         content_height = self.get_required_height() - self.CONTENT_ITEM_VERTICAL_MARGIN * 2
-        self.visual_content_item.setRect(0, 0, self.CONTENT_ITEM_FIXED_WIDTH, content_height)
-        self.visual_content_item.setBrush(QBrush(QColor(70, 70, 70, 200)))  # Semi-transparent dark gray
-        self.visual_content_item.setPen(QPen(QColor(90, 90, 90), 0.8))  # Slightly lighter border
 
+        if socket_visual_type == "integer":
+            # Pass initial value and identifiers
+            self.visual_content_item = IntegerSocketWidget(
+                initial_value=initial_value if initial_value is not None else 0,
+                parent_node_entity_id=self.parent_node_entity_id,
+                socket_entity_name=self.socket_entity_name,
+                parent=self,
+            )
+            # Connect the widget's valueChanged signal to a handler (optional here,
+            # could be connected by NodeItem or GraphManager later)
+            # self.visual_content_item.valueChanged.connect(self.on_content_value_changed)
+        elif socket_visual_type == "float":
+            # Use the new FloatSocketWidget for float sockets
+            self.visual_content_item = FloatSocketWidget(
+                initial_value=initial_value if initial_value is not None else 0.0,
+                parent_node_entity_id=self.parent_node_entity_id,
+                socket_entity_name=self.socket_entity_name,
+                parent=self,
+            )
+        elif socket_visual_type == "string":
+            # Use the new StringSocketWidget for string sockets
+            self.visual_content_item = StringSocketWidget(
+                initial_value=initial_value if initial_value is not None else "",
+                parent_node_entity_id=self.parent_node_entity_id,
+                socket_entity_name=self.socket_entity_name,
+                parent=self,
+            )
+        else:
+            # Default: Create placeholder content item
+            self.visual_content_item = QGraphicsRectItem(self)
+            self.visual_content_item.setRect(0, 0, self.CONTENT_ITEM_FIXED_WIDTH, content_height)
+            self.visual_content_item.setBrush(QBrush(QColor(70, 70, 70, 200)))  # Semi-transparent dark gray
+            self.visual_content_item.setPen(QPen(QColor(90, 90, 90), 0.8))  # Slightly lighter border
+
+        # Set common properties for the content item
+        # self.visual_content_item.setParentItem(self)  # Ensure parent is set explicitly
+
+        # --- Create Socket Circle ---
         self.socket_circle = SocketCircleItem(
             self,
-            socket_entity_name=self.socket_entity_name,  # Pass new ID info
-            parent_node_entity_id=self.parent_node_entity_id,  # Pass new ID info
-            visual_type_key=socket_visual_type,
+            socket_entity_name=self.socket_entity_name,
+            parent_node_entity_id=self.parent_node_entity_id,
+            visual_type_key=self.socket_visual_type,  # Use the stored type for color
         )
+
         self._layout_socket_row()
+
+    # Optional: Handler if SocketRowItem needs to react directly to value changes
+    # def on_content_value_changed(self, value):
+    #     logger.debug(f"SocketRowItem ({self.parent_node_entity_id}::{self.socket_entity_name}) detected value change: {value}")
+    # Potentially emit another signal or interact with GraphManager
 
     def get_required_height(self) -> float:
         return theme.SOCKET_ROW_HEIGHT
 
     def get_required_width(self) -> float:
-        content_item_w = self.visual_content_item.rect().width()
+        content_item_w = self.visual_content_item.boundingRect().width()
         circle_diameter = self.socket_circle._radius * 2
         return content_item_w + circle_diameter
 
@@ -190,7 +238,7 @@ class SocketRowItem(QGraphicsObject):
         row_center_y = self.get_required_height() / 2
 
         circle_radius = self.socket_circle._radius
-        content_width = self.visual_content_item.rect().width()
+        content_width = self.visual_content_item.boundingRect().width()
 
         if self.is_input:
             # Input: Circle [Space] ContentPlaceholder
@@ -207,3 +255,8 @@ class SocketRowItem(QGraphicsObject):
 
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self.get_required_width(), self.get_required_height())
+
+    def paint(self, painter, option, widget):
+        # If you need custom background or lines for the row itself, draw here.
+        # Children (content item, circle) handle their own painting.
+        pass  # Currently, children paint themselves

@@ -97,3 +97,7 @@ EDGE_Z_VALUE_DRAGGING = 100 # For connections being actively dragged
 EDGE_COLOR_DEFAULT = QColor("#F0F0F0") # Example: Light gray/white
 EDGE_THICKNESS = 2.0
 EDGE_COLOR_SELECTED = QColor("#FF0000") # Example: Bright red for selected
+
+INPUT_BORDER_RADIUS = 4.0
+INPUT_BACKGROUND_COLOR = QColor("#FF000000") # Black
+INPUT_TEXT_COLOR = QColor("#FFFFFFFF") # White
