@@ -91,7 +91,9 @@ class NodeItem(QGraphicsObject):
         current_row_top_y = theme.NODE_TITLE_HEIGHT + theme.SOCKET_PADDING
 
         for row_item in self._output_sockets:
-            row_x = self._width - row_item.get_required_width()
+            # We have to account for the circle's radius when positioning the row to ensure that it
+            # peeks outside the node square.
+            row_x = self._width - (row_item.get_required_width() - row_item.socket_circle._radius)
             row_item.setPos(row_x, current_row_top_y)
             current_row_top_y += row_item.get_required_height()
 

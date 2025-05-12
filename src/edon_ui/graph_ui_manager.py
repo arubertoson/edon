@@ -69,6 +69,23 @@ class GraphUIManager:
         # Call population after initialization
         # self._populate_scene_from_entity_graph() # Caller will typically do this
 
+    def _register_node_maps(self, entity_node: EntityNode, ui_node: NodeItem):
+        node_id = entity_node.id
+        if node_id not in self.entity_graph.nodes:
+            self.entity_graph.add_node(entity_node)
+
+        self.graphics_scene.addNode(ui_node)
+        self.node_map[node_id] = ui_node
+
+        for row in ui_node._input_sockets:
+            self.socket_row_map[(node_id, row.socket_entity_name, True)] = row
+        for row in ui_node._output_sockets:
+            self.socket_row_map[(node_id, row.socket_entity_name, False)] = row
+
+    def _register_edge_map(self, edge_key: EdgeKeyType, edge_item: EdgeItem):
+        self.graphics_scene.addEdge(edge_item)
+        self.edge_map[edge_key] = edge_item
+
     def _clear_scene_for_population(self):
         """Helper to clear the scene before populating it from the model."""
         # Assuming graphics_scene.clear() is the standard Qt method that removes all items.
@@ -88,23 +105,6 @@ class GraphUIManager:
 
         self.node_map.clear()
         self.edge_map.clear()  # Clear edge map as well
-
-    def _register_node_maps(self, entity_node: EntityNode, ui_node: NodeItem):
-        node_id = entity_node.id
-        if node_id not in self.entity_graph.nodes:
-            self.entity_graph.add_node(entity_node)
-
-        self.graphics_scene.addNode(ui_node)
-        self.node_map[node_id] = ui_node
-
-        for row in ui_node._input_sockets:
-            self.socket_row_map[(node_id, row.socket_entity_name, True)] = row
-        for row in ui_node._output_sockets:
-            self.socket_row_map[(node_id, row.socket_entity_name, False)] = row
-
-    def _register_edge_map(self, edge_key: EdgeKeyType, edge_item: EdgeItem):
-        self.graphics_scene.addEdge(edge_item)
-        self.edge_map[edge_key] = edge_item
 
     def _populate_nodes(self):
         """Populates NodeItems in the scene based on the entity_graph."""

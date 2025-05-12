@@ -196,12 +196,13 @@ class SocketRowItem(QGraphicsObject):
             offset_x = circle_radius + theme.SOCKET_HORIZONTAL_PADDING
 
             self.socket_circle.setPos(0, row_center_y)
-            self.socket_widget.setPos(offset_x, theme.SOCKET_ITEM_VERTICAL_MARGIN)
+            self.socket_widget.setPos(offset_x, 0)
         else:
+            # Output: ContentPlaceholder [Space] Circle
             circle_center_x = content_width + theme.SOCKET_HORIZONTAL_PADDING + circle_radius
 
-            self.socket_widget.setPos(0, theme.SOCKET_ITEM_VERTICAL_MARGIN)
             self.socket_circle.setPos(circle_center_x, row_center_y)
+            self.socket_widget.setPos(0, 0)
 
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self.get_required_width(), self.get_required_height())
