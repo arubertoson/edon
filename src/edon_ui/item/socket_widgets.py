@@ -1,6 +1,6 @@
-from PySide6.QtCore import QRectF, Qt, Signal, QRegularExpression
-from PySide6.QtGui import QIntValidator, QRegularExpressionValidator, QDoubleValidator
-from PySide6.QtWidgets import QGraphicsObject, QGraphicsProxyWidget, QHBoxLayout, QLineEdit, QWidget
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QDoubleValidator, QIntValidator
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsProxyWidget, QLineEdit
 
 from edon_ui import theme
 
@@ -213,7 +213,7 @@ class StringSocketWidget(QGraphicsObject):
         self.line_edit.blockSignals(False)
 
 
-# Placeholder for SocketRowItem constants to avoid import error if this file is run standalone or for linting
-class SocketRowItem:
-    CONTENT_ITEM_FIXED_WIDTH = 70.0
-    CONTENT_ITEM_VERTICAL_MARGIN = 4.0
+SOCKET_WIDGET_REGISTRY: dict[type, type[QGraphicsItem]] = {}
+SOCKET_WIDGET_REGISTRY[int] = IntegerSocketWidget
+SOCKET_WIDGET_REGISTRY[float] = FloatSocketWidget
+SOCKET_WIDGET_REGISTRY[str] = StringSocketWidget

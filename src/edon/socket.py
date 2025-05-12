@@ -16,7 +16,7 @@ class SocketDirection(Enum):
 
 
 @dataclass
-class Socket:
+class EntitySocket:
     """
     Represents a connection point on a Node for data input or output.
 
@@ -34,7 +34,7 @@ class Socket:
     direction: SocketDirection
     parent_node: "EntityNode"
     data_type: Type[Any] = Any  # Default to wildcard type
-    connections: list["Socket"] = field(default_factory=list)
+    connections: list["EntitySocket"] = field(default_factory=list)
     value: Any = None
 
     def __post_init__(self):
@@ -53,7 +53,7 @@ class Socket:
         """Checks if the socket is connected to any other socket."""
         return bool(self.connections)
 
-    def can_connect_to(self, other_socket: "Socket") -> tuple[bool, SocketConnectionErrorReason | None]:
+    def can_connect_to(self, other_socket: "EntitySocket") -> tuple[bool, SocketConnectionErrorReason | None]:
         """
         Determines if this socket can connect to another socket.
         Rules:
@@ -113,7 +113,7 @@ class Socket:
 
         return True, None
 
-    def add_connection(self, other_socket: "Socket") -> tuple[bool, SocketConnectionErrorReason | None]:
+    def add_connection(self, other_socket: "EntitySocket") -> tuple[bool, SocketConnectionErrorReason | None]:
         """
         Connects this socket to another socket if compatible.
         Ensures bidirectional connection.
@@ -141,7 +141,7 @@ class Socket:
         logger.debug(f"Socket '{self.name}' successfully added connection to '{other_socket.name}'")
         return True, None
 
-    def remove_connection(self, other_socket: "Socket") -> tuple[bool, SocketDisconnectionErrorReason | None]:
+    def remove_connection(self, other_socket: "EntitySocket") -> tuple[bool, SocketDisconnectionErrorReason | None]:
         """Removes a connection to another socket.
         Returns:
             A tuple: (bool_success, SocketDisconnectionErrorReason | None)

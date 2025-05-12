@@ -1,12 +1,17 @@
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Type, TypeAlias
 
 from loguru import logger
 from PySide6.QtCore import QPointF  # For position handling
+from PySide6.QtWidgets import QGraphicsTextItem
 
 from edon.graph import EntityGraph
 from edon.node import EntityNode
 from edon_ui.item.edge import EdgeItem
 from edon_ui.item.node import NodeItem
+from edon_ui.item.socket_widgets import IntegerSocketWidget, FloatSocketWidget, StringSocketWidget
+from edon_ui.item.socket import SocketRowItem
+from edon_ui import theme
+from edon_ui.item.factory import create_node_item, create_edge_item
 
 if TYPE_CHECKING:
     from edon_ui.graphics_scene import GraphicsScene
@@ -17,6 +22,7 @@ if TYPE_CHECKING:
 
 # Define a type alias for the edge key for clarity
 EdgeKeyType = tuple[tuple[str, str], tuple[str, str]]
+SocketRowMap: TypeAlias = dict[tuple[str, str, bool], SocketRowItem]
 
 
 class GraphUIManager:
@@ -51,6 +57,10 @@ class GraphUIManager:
         # Map for edge entities to EdgeItem instance
         self.edge_map: dict[EdgeKeyType, EdgeItem] = {}
 
+        # Add this to your __init__
+        self.socket_row_map: SocketRowMap = {}
+        # Key: (node_id, socket_name, is_input)
+
         logger.info(
             f"GraphUIManager initialized with entity graph: {self.entity_graph} "
             f"and graphics scene: {self.graphics_scene}"
@@ -79,23 +89,39 @@ class GraphUIManager:
         self.node_map.clear()
         self.edge_map.clear()  # Clear edge map as well
 
+    def _register_node_maps(self, entity_node: EntityNode, ui_node: NodeItem):
+        node_id = entity_node.id
+        if node_id not in self.entity_graph.nodes:
+            self.entity_graph.add_node(entity_node)
+
+        self.graphics_scene.addNode(ui_node)
+        self.node_map[node_id] = ui_node
+
+        for row in ui_node._input_sockets:
+            self.socket_row_map[(node_id, row.socket_entity_name, True)] = row
+        for row in ui_node._output_sockets:
+            self.socket_row_map[(node_id, row.socket_entity_name, False)] = row
+
+    def _register_edge_map(self, edge_key: EdgeKeyType, edge_item: EdgeItem):
+        self.graphics_scene.addEdge(edge_item)
+        self.edge_map[edge_key] = edge_item
+
     def _populate_nodes(self):
         """Populates NodeItems in the scene based on the entity_graph."""
         logger.info(f"Populating UI with {len(self.entity_graph.nodes)} entity nodes.")
         default_x, default_y = 50.0, 50.0
-        spacing_x = NodeItem.MIN_WIDTH_DESIGN + 50.0
-        spacing_y = NodeItem.MIN_HEIGHT_DESIGN + 50.0
+        spacing_x = theme.NODE_MIN_WIDTH + 50.0
+        spacing_y = theme.NODE_MIN_HEIGHT + 50.0
         nodes_per_row = 5
 
         for i, (node_id, entity_node) in enumerate(self.entity_graph.nodes.items()):
             pos_x = default_x + (i % nodes_per_row) * spacing_x
             pos_y = default_y + (i // nodes_per_row) * spacing_y
             logger.debug(f"  Creating NodeItem for '{entity_node.name}' (ID: {node_id}) at ({pos_x}, {pos_y})")
-            ui_node = NodeItem(
-                title=entity_node.name, x=pos_x, y=pos_y, node_entity_id=entity_node.id, entity_node_ref=entity_node
-            )
-            self.graphics_scene.addNode(ui_node)
-            self.node_map[entity_node.id] = ui_node
+
+            ui_node = create_node_item(entity_node, pos_x, pos_y)
+            self._register_node_maps(entity_node, ui_node)
+
         logger.debug("Node population complete.")
 
     def _populate_edges(self):
@@ -103,71 +129,31 @@ class GraphUIManager:
         logger.debug("Populating UI edges...")
         processed_connections: set[EdgeKeyType] = set()
 
-        for entity_node_id, source_entity_node in self.entity_graph.nodes.items():
-            for source_entity_socket_name, source_entity_socket in source_entity_node.output_sockets.items():
+        for _, source_entity_node in self.entity_graph.nodes.items():
+            for _, source_entity_socket in source_entity_node.output_sockets.items():
                 for target_entity_socket in source_entity_socket.connections:
                     edge_key: EdgeKeyType = (
                         (source_entity_node.id, source_entity_socket.name),
                         (target_entity_socket.parent_node.id, target_entity_socket.name),
                     )
-                    canonical_check_key = tuple(
-                        sorted(
-                            [
-                                f"{source_entity_node.id}::{source_entity_socket.name}",
-                                f"{target_entity_socket.parent_node.id}::{target_entity_socket.name}",
-                            ]
-                        )
-                    )
-                    if canonical_check_key in processed_connections:
+                    if edge_key in processed_connections:
                         continue
-                    processed_connections.add(canonical_check_key)
+                    processed_connections.add(edge_key)
 
-                    source_ui_node = self.node_map.get(source_entity_node.id)
-                    target_ui_node = self.node_map.get(target_entity_socket.parent_node.id)
-
-                    if not source_ui_node or not target_ui_node:
-                        logger.warning(
-                            f"  Could not find UI nodes for edge: "
-                            f"{source_entity_node.id}::{source_entity_socket.name} -> "
-                            f"{target_entity_socket.parent_node.id}::{target_entity_socket.name}. Skipping."
-                        )
-                        continue
-
-                    source_ui_socket_row = source_ui_node.get_ui_socket_row_by_name(
-                        source_entity_socket.name, is_input=False
+                    source_ui_socket_row = self.socket_row_map.get(
+                        (source_entity_node.id, source_entity_socket.name, False)
                     )
-                    target_ui_socket_row = target_ui_node.get_ui_socket_row_by_name(
-                        target_entity_socket.name, is_input=True
+                    target_ui_socket_row = self.socket_row_map.get(
+                        (target_entity_socket.parent_node.id, target_entity_socket.name, True)
                     )
-
-                    if not source_ui_socket_row or not target_ui_socket_row:
-                        logger.warning(
-                            f"  Could not find UI socket rows for edge: "
-                            f"{source_entity_node.id}::{source_entity_socket.name} -> "
-                            f"{target_entity_socket.parent_node.id}::{target_entity_socket.name}. Skipping."
-                        )
-                        continue
-
-                    source_socket_circle_item = source_ui_socket_row.socket_circle
-                    target_socket_circle_item = target_ui_socket_row.socket_circle
-
-                    if not source_socket_circle_item or not target_socket_circle_item:
-                        logger.warning(
-                            f"  Could not find UI socket circle items for edge: "
-                            f"{source_entity_node.id}::{source_entity_socket.name} -> "
-                            f"{target_entity_socket.parent_node.id}::{target_entity_socket.name}. Skipping."
-                        )
-                        return
 
                     logger.debug(
                         f"  Creating EdgeItem: {source_entity_node.id}::{source_entity_socket.name} -> "
                         f"{target_entity_socket.parent_node.id}::{target_entity_socket.name}"
                     )
-                    ui_edge = EdgeItem(source_socket_circle_item, target_socket_circle_item.scenePos())
-                    ui_edge.set_target_socket(target_socket_circle_item)
-                    ui_edge.settle_z_value()
-                    self.graphics_scene.addEdge(ui_edge)
-                    self.edge_map[edge_key] = ui_edge
+                    ui_edge = create_edge_item(source_ui_socket_row.socket_circle, target_ui_socket_row.socket_circle)
+                    self._register_edge_map(edge_key, ui_edge)
+
         logger.debug("Edge population complete.")
 
     def _populate_scene_from_entity_graph(self):
@@ -185,38 +171,29 @@ class GraphUIManager:
         node_entity_class: type[EntityNode],
         scene_position: QPointF,
         **node_specific_kwargs,
-    ):
+    ) -> NodeItem | None:
         """
         Handles a UI request to add a new node.
         Creates the entity node, adds it to the entity graph,
         then creates the corresponding UI NodeItem and adds it to the scene at scene_position.
+        Ensures no dangling entity node is left if UI creation fails.
         """
         node_type = node_entity_class.__name__
         logger.info(f"request_add_node of type {node_type} at {scene_position}")
 
         try:
             new_entity_node = node_entity_class(**node_specific_kwargs)
-            self.entity_graph.add_node(new_entity_node)
-        except Exception as e:
-            logger.error(f"Error creating or adding entity node '{node_type}': {e}")
-            return None
-
-        try:
-            new_ui_node = NodeItem(
-                title=new_entity_node.name,
-                x=scene_position.x(),  # Use the requested UI position for the new node
-                y=scene_position.y(),
-                node_entity_id=new_entity_node.id,
-                entity_node_ref=new_entity_node,
+            new_ui_node = create_node_item(
+                new_entity_node, scene_position.x(), scene_position.y(), self.socket_row_map
             )
-            self.graphics_scene.addNode(new_ui_node)
-            self.node_map[new_entity_node.id] = new_ui_node
+            self._register_node_maps(new_entity_node, new_ui_node)
+
             logger.info(
                 f"Successfully created and added node: {new_entity_node.name} (Entity ID: {new_entity_node.id}, UI: {new_ui_node})"
             )
             return new_ui_node
         except Exception as e:
-            logger.error(f"Error creating UI node for entity node '{new_entity_node.name}': {e}")
+            logger.error(f"Error creating or adding node '{node_type}': {e}")
             return None
 
     def request_add_edge(
@@ -260,7 +237,6 @@ class GraphUIManager:
 
         if connection_success:
             logger.debug("  Entity connection successful. Creating UI EdgeItem.")
-
 
             # XXX:
             # node = self.entity_graph.get_node(target_node_id)
@@ -443,7 +419,9 @@ class GraphUIManager:
             for target_socket_name, entity_target_input_socket in getattr(target_node, socket_iter).items():
                 can_connect, _ = entity_target_input_socket.can_connect_to(entity_source_socket)
 
-                logger.debug(f"  Checking if {entity_target_input_socket.parent_node.id} can connect to {entity_source_socket.parent_node.id}")
+                logger.debug(
+                    f"  Checking if {entity_target_input_socket.parent_node.id} can connect to {entity_source_socket.parent_node.id}"
+                )
                 if can_connect:
                     would_cycle = self.entity_graph._has_path(
                         entity_target_input_socket.parent_node.id, entity_source_socket.parent_node.id
@@ -466,7 +444,10 @@ class GraphUIManager:
         )
 
         # we need to check if the edge that we are trying to create already exists.
-        edge_key = ((source_ui_socket.parent_node_entity_id, source_ui_socket.socket_entity_name), (target_ui_socket.parent_node_entity_id, target_ui_socket.socket_entity_name))
+        edge_key = (
+            (source_ui_socket.parent_node_entity_id, source_ui_socket.socket_entity_name),
+            (target_ui_socket.parent_node_entity_id, target_ui_socket.socket_entity_name),
+        )
         if edge_key in self.edge_map:
             logger.warning(f"Edge {edge_key} already exists. Ignoring connection attempt.")
             return
@@ -474,7 +455,9 @@ class GraphUIManager:
         # If the target socket already has an edge, we remove it, input nodes can only have one edge
         # and we decided on behavior that the new edge will replace the old one.
         if target_ui_socket.connected_edges:
-            logger.warning(f"Target socket {target_ui_socket.socket_entity_name} already has edges. Ignoring connection attempt.")
+            logger.warning(
+                f"Target socket {target_ui_socket.socket_entity_name} already has edges. Ignoring connection attempt."
+            )
             edge_to_remove = next(iter(target_ui_socket.connected_edges))
             self.request_remove_edge(edge_to_remove)
 

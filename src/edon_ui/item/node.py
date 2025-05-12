@@ -18,108 +18,38 @@ class NodeItem(QGraphicsObject):
 
     positionChanged = Signal()
 
-    # Define a minimum content height for the node, even if no sockets
-    MIN_CONTENT_HEIGHT = 20.0
-    MIN_WIDTH_DESIGN = theme.NODE_MIN_WIDTH
-    MIN_HEIGHT_DESIGN = theme.NODE_MIN_HEIGHT
-
     def __init__(
         self,
         title: str,
         x: float,
         y: float,
         node_entity_id: str,
+        input_sockets: list[SocketRowItem] | None = None,
+        output_sockets: list[SocketRowItem] | None = None,
         width: float = theme.NODE_MIN_WIDTH,
         height: float = theme.NODE_MIN_HEIGHT,
-        entity_node_ref: "EntityNode | None" = None,  # Added: reference to the logical node entity
     ):
         super().__init__()
 
         self.title = title
         self.node_entity_id = node_entity_id
-        self.entity_node_ref = entity_node_ref  # Store reference to the logical node
-        # Store initial width/height params as minimums
         self._min_width_param = width
         self._min_height_param = height
-
-        # self._width and self._height will be calculated and finalized
 
         self.setPos(x, y)
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)  # For positionChanged signal
+        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.setCacheMode(QGraphicsItem.ItemCoordinateCache)
 
         self.title_text_item = QGraphicsTextItem(self.title, self)
         self.title_text_item.setDefaultTextColor(theme.NODE_TITLE_TEXT)
         self.title_text_item.setFont(theme.FONT_NODE_TITLE)
 
-        self._input_sockets = []
-        self._output_sockets = []
-
-        if entity_node_ref:  # If logical node provided, create sockets from it
-            for entity_socket in entity_node_ref.input_sockets.values():
-                visual_type = self._map_entity_socket_type_to_visual_key(entity_socket.data_type)
-                socket_row = SocketRowItem(
-                    parent=self,
-                    is_input=True,
-                    socket_entity_name=entity_socket.name,
-                    parent_node_entity_id=self.node_entity_id,
-                    socket_visual_type=visual_type,
-                    initial_value=entity_socket.value,
-                )
-                self._input_sockets.append(socket_row)
-
-            for entity_socket in entity_node_ref.output_sockets.values():
-                visual_type = self._map_entity_socket_type_to_visual_key(entity_socket.data_type)
-                socket_row = SocketRowItem(
-                    parent=self,
-                    is_input=False,
-                    socket_entity_name=entity_socket.name,
-                    parent_node_entity_id=self.node_entity_id,
-                    socket_visual_type=visual_type,
-                    initial_value=entity_socket.value,
-                )
-                self._output_sockets.append(socket_row)
-        else:  # XXX: Fallback to hardcoded sockets (temporary, for existing direct instantiations)
-            print(f"Warning: NodeItem '{self.title}' created without entity_node_ref. Using hardcoded sockets.")
-            row_in1 = SocketRowItem(
-                parent=self,
-                is_input=True,
-                socket_entity_name="in1",
-                parent_node_entity_id=self.node_entity_id,
-                socket_visual_type="integer",
-                initial_value=0,
-            )
-            self._input_sockets.append(row_in1)
-            row_in2 = SocketRowItem(
-                parent=self,
-                is_input=True,
-                socket_entity_name="in2",
-                parent_node_entity_id=self.node_entity_id,
-                socket_visual_type="float",
-                initial_value=0.0,
-            )
-            self._input_sockets.append(row_in2)
-            row_in3 = SocketRowItem(
-                parent=self,
-                is_input=True,
-                socket_entity_name="in3",
-                parent_node_entity_id=self.node_entity_id,
-                socket_visual_type="default",
-                initial_value=None,
-            )
-            self._input_sockets.append(row_in3)
-
-            row_out1 = SocketRowItem(
-                parent=self,
-                is_input=False,
-                socket_entity_name="out1",
-                parent_node_entity_id=self.node_entity_id,
-                socket_visual_type="string",
-                initial_value="",
-            )
-            self._output_sockets.append(row_out1)
+        self._input_sockets = input_sockets or []
+        self._output_sockets = output_sockets or []
+        for row in self._input_sockets + self._output_sockets:
+            row.setParentItem(self)
 
         # --- Calculate Dynamic Sizing (initial calculation) ---
         temp_height = self._calculate_dynamic_height()
@@ -129,46 +59,20 @@ class NodeItem(QGraphicsObject):
         self.prepareGeometryChange()
 
         # Set final _width and _height
-        print(f"Setting final _width and _height: {temp_width}, {temp_height}")
         self._height = temp_height
         self._width = temp_width
         # --- End Dynamic Sizing ---
 
-        # Update layout of children based on final size
-        self.layout_socket_rows()
-        self._update_title_text_position()
-
-    def _map_entity_socket_type_to_visual_key(self, entity_data_type: type | Any) -> str:
-        """Maps a Python type from an edon.socket.Socket to a string key for UI theming."""
-        if entity_data_type is int:
-            return "integer"
-        elif entity_data_type is float:
-            return "float"
-        elif entity_data_type is str:
-            return "string"
-        elif entity_data_type is bool:
-            return "boolean"
-        # Add more specific type mappings as needed from your edon.socket.Socket data_types
-        # and theme.SOCKET_FILL_COLORS keys
-        elif entity_data_type is Any:
-            return "trigger"  # Or "any" or "default" depending on your theme preference for Any
-        return "default"  # Fallback for unmapped types
-
-    # Add a helper to get a specific UI socket by its entity name (for GraphUIManager)
-    def get_ui_socket_row_by_name(self, socket_entity_name: str, is_input: bool) -> SocketRowItem | None:
-        socket_list = self._input_sockets if is_input else self._output_sockets
-        for socket_row in socket_list:
-            # SocketRowItem now stores socket_entity_name directly
-            if socket_row.socket_entity_name == socket_entity_name:
-                return socket_row
-        return None
+        self._layout_socket_rows()
 
     def _calculate_dynamic_height(self) -> float:
         input_rows_height = sum(row.get_required_height() for row in self._input_sockets)
         output_rows_height = sum(row.get_required_height() for row in self._output_sockets)
         total_socket_rows_height = input_rows_height + output_rows_height
-        content_area_height = (theme.SOCKET_PADDING * 2) + max(total_socket_rows_height, self.MIN_CONTENT_HEIGHT)
+
+        content_area_height = (theme.SOCKET_PADDING * 2) + max(total_socket_rows_height, theme.NODE_MIN_CONTENT_HEIGHT)
         calculated_total_height = theme.NODE_TITLE_HEIGHT + content_area_height
+
         return max(self._min_height_param, calculated_total_height)
 
     def _calculate_dynamic_width(self) -> float:
@@ -180,21 +84,12 @@ class NodeItem(QGraphicsObject):
         min_content_width = theme.NODE_MIN_WIDTH - (theme.NODE_HORIZONTAL_PADDING * 2)
         calculated_internal_content_width = max(max_row_w, min_content_width)
         calculated_total_width = calculated_internal_content_width + (theme.NODE_HORIZONTAL_PADDING * 2)
+
         return max(self._min_width_param, calculated_total_width)
 
-    def _update_title_text_position(self):
-        """Centers the title text item within the title bar."""
-        title_text_width = self.title_text_item.boundingRect().width()
-        self.title_text_item.setPos(
-            (self._width - title_text_width) / 2,
-            (theme.NODE_TITLE_HEIGHT - self.title_text_item.boundingRect().height()) / 2,
-        )
-
-    def layout_socket_rows(self):
-        """Positions SocketRowItems on the node in a single column."""
+    def _layout_socket_rows(self):
         current_row_top_y = theme.NODE_TITLE_HEIGHT + theme.SOCKET_PADDING
 
-        # Outputs continue below inputs in the same column
         for row_item in self._output_sockets:
             row_x = self._width - row_item.get_required_width()
             row_item.setPos(row_x, current_row_top_y)
@@ -205,13 +100,10 @@ class NodeItem(QGraphicsObject):
             current_row_top_y += row_item.get_required_height()
 
     def boundingRect(self):
-        # Define the bounding rectangle of the node
         return QRectF(0, 0, self._width, self._height)
 
     def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionChange:
-            pass
-        elif change == QGraphicsItem.ItemPositionHasChanged:
+        if change == QGraphicsItem.ItemPositionHasChanged:
             self.positionChanged.emit()
         return super().itemChange(change, value)
 
@@ -287,15 +179,9 @@ class NodeItem(QGraphicsObject):
 
         # Center the QGraphicsTextItem within the title bar rect
         title_text_rect = self.title_text_item.boundingRect()
-        title_text_x = (title_bar_rect.width() - title_text_rect.width()) / 2
+        title_text_x = (self._width - title_text_rect.width()) / 2
         title_text_y = (theme.NODE_TITLE_HEIGHT - title_text_rect.height()) / 2
         self.title_text_item.setPos(title_text_x, title_text_y)
-
-        # Sockets are child QGraphicsItems, Qt handles calling their paint method.
-        # We just ensure they are created and positioned correctly.
-        # If specific drawing related to sockets needs to happen in NodeItem's paint,
-        # for example, lines from socket to node edge, it would go here.
-        # For now, socket positioning in __init__ and their own paint methods suffice.
 
     def content_rect(self) -> QRectF:
         """Returns the rectangle for the content area, below the title bar, with padding."""

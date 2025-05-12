@@ -33,7 +33,7 @@ NODE_MIN_HEIGHT = 60.0         # Minimum overall height for a node
 
 NODE_TITLE_BACKGROUND = COLOR_BACKGROUND_DARK.darker(200)
 NODE_TITLE_TEXT = COLOR_TEXT_LIGHT
-NODE_TITLE_HEIGHT = 35.0 # Adjusted to look like image
+NODE_TITLE_HEIGHT = 25.0 # Adjusted to look like image
 
 NODE_CONTENT_BACKGROUND = COLOR_BACKGROUND_LIGHT.lighter(110) # Background for input fields
 
@@ -44,7 +44,7 @@ NODE_PORT_RADIUS = 7.0
 
 # --- Fonts (matching Segoe UI look if available, otherwise common sans-serif) ---
 FONT_FAMILY_UI = "Segoe UI"
-FONT_NODE_TITLE = QFont(FONT_FAMILY_UI, 10, QFont.Weight.DemiBold)
+FONT_NODE_TITLE = QFont(FONT_FAMILY_UI, 8, QFont.Weight.DemiBold)
 FONT_NODE_LABEL = QFont(FONT_FAMILY_UI, 9)
 FONT_NODE_INPUT = QFont(FONT_FAMILY_UI, 9)
 FONT_NODE_FOOTER = QFont(FONT_FAMILY_UI, 9)
@@ -101,3 +101,10 @@ EDGE_COLOR_SELECTED = QColor("#FF0000") # Example: Bright red for selected
 INPUT_BORDER_RADIUS = 4.0
 INPUT_BACKGROUND_COLOR = QColor("#FF000000") # Black
 INPUT_TEXT_COLOR = QColor("#FFFFFFFF") # White
+
+# Add these lines (if not already present)
+SOCKET_HORIZONTAL_PADDING = 5.0
+SOCKET_CIRCLE_SPACING = 8.0
+SOCKET_ITEM_FIXED_WIDTH = 70.0
+SOCKET_ITEM_VERTICAL_MARGIN = 4.0
+NODE_MIN_CONTENT_HEIGHT = 20.0

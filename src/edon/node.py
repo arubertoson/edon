@@ -3,7 +3,15 @@ from dataclasses import dataclass, field
 from typing import Any, Type
 
 # Assuming socket.py is in the same directory or accessible in PYTHONPATH
-from edon.socket import Socket, SocketDirection
+from edon.socket import EntitySocket, SocketDirection
+
+
+@dataclass
+class SocketDef:
+    name: str
+    type: Type[Any]
+    default: Any = None
+    label: str = ""
 
 
 @dataclass
@@ -54,8 +62,8 @@ class EntityNode:
 
     # --- Internal Attributes ---
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    input_sockets: dict[str, Socket] = field(default_factory=dict, init=False)
-    output_sockets: dict[str, Socket] = field(default_factory=dict, init=False)
+    input_sockets: dict[str, EntitySocket] = field(default_factory=dict, init=False)
+    output_sockets: dict[str, EntitySocket] = field(default_factory=dict, init=False)
 
     def __post_init__(self):
         """Initializes defaults and sockets based on instance or class attributes."""
@@ -82,7 +90,7 @@ class EntityNode:
 
     def _add_socket_internal(
         self, name: str, direction: SocketDirection, data_type: Type[Any], value: Any = None
-    ) -> Socket:
+    ) -> EntitySocket:
         """
         Internal method to create and add a socket to the node.
         The `parent_node` for the socket is automatically set to this node instance.
@@ -90,7 +98,7 @@ class EntityNode:
         if name in self.input_sockets or name in self.output_sockets:
             raise ValueError(f"Socket with name '{name}' already exists on node '{self.name}'.")
 
-        socket_instance = Socket(name=name, direction=direction, parent_node=self, data_type=data_type, value=value)
+        socket_instance = EntitySocket(name=name, direction=direction, parent_node=self, data_type=data_type, value=value)
         if direction == SocketDirection.INPUT:
             self.input_sockets[name] = socket_instance
         else:

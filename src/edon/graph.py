@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 # from typing import Optional
 # Assuming node.py and socket.py are accessible
 from edon.node import EntityNode
-from edon.socket import Socket, SocketDirection
+from edon.socket import EntitySocket, SocketDirection
 
 from .errors import GraphObjectErrorReason, SocketConnectionErrorReason, SocketDisconnectionErrorReason  # Import enums
 
@@ -34,7 +34,7 @@ class EntityGraph:
         if not node_to_remove:
             return
 
-        all_sockets_to_disconnect: list[Socket] = []
+        all_sockets_to_disconnect: list[EntitySocket] = []
         all_sockets_to_disconnect.extend(node_to_remove.input_sockets.values())
         all_sockets_to_disconnect.extend(node_to_remove.output_sockets.values())
 
