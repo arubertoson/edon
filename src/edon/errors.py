@@ -15,6 +15,7 @@ class SocketConnectionErrorReason(Enum):
     # General/Other
     TARGET_SOCKET_INVALID = auto()  # Placeholder if other_socket itself is None or invalid
     UNKNOWN = auto()  # Generic fallback
+    CYCLE_DETECTED = auto()
 
 
 class GraphObjectErrorReason(Enum):

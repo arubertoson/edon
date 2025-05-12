@@ -3,23 +3,23 @@ from dataclasses import dataclass, field
 # Optional is no longer needed from typing if we use Node | None
 # from typing import Optional
 # Assuming node.py and socket.py are accessible
-from edon.node import Node
+from edon.node import EntityNode
 from edon.socket import Socket, SocketDirection
 
 from .errors import GraphObjectErrorReason, SocketConnectionErrorReason, SocketDisconnectionErrorReason  # Import enums
 
 
 @dataclass
-class Graph:
+class EntityGraph:
     """
     Manages a collection of nodes and their interconnections.
     """
 
-    nodes: dict[str, Node] = field(default_factory=dict)  # Modern dict
+    nodes: dict[str, EntityNode] = field(default_factory=dict)  # Modern dict
 
-    def add_node(self, node: Node):
+    def add_node(self, node: EntityNode):
         """Adds a node to the graph."""
-        if not isinstance(node, Node):
+        if not isinstance(node, EntityNode):
             raise TypeError("Only Node instances can be added to the graph.")
         if node.id in self.nodes:
             raise ValueError(f"Node with ID '{node.id}' already exists in the graph.")
@@ -43,9 +43,33 @@ class Graph:
             for other_sock in connected_sockets_copy:
                 sock_to_clear.remove_connection(other_sock)
 
-    def get_node(self, node_id: str) -> Node | None:  # Modern optional type
+    def get_node(self, node_id: str) -> EntityNode | None:  # Modern optional type
         """Retrieves a node by its ID, returns None if not found."""
         return self.nodes.get(node_id)
+
+    def _has_path(self, start_node_id: str, end_node_id: str) -> bool:
+        """
+        Returns True if end_node_id is reachable from start_node_id by following output socket connections.
+        """
+        visited = set()
+        stack = [start_node_id]
+        while stack:
+            current_id = stack.pop()
+            if current_id == end_node_id:
+                return True
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+            node = self.get_node(current_id)
+            if not node:
+                continue
+            for output_socket in node.output_sockets.values():
+                for connected_input_socket in output_socket.connections:
+                    # Traverse to the parent node of the connected input socket
+                    next_node = connected_input_socket.parent_node
+                    if next_node and next_node.id not in visited:
+                        stack.append(next_node.id)
+        return False
 
     def connect_sockets(
         self, output_ref: tuple[str, str], input_ref: tuple[str, str]
@@ -70,10 +94,9 @@ class Graph:
         if not input_node:
             return False, GraphObjectErrorReason.NODE_NOT_FOUND
 
-        # It's unusual to connect a node to itself this way, but Socket.can_connect_to handles this with SAME_PARENT_NODE.
-        # If we want a distinct Graph-level error for this, we can add it here, though it might be redundant.
-        # if output_node == input_node:
-        #     return False, GraphObjectErrorReason.SELF_CONNECTION_NOT_ALLOWED_AT_GRAPH_LEVEL (new enum value)
+        # Cycle prevention: check if connecting output_node -> input_node would create a cycle
+        if self._has_path(input_node_id, output_node_id):
+            return False, SocketConnectionErrorReason.CYCLE_DETECTED
 
         output_socket = output_node.output_sockets.get(output_socket_name)
         if not output_socket:

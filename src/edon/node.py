@@ -7,7 +7,7 @@ from edon.socket import Socket, SocketDirection
 
 
 @dataclass
-class Node:
+class EntityNode:
     """
     Represents a single node in the node editor graph.
     Nodes manage their input and output sockets. Subclasses will define
@@ -26,8 +26,10 @@ class Node:
         output_sockets: Dictionary of output Socket objects, keyed by name, created from definitions.
     """
 
-    name: str
-    node_type: str
+    name: str = field(default="")
+    node_type: str = field(default="")
+
+    # Optional fields with defaults
     input_socket_definitions: list[tuple[str, Type[Any]]] = field(default_factory=list)
     output_socket_definitions: list[tuple[str, Type[Any]]] = field(default_factory=list)
 
@@ -37,6 +39,11 @@ class Node:
 
     def __post_init__(self):
         """Initializes sockets based on definitions."""
+        if not self.name:
+            self.name = self.__class__.__name__
+        if not self.node_type:
+            self.node_type = self.__class__.__name__.lower()
+
         for sock_name, sock_type in self.input_socket_definitions:
             self._add_socket_internal(sock_name, SocketDirection.INPUT, sock_type)
         for sock_name, sock_type in self.output_socket_definitions:

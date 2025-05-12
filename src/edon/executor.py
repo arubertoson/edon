@@ -1,7 +1,7 @@
 from collections import deque
 
-from .node import Node  # Assuming Node is in the same package
-from .graph import Graph  # For type hinting the graph parameter
+from .node import EntityNode  # Assuming Node is in the same package
+from .graph import EntityGraph  # For type hinting the graph parameter
 
 
 class ExecutionEngine:
@@ -10,7 +10,7 @@ class ExecutionEngine:
     and node processing.
     """
 
-    def _topological_sort(self, graph: Graph) -> list[Node]:
+    def _topological_sort(self, graph: EntityGraph) -> list[EntityNode]:
         """
         Performs a topological sort of the nodes in the graph.
         Returns a list of nodes in execution order.
@@ -29,7 +29,7 @@ class ExecutionEngine:
         # Initialize queue with all nodes having an in-degree of 0
         queue = deque([node_id for node_id, degree in in_degree.items() if degree == 0])
 
-        execution_order: list[Node] = []
+        execution_order: list[EntityNode] = []
 
         while queue:
             u_node_id = queue.popleft()
@@ -80,7 +80,7 @@ class ExecutionEngine:
 
         return execution_order
 
-    def execute_graph(self, graph: Graph):
+    def execute_graph(self, graph: EntityGraph):
         """
         Executes the provided graph.
         1. Performs a topological sort.

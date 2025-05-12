@@ -44,7 +44,7 @@ class EdgeItem(QGraphicsPathItem):
 
         self._settled_z_value = theme.EDGE_Z_VALUE
         self.setZValue(theme.EDGE_Z_VALUE_DRAGGING)
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
 
         self._source_socket_item: SocketCircleItem = source_socket_item
         self._target_socket_item: SocketCircleItem | None = None
@@ -53,9 +53,9 @@ class EdgeItem(QGraphicsPathItem):
         self._target_pos: QPointF = initial_target_pos
 
         self._pen = QPen(theme.EDGE_COLOR_DEFAULT, theme.EDGE_THICKNESS)
-        self._pen.setCapStyle(Qt.RoundCap)
+        self._pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         self._pen_selected = QPen(theme.EDGE_COLOR_SELECTED, theme.EDGE_THICKNESS)
-        self._pen_selected.setCapStyle(Qt.RoundCap)
+        self._pen_selected.setCapStyle(Qt.PenCapStyle.RoundCap)
 
         self.update_path()
 
@@ -72,7 +72,7 @@ class EdgeItem(QGraphicsPathItem):
         return self._source_socket_item
 
     @property
-    def target_socket_item(self) -> SocketCircleItem | None:
+    def target_socket_item(self) -> SocketCircleItem:
         """The target `SocketCircleItem` of this edge, or None if not yet connected."""
         return self._target_socket_item
 
@@ -147,7 +147,7 @@ class EdgeItem(QGraphicsPathItem):
         else:
             pen = self._pen
 
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(pen)
         painter.drawPath(self.path())
 

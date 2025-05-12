@@ -10,7 +10,7 @@ from edon_ui.item.socket import SocketRowItem
 
 # Forward type declaration for edon.node.Node to avoid circular import if it were to import NodeItem
 if TYPE_CHECKING:
-    from edon.node import Node as EntityNode
+    from edon.node import EntityNode as EntityNode
 
 
 class NodeItem(QGraphicsObject):

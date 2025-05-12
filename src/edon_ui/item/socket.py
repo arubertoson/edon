@@ -1,11 +1,15 @@
-from PySide6.QtCore import QRectF, Qt  # Qt needed for painter.setPen(Qt.red) if debugging
-from PySide6.QtGui import QPainter, QPen, QBrush, QColor  # QColor not directly used if only using theme
-from PySide6.QtWidgets import QGraphicsObject, QGraphicsRectItem
+from loguru import logger
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen
+from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsObject, QGraphicsRectItem
+from typing import TYPE_CHECKING
 
 from edon_ui import theme
 
+if TYPE_CHECKING:
+    from edon_ui.item.edge import EdgeItem
 
-class SocketCircleItem(QGraphicsObject):
+class SocketCircleItem(QGraphicsEllipseItem):
     """Represents the interactive circular connection point of a socket.
     Its (0,0) is its visual and logical center.
     It is linked to a logical socket entity via its name and parent node entity ID.
@@ -14,89 +18,112 @@ class SocketCircleItem(QGraphicsObject):
     def __init__(
         self,
         parent,
-        is_input: bool,
         socket_entity_name: str,
         parent_node_entity_id: str,
         visual_type_key: str = "default",
     ):
-        super().__init__(parent)
+        self._radius = theme.SOCKET_RADIUS
+        ellipse_rect = QRectF(-self._radius, -self._radius, 2 * self._radius, 2 * self._radius)
+        super().__init__(ellipse_rect, parent)
 
-        self.is_input = is_input
         self.socket_entity_name = socket_entity_name
         self.parent_node_entity_id = parent_node_entity_id
         self.visual_type_key = visual_type_key
 
-        self._radius = theme.SOCKET_RADIUS
         self.setAcceptHoverEvents(True)
+        # self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        # self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsScenePositionChanges, True)
 
         self._original_fill_color = theme.SOCKET_FILL_COLORS.get(self.visual_type_key, theme.SOCKET_FILL_COLOR_DEFAULT)
-        # General hover makes the color lighter
         self._hover_fill_color = self._original_fill_color.lighter(150)
-        # Color for when this socket is a valid drop target during a connection drag
-        self._drop_target_highlight_color = QColor(Qt.green).lighter(120)  # Placeholder: bright green
+        self._drop_target_highlight_color = QColor(Qt.GlobalColor.green).lighter(120)  # Placeholder: bright green
 
-        self._current_fill_color = self._original_fill_color
         self._is_hovered = False
         self._is_drop_target = False
+        self._is_disabled = False
+        self._connected_edges: set["EdgeItem"] = set()  # Set of EdgeItems connected to this socket
 
-    def _update_current_fill_color(self):
+        pen = QPen(theme.SOCKET_BORDER_COLOR)
+        pen.setWidthF(1.0)
+        self.setPen(pen)
+        self.setBrush(QBrush(self._original_fill_color))
+
+    def add_edge(self, edge_item):
+        self._connected_edges.add(edge_item)
+
+    def remove_edge(self, edge_item):
+        self._connected_edges.discard(edge_item)
+
+    @property
+    def connected_edges(self) -> set["EdgeItem"]:
+        return self._connected_edges
+
+    @property
+    def is_input(self) -> bool:
+        """Get the is_input flag from the parent SocketRowItem"""
+        if self.parentItem():
+            return self.parentItem().is_input
+        return False
+
+    def _update_brush(self):
         if self._is_drop_target:
-            self._current_fill_color = self._drop_target_highlight_color
+            self.setBrush(QBrush(self._drop_target_highlight_color))
         elif self._is_hovered:
-            self._current_fill_color = self._hover_fill_color
+            self.setBrush(QBrush(self._hover_fill_color))
         else:
-            self._current_fill_color = self._original_fill_color
+            self.setBrush(QBrush(self._original_fill_color))
         self.update()
 
     def set_drop_target_highlight(self, highlight: bool):
+        if self._is_disabled:
+            return
+
         if self._is_drop_target != highlight:
             self._is_drop_target = highlight
-            self._update_current_fill_color()
+            self._update_brush()
 
-    def boundingRect(self) -> QRectF:
-        return QRectF(-self._radius, -self._radius, 2 * self._radius, 2 * self._radius)
-
-    def paint(self, painter: QPainter, option, widget=None) -> None:
-        painter.setRenderHint(QPainter.Antialiasing)
-        pen = QPen(theme.SOCKET_BORDER_COLOR)
-        pen.setWidthF(1.0)
-        painter.setPen(pen)
-        painter.setBrush(QBrush(self._current_fill_color))
-        painter.drawEllipse(self.boundingRect())
+    def set_disabled_visual(self, disabled: bool):
+        """
+        Visually indicate that this socket is not a valid drop target (e.g., gray out).
+        """
+        logger.debug(f"Setting socket {self.socket_entity_name} disabled state to {disabled}")
+        self._is_disabled = disabled
+        self.setOpacity(0.3 if disabled else 1.0)
+        self.update()
 
     def hoverEnterEvent(self, event):
-        self._is_hovered = True
-        self._update_current_fill_color()
+        if not self._is_disabled:
+            self._is_hovered = True
+            self._update_brush()
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
-        self._is_hovered = False
-        self._update_current_fill_color()
+        if not self._is_disabled:
+            self._is_hovered = False
+            self._update_brush()
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            # Use new identifiers for logging
-            print(
+        if event.button() == Qt.MouseButton.LeftButton:
+            logger.debug(
                 f"SocketCircleItem '{self.parent_node_entity_id}::{self.socket_entity_name}' pressed at {event.scenePos()}"
             )
-            if self.scene():
-                self.scene().start_edge_drag(self, event.scenePos())
+
+            self.scene().start_edge_drag(self, event.scenePos())
             event.accept()
         else:
-            super().mousePressEvent(event)  # Pass to parent if not left button
+            super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         if self.scene().is_dragging_edge():
             self.scene().update_dragged_edge(event.scenePos())
             event.accept()
         else:
-            super().mouseMoveEvent(event)  # Pass to parent if not dragging
+            super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            # Use new identifiers for logging
-            print(
+        if event.button() == Qt.MouseButton.LeftButton:
+            logger.debug(
                 f"SocketCircleItem '{self.parent_node_entity_id}::{self.socket_entity_name}' released at {event.scenePos()}"
             )
             if self.scene().is_dragging_edge():
@@ -108,7 +135,6 @@ class SocketCircleItem(QGraphicsObject):
                 super().mouseReleaseEvent(event)
         else:
             super().mouseReleaseEvent(event)  # Pass to parent if not left button
-
 
 class SocketRowItem(QGraphicsObject):
     """Represents a full row for a socket, including its placeholder content and connection circle.
@@ -145,7 +171,6 @@ class SocketRowItem(QGraphicsObject):
 
         self.socket_circle = SocketCircleItem(
             self,
-            is_input=self.is_input,
             socket_entity_name=self.socket_entity_name,  # Pass new ID info
             parent_node_entity_id=self.parent_node_entity_id,  # Pass new ID info
             visual_type_key=socket_visual_type,
@@ -182,9 +207,3 @@ class SocketRowItem(QGraphicsObject):
 
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self.get_required_width(), self.get_required_height())
-
-    def paint(self, painter: QPainter, option, widget=None):
-        # Optionally draw the bounding rect of the SocketRowItem itself for debugging
-        # painter.setPen(QPen(Qt.yellow, 0.5))
-        # painter.drawRect(self.boundingRect())
-        pass  # Child items (placeholder rect, circle) handle their own painting
