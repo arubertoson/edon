@@ -74,13 +74,28 @@ SOCKET_FILL_COLOR_DEFAULT = QColor("#FFAAAAAA") # Light Gray
 
 # Colors per socket type (using string keys)
 SOCKET_FILL_COLORS = {
-    "default": QColor("#FFAAAAAA"), # Light Gray
-    "integer": QColor("#FF007ACC"),  # Blue
-    "float": QColor("#FF00A000"),   # Green
-    "string": QColor("#FFFFA500"),  # Orange
-    "boolean": QColor("#FFD60000"), # Red
-    "trigger": QColor("#FFFFFFFF"),  # White (often used for execution flow)
-    # Add more as needed
+    "default": QColor("#FFAAAAAA"),   # Light Gray
+    "number": QColor("#FF007ACC"),    # Blue
+    "integer": QColor("#FF0055FF"),   # Bright Blue
+    "float": QColor("#FF00BFFF"),     # Sky Blue
+    "string": QColor("#FFFFA500"),    # Orange
+    "boolean": QColor("#FFD60000"),   # Red
+    "vector": QColor("#FF00C853"),    # Green
+    "color": QColor("#FFFF4081"),     # Pink
+    "matrix": QColor("#FF8D6E63"),    # Brown
+    "image": QColor("#FF7C4DFF"),     # Purple
+    "audio": QColor("#FF00B8D4"),     # Cyan
+    "object": QColor("#FFB0BEC5"),    # Gray Blue
+    "event": QColor("#FFFFFFFF"),     # White
+    "enum": QColor("#FF9E9D24"),      # Olive
+    "array": QColor("#FF6D4C41"),     # Deep Brown
+    "resource": QColor("#FF8BC34A"),  # Light Green
+    "time": QColor("#FFFFEB3B"),      # Yellow
+    "angle": QColor("#FFFF7043"),     # Deep Orange
+    "curve": QColor("#FFAB47BC"),     # Violet
+    "path": QColor("#FF607D8B"),      # Blue Gray
+    "data": QColor("#FF263238"),      # Dark Gray
+    "custom": QColor("#FF00E676"),    # Neon Green
 }
 
 # Socket Properties

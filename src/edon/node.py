@@ -11,7 +11,7 @@ class SocketDef:
     name: str
     type: Type[Any]
     default: Any = None
-    label: str = ""
+    visual_type_key: str = "default"
 
 
 @dataclass
@@ -82,11 +82,11 @@ class EntityNode:
 
         # --- Create Sockets ---
         # Iterate using the final resolved definitions determined above.
-        for sock_name, sock_type in input_defs:
+        for sock_def in input_defs:
             # TODO: Consider extending definition tuple: (name, type, default_value) for sockets?
-            self._add_socket_internal(sock_name, SocketDirection.INPUT, sock_type)
-        for sock_name, sock_type in output_defs:
-            self._add_socket_internal(sock_name, SocketDirection.OUTPUT, sock_type)
+            self._add_socket_internal(sock_def.name, SocketDirection.INPUT, sock_def.type, sock_def.default)
+        for sock_def in output_defs:
+            self._add_socket_internal(sock_def.name, SocketDirection.OUTPUT, sock_def.type, sock_def.default)
 
     def _add_socket_internal(
         self, name: str, direction: SocketDirection, data_type: Type[Any], value: Any = None
@@ -98,7 +98,9 @@ class EntityNode:
         if name in self.input_sockets or name in self.output_sockets:
             raise ValueError(f"Socket with name '{name}' already exists on node '{self.name}'.")
 
-        socket_instance = EntitySocket(name=name, direction=direction, parent_node=self, data_type=data_type, value=value)
+        socket_instance = EntitySocket(
+            name=name, direction=direction, parent_node=self, data_type=data_type, value=value
+        )
         if direction == SocketDirection.INPUT:
             self.input_sockets[name] = socket_instance
         else:

@@ -2,8 +2,8 @@ from loguru import logger
 
 from edon.graph import EntityGraph
 from edon.logging import setup_logging  # Import setup_logging
-from edon.node import EntityNode
-from edon_ui.main import main as edon_main
+from edon.node import EntityNode, SocketDef
+from edon_ui.app import EdonApplication  # Import EdonApplication instead of main
 
 # --- Define custom nodes declaratively ---
 
@@ -13,7 +13,7 @@ class IntegerNode(EntityNode):
 
     # Class attributes define the node's properties and sockets
     node_type = "math.int"
-    output_socket_definitions = [("value", int)]
+    output_socket_definitions = [SocketDef(name="value", type=int, visual_type_key="number")]
 
     def process(self):
         return self.output_sockets["value"].value
@@ -24,7 +24,7 @@ class FloatNode(EntityNode):
 
     # Class attributes define the node's properties and sockets
     node_type = "math.float"
-    output_socket_definitions = [("value", float)]
+    output_socket_definitions = [SocketDef(name="value", type=float, visual_type_key="number")]
 
     def process(self):
         return self.output_sockets["value"].value
@@ -35,7 +35,7 @@ class StringNode(EntityNode):
 
     # Class attributes define the node's properties and sockets
     node_type = "string.text"
-    output_socket_definitions = [("value", str)]
+    output_socket_definitions = [SocketDef(name="value", type=str, visual_type_key="string")]
 
     def process(self):
         return self.output_sockets["value"].value
@@ -45,8 +45,11 @@ class AddNode(EntityNode):
     """A node that adds two integer inputs and outputs the result (declaratively)."""
 
     node_type = "math.add"
-    input_socket_definitions = [("a", int), ("b", int)]
-    output_socket_definitions = [("result", int)]
+    input_socket_definitions = [
+        SocketDef(name="a", type=int, visual_type_key="number"),
+        SocketDef(name="b", type=int, visual_type_key="number"),
+    ]
+    output_socket_definitions = [SocketDef(name="result", type=int, visual_type_key="number")]
 
     def process(self):
         # Access sockets created by the base class based on definitions
@@ -80,8 +83,11 @@ class MultiplyNode(EntityNode):
     """A node that multiplies a float and an integer and outputs the result (declaratively)."""
 
     node_type = "math.multiply"
-    input_socket_definitions = [("a", float), ("b", int)]
-    output_socket_definitions = [("result", float)]
+    input_socket_definitions = [
+        SocketDef(name="a", type=float, visual_type_key="number"),
+        SocketDef(name="b", type=int, visual_type_key="number"),
+    ]
+    output_socket_definitions = [SocketDef(name="result", type=float)]
 
     def process(self):
         # Access sockets created by the base class based on definitions
@@ -113,8 +119,11 @@ class ConcatNode(EntityNode):
     """A node that concatenates two string inputs and outputs the result (declaratively)."""
 
     node_type = "string.concat"
-    input_socket_definitions = [("a", str), ("b", str)]
-    output_socket_definitions = [("result", str)]
+    input_socket_definitions = [
+        SocketDef(name="a", type=str, visual_type_key="string"),
+        SocketDef(name="b", type=str, visual_type_key="string"),
+    ]
+    output_socket_definitions = [SocketDef(name="result", type=str, visual_type_key="string")]
 
     def process(self):
         # Access sockets created by the base class based on definitions
@@ -201,13 +210,16 @@ def create_sample_graph():
     return graph
 
 
-# --- Launch the app using the main entry point ---
+# --- Launch the app using the EdonApplication class ---
 if __name__ == "__main__":
-    # Call setup_logging() early, before graph creation or edon_main
-    setup_logging(debug_mode=True)
+    # Create and run the application with our custom graph and node registry
+    app = EdonApplication(debug_mode=True)
 
-    # Pass the pre-populated graph and registry
-    edon_main(
-        entity_graph=create_sample_graph(),
-        node_registry=custom_node_registry,
-    )
+    # Set our custom graph and node registry using property setters
+    app.entity_graph = create_sample_graph()
+    app.node_registry = custom_node_registry
+
+    # Run the application
+    import sys
+
+sys.exit(app.run())

@@ -10,3 +10,6 @@ logs/
 # Virtual environments
 .venv
 mise.local.toml
+.cursor
+.vscode
+

@@ -1,73 +1,277 @@
-from dataclasses import dataclass
-from typing import Any
+"""Built-in command definitions for the application.
+
+This file is responsible for defining the `ALL_COMMAND_DEFINITIONS` list,
+which aggregates all command objects used by the application.
+It imports action functions from the `actions` sub-package.
+"""
+
 from loguru import logger
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMainWindow
-from edon_ui.item.edge import EdgeItem
-from edon_ui.item.node import NodeItem
+from collections import deque
 
-@dataclass
-class KeyBinding:
-    key: int
-    modifiers: Qt.KeyboardModifier
-    command_name: str
-    description: str = ""
+from edon_ui.graphics.view import EditorContext
+from edon_ui.items.edge import EdgeItem
+from edon_ui.items.node import NodeItem
+from edon_ui.items.socket import SocketRowItem
 
-class DeleteSelectionCommand:
-    def __init__(self, graph_manager):
-        self.graph_manager = graph_manager
+from .core import Command  # Relative import for Command dataclass
 
-    def execute(self, context: Any = None) -> bool:
-        if not context:
-            logger.warning("DeleteSelectionCommand executed with empty context")
-            return False
-        node_items = [item for item in context if isinstance(item, NodeItem)]
-        edge_items = [item for item in context if isinstance(item, EdgeItem)]
-        logger.info(f"DeleteSelectionCommand: Deleting {len(node_items)} nodes and {len(edge_items)} edges")
-        if node_items:
-            node_ids = [node.node_entity_id for node in node_items]
-            self.graph_manager.handle_ui_node_deletion_request(node_ids)
-        if edge_items:
-            edge_info = []
-            for edge in edge_items:
-                if edge.source_socket_item and edge.target_socket_item:
-                    source = edge.source_socket_item.parent_node_entity_id
-                    target = edge.target_socket_item.parent_node_entity_id
-                    edge_info.append(f"{source}->{target}")
-                else:
-                    edge_info.append("incomplete_edge")
-            logger.debug(f"Deleting edges: {edge_info}")
-            self.graph_manager.handle_ui_edge_deletion_request(edge_items)
-        return True
+# Import action functions from the new sub-package structure
+from .actions.basic_actions import (
+    close_action,
+    help_action,
+    window_toggle_maximize_action,
+    delete_selection_action,
+)
+from .actions.arrangement_actions import (
+    arrange_nodes_action,  # This is the "Stack Inputs" command
+    arrange_component_hierarchically_action,
+)
 
-class ToggleFullscreenCommand:
-    def execute(self, context: QMainWindow = None) -> bool:
-        if not context:
-            logger.warning("ToggleFullscreenCommand executed with invalid context (not a window)")
-            return False
-        current_state = context.isFullScreen()
-        new_state = not current_state
-        logger.info(f"Toggling fullscreen: {current_state} -> {new_state}")
-        if current_state:
-            context.showNormal()
-        else:
-            context.showFullScreen()
-        return True
+# Define spacing constants at the module level or pass them as arguments
+V_SPACING_ARRANGE = 10.0
+H_SPACING_ARRANGE = 50.0
 
-class AddNodeCommand:
-    def __init__(self, graph_manager):
-        self.graph_manager = graph_manager
+# Spacing for hierarchical layout
+H_SPACING_HIERARCHICAL = 100.0  # Horizontal space between ranks
+V_SPACING_HIERARCHICAL_WITHIN_RANK = 20.0  # Vertical space between nodes in the same rank
+RANK_START_X = 0.0  # Initial X for the first rank (can be adjusted based on scene/view)
+RANK_START_Y = 0.0  # Initial Y for the first node in any rank (can be adjusted)
 
-    def execute(self, context: Any = None) -> bool:
-        if not context or 'node_type' not in context:
-            logger.warning("AddNodeCommand executed with invalid context")
-            return False
-        node_type = context['node_type']
-        position = context.get('position', None)
-        try:
-            self.graph_manager.handle_ui_node_creation_request(node_type, position)
-            logger.info(f"AddNodeCommand: Added node of type {node_type} at {position}")
-            return True
-        except Exception as e:
-            logger.error(f"AddNodeCommand failed: {e}")
-            return False 
+
+def _parse_hotkey_sequence(hotkey_str: str | None) -> list[str] | None:
+    """Parses a comma-separated hotkey string into a list of sequences."""
+    if not hotkey_str:
+        return None
+    return hotkey_str.split(",")
+
+
+def determine_node_selection_topology(
+    selected_nodes: list[NodeItem], all_edges_in_scene: list[EdgeItem]
+) -> list[list[NodeItem]]:
+    """
+    Determines the connected subgraphs within a list of selected nodes.
+
+    Args:
+        selected_nodes: A list of NodeItem instances that are currently selected.
+        all_edges_in_scene: A list of all EdgeItem instances in the scene.
+
+    Returns:
+        A list of lists, where each inner list contains NodeItems forming a
+        connected subgraph within the original selection.
+    """
+    if not selected_nodes:
+        return []
+
+    adj: dict[str, list[str]] = {node.node_entity_id: [] for node in selected_nodes}
+    selected_node_ids_set = {node.node_entity_id for node in selected_nodes}
+    node_map_by_id: dict[str, NodeItem] = {node.node_entity_id: node for node in selected_nodes}
+
+    for edge in all_edges_in_scene:
+        source_id = edge.source_socket_item.parent_node_entity_id
+        target_id = edge.target_socket_item.parent_node_entity_id
+
+        # Consider only edges between nodes in the current selection
+        if source_id in selected_node_ids_set and target_id in selected_node_ids_set:
+            adj[source_id].append(target_id)
+            adj[target_id].append(source_id)
+
+    visited_ids: set[str] = set()
+    subgraphs: list[list[NodeItem]] = []
+
+    for node in selected_nodes:
+        if node.node_entity_id not in visited_ids:
+            current_subgraph_nodes: list[NodeItem] = []
+            # Use collections.deque for efficient queue operations in BFS
+            q = deque()
+
+            q.append(node)
+            visited_ids.add(node.node_entity_id)
+
+            while q:
+                curr_node = q.popleft()
+                current_subgraph_nodes.append(curr_node)
+
+                for neighbor_id in adj[curr_node.node_entity_id]:
+                    if neighbor_id not in visited_ids:
+                        visited_ids.add(neighbor_id)
+                        q.append(node_map_by_id[neighbor_id])
+
+            if current_subgraph_nodes:  # Should always be true if loop entered
+                subgraphs.append(current_subgraph_nodes)
+
+    logger.debug(f"Determined selection topology: {len(subgraphs)} subgraph(s).")
+    for i, sg in enumerate(subgraphs):
+        titles = [n.title if hasattr(n, "title") else n.node_entity_id for n in sg]
+        logger.debug(f"  Subgraph {i + 1}: {titles}")
+
+    return subgraphs
+
+
+def get_directed_graph_of_component(
+    component_nodes: list[NodeItem], all_edges_in_scene: list[EdgeItem]
+) -> dict[str, list[str]]:
+    """
+    Constructs a directed graph (adjacency list) for connections
+    strictly within the given component of nodes.
+
+    Args:
+        component_nodes: A list of NodeItems forming a connected component.
+        all_edges_in_scene: All EdgeItems in the scene.
+
+    Returns:
+        A dictionary where keys are node_entity_ids from the component,
+        and values are lists of node_entity_ids of their direct children
+        also within the component.
+    """
+    if not component_nodes:
+        return {}
+
+    directed_adj: dict[str, list[str]] = {node.node_entity_id: [] for node in component_nodes}
+    component_node_ids_set = {node.node_entity_id for node in component_nodes}
+
+    for edge in all_edges_in_scene:
+        # Ensure source and target socket items are valid
+        if not edge.source_socket_item or not edge.target_socket_item:
+            logger.trace("get_directed_graph_of_component: Edge missing source/target socket item. Skipping.")
+            continue
+
+        source_node_id = edge.source_socket_item.parent_node_entity_id
+        target_node_id = edge.target_socket_item.parent_node_entity_id
+
+        # Check if BOTH the source and target nodes of the edge are within the current component
+        if source_node_id in component_node_ids_set and target_node_id in component_node_ids_set:
+            # This edge represents a directed connection *within* the component
+            # Add target_node_id as a child of source_node_id
+            if target_node_id not in directed_adj[source_node_id]:
+                directed_adj[source_node_id].append(target_node_id)
+
+    # For debugging purposes, print the component titles
+    component_titles = [n.title if hasattr(n, "title") else n.node_entity_id for n in component_nodes]
+    logger.debug(f"Directed graph for component {component_titles}: {directed_adj}")
+    return directed_adj
+
+
+def topological_sort_ui_component(
+    directed_adj: dict[str, list[str]],
+    nodes_in_component_map: dict[str, NodeItem],
+) -> list[list[NodeItem]]:
+    """
+    Performs a topological sort on a directed graph component of UI nodes.
+
+    Args:
+        directed_adj: An adjacency list for the component (node_id -> list_of_child_ids).
+        nodes_in_component_map: A map from node_id to NodeItem for nodes in this component.
+
+    Returns:
+        A list of lists of NodeItems, where each inner list is a rank/level
+        in the topological sort. Returns an empty list if a cycle is detected
+        or the graph is empty.
+    """
+    if not directed_adj or not nodes_in_component_map:
+        return []
+
+    in_degree: dict[str, int] = {node_id: 0 for node_id in directed_adj}
+    # Calculate in-degrees based on the provided directed_adj
+    for node_id in directed_adj:
+        for child_id in directed_adj[node_id]:
+            if child_id in in_degree:  # Ensure child is part of this component
+                in_degree[child_id] += 1
+            else:
+                # This case implies an edge to a node not in nodes_in_component_map
+                # which shouldn't happen if directed_adj was built correctly by
+                # get_directed_graph_of_component (which only includes edges within component).
+                # Log if it occurs, but it might not affect the sort of component nodes.
+                logger.warning(
+                    f"TopologicalSort: Node '{child_id}' (child of '{node_id}') not in component map. In-degree might be skewed for external nodes."
+                )
+
+    # Initialize queue with all nodes having an in-degree of 0 (sources)
+    # These form the first rank.
+    queue = deque()
+    for node_id in directed_adj:
+        if in_degree[node_id] == 0:
+            queue.append(node_id)
+
+    ranked_nodes: list[list[NodeItem]] = []
+    processed_nodes_count = 0
+
+    while queue:
+        current_rank_node_ids = list(queue)  # Nodes at the current rank
+        queue.clear()  # Prepare queue for the next rank
+
+        current_rank_node_items: list[NodeItem] = []
+        if not current_rank_node_ids:
+            # This can happen if the remaining graph has cycles and queue becomes empty
+            break
+
+        for node_id in current_rank_node_ids:
+            if node_id in nodes_in_component_map:
+                current_rank_node_items.append(nodes_in_component_map[node_id])
+                processed_nodes_count += 1
+            else:
+                # Should not happen if maps are consistent
+                logger.error(f"TopologicalSort: Node ID '{node_id}' from queue not found in component map.")
+                continue  # Skip this problematic node ID
+
+            # For each child of the current node, decrement its in-degree
+            for child_id in directed_adj.get(node_id, []):
+                if child_id in in_degree:
+                    in_degree[child_id] -= 1
+                    if in_degree[child_id] == 0:
+                        queue.append(child_id)  # Add to queue for processing in the next rank
+
+        if current_rank_node_items:
+            ranked_nodes.append(current_rank_node_items)
+
+    if processed_nodes_count != len(nodes_in_component_map):
+        # This indicates a cycle, as not all nodes were processed.
+        problematic_nodes = [
+            nodes_in_component_map[nid].title
+            for nid, deg in in_degree.items()
+            if deg > 0 and nid in nodes_in_component_map
+        ]
+        logger.warning(
+            f"TopologicalSort: Cycle detected in UI component or graph was disconnected. "
+            f"Processed {processed_nodes_count}/{len(nodes_in_component_map)} nodes. "
+            f"Nodes possibly in cycle: {problematic_nodes}"
+        )
+        return []  # Return empty list to indicate failure due to cycle
+
+    logger.debug(f"Topological sort of UI component resulted in {len(ranked_nodes)} ranks.")
+    return ranked_nodes
+
+
+ALL_COMMAND_DEFINITIONS: list[Command] = [
+    Command(
+        id="app.close",
+        label="Close",
+        category="Application",
+        description="Close the application.",
+        action=close_action,
+        default_hotkey_sequence=_parse_hotkey_sequence("Ctrl+X"),
+    ),
+    Command(
+        id="help.show",
+        label="Help",
+        category="Help",
+        description="Show help dialog.",
+        action=help_action,
+        default_hotkey_sequence=_parse_hotkey_sequence("Ctrl+H"),
+    ),
+    Command(
+        id="window.toggle_maximize",
+        label="Toggle Maximize/Fullscreen",
+        category="Window",
+        description="Toggle window maximize/fullscreen state.",
+        action=window_toggle_maximize_action,
+        default_hotkey_sequence=_parse_hotkey_sequence("Ctrl+K,Ctrl+F"),
+    ),
+    Command(
+        id="edit.delete_selection",
+        label="Delete Selection",
+        category="Edit",
+        description="Delete selected items (nodes and edges).",
+        action=delete_selection_action,
+        default_hotkey_sequence=_parse_hotkey_sequence("D"),
+    ),
+]

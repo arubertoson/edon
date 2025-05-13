@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPen
 from PySide6.QtWidgets import (
@@ -10,9 +12,13 @@ from PySide6.QtWidgets import (
 from loguru import logger
 
 from edon_ui import theme
-from edon_ui.item.edge import EdgeItem
-from edon_ui.item.node import NodeItem
-from edon_ui.item.socket import SocketCircleItem
+from edon_ui.items.edge import EdgeItem
+from edon_ui.items.node import NodeItem
+from edon_ui.items.socket import SocketCircleItem
+
+if TYPE_CHECKING:
+    from PySide6.QtCore import QObject
+    from edon_ui.graph_controller import GraphController
 
 
 class EmptySceneTextItem(QGraphicsItem):
@@ -122,9 +128,9 @@ class GraphicsScene(QGraphicsScene):
 
     scene_changed = Signal()
 
-    def __init__(self, graph_manager=None, parent=None):
+    def __init__(self, controller: "GraphController | None" = None, parent: "QObject | None" = None):
         super().__init__(parent)
-        self.graph_manager = graph_manager
+        self.controller = controller
 
         self.active_area_size = 2000  # Initial size, can be smaller if preferred
         self.setSceneRect(
@@ -289,7 +295,7 @@ class GraphicsScene(QGraphicsScene):
                 f"Scene: Lifting existing edge from {clicked_socket_item.parent_node_entity_id}::{clicked_socket_item.socket_entity_name}"
             )
 
-            self.graph_manager.handle_ui_edge_deletion_request([self.temp_edge])
+            self.controller.handle_ui_edge_deletion_request([self.temp_edge])
             # self.graph_manager.handle_ui_edge_disconnection_request(self.temp_edge)
             logger.debug("Requested disconnection of logical connection for this edge.")
 
@@ -320,7 +326,7 @@ class GraphicsScene(QGraphicsScene):
 
         # XXX: This is potentially heavy, and we should look into caching when performance takes a hit.
         source_socket = self.temp_edge.source_socket_item
-        valid_targets = self.graph_manager.request_edge_drop_targets(source_socket)
+        valid_targets = self.controller.request_edge_drop_targets(source_socket)
 
         is_valid = (
             potential_target_socket.parent_node_entity_id,
@@ -350,7 +356,7 @@ class GraphicsScene(QGraphicsScene):
             source_socket_item, target_socket_item = target_socket_item, source_socket_item
 
         if source_socket_item and target_socket_item:
-            self.graph_manager.handle_ui_edge_connection_attempt(source_socket_item, target_socket_item)
+            self.controller.handle_ui_edge_connection_attempt(source_socket_item, target_socket_item)
 
         # We will always call cleanup_edge_drag here, because we are cleaning up the edge,
         # graph manager will handle making the edge persistent.
@@ -375,13 +381,13 @@ class GraphicsScene(QGraphicsScene):
     def update_socket_drop_targets(self, source_socket):
         """
         Grays out all sockets that cannot be connected to from the given source_socket,
-        including those that would create a cycle. Uses GraphUIManager for validation.
+        including those that would create a cycle. Uses GraphController for validation.
         """
-        if self.graph_manager is None:
+        if self.controller is None:
             logger.warning("Warning: GraphicsScene has no graph_manager set!")
             return
 
-        valid_targets = self.graph_manager.request_edge_drop_targets(source_socket)
+        valid_targets = self.controller.request_edge_drop_targets(source_socket)
         for item in self.items():
             if not isinstance(item, SocketCircleItem):
                 continue

@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsTextItem
 
-from edon_ui.item.edge import EdgeItem
-from edon_ui.item.node import NodeItem
-from edon_ui.item.socket import SocketCircleItem, SocketRowItem
-from edon_ui.item.socket_widgets import SOCKET_WIDGET_REGISTRY
+from edon_ui.items.edge import EdgeItem
+from edon_ui.items.node import NodeItem
+from edon_ui.items.socket import SocketCircleItem, SocketRowItem
+from edon_ui.items.socket_widgets import SOCKET_WIDGET_REGISTRY
 
 if TYPE_CHECKING:
     from edon.node import EntityNode
@@ -53,12 +53,20 @@ def create_socket_row(entity_socket: "EntitySocket", socket_def: Any, node_id: s
         )
     )
     widget = create_socket_widget(entity_socket, node_id, None, initial_value=initial_value)
+    visual_type_key = getattr(socket_def, "visual_type_key", "default") if socket_def else "default"
+
     return SocketRowItem(
         parent=None,  # Will be parented by NodeItem
         is_input=is_input,
         socket_entity_name=entity_socket.name,
         parent_node_entity_id=node_id,
         socket_widget=widget,
+        socket_circle=SocketCircleItem(
+            parent=None,  # Will be parented by SocketRowItem
+            socket_entity_name=entity_socket.name,
+            parent_node_entity_id=node_id,
+            visual_type_key=visual_type_key,
+        ),
     )
 
 

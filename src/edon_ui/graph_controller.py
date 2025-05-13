@@ -23,9 +23,9 @@ EdgeKeyType = tuple[tuple[str, str], tuple[str, str]]
 SocketRowMap: TypeAlias = dict[tuple[str, str, bool], SocketRowItem]
 
 
-class GraphUIManager:
+class GraphController:
     """
-    Manages the synchronization between the entity graph (edon.graph.Graph)
+    Controls the synchronization between the entity graph (edon.graph.Graph)
     and the UI representation (edon_ui.graphics_scene.GraphicsScene).
 
     It acts as the intermediary, translating UI actions into model operations
@@ -39,11 +39,11 @@ class GraphUIManager:
         node_type_registry: dict[str, Type[EntityNode]] | None = None,
     ):
         """
-        Initializes the GraphUIManager.
+        Initializes the GraphController.
 
         Args:
             entity_graph: The instance of the entity graph (edon.graph.Graph)
-                           that this manager will oversee.
+                           that this controller will oversee.
             graphics_scene: The QGraphicsScene instance where UI elements will be displayed.
             node_type_registry: Optional dictionary mapping node type hints to node classes.
         """
@@ -60,7 +60,7 @@ class GraphUIManager:
         # Key: (node_id, socket_name, is_input)
 
         logger.info(
-            f"GraphUIManager initialized with entity graph: {self.entity_graph} "
+            f"GraphController initialized with entity graph: {self.entity_graph} "
             f"and graphics scene: {self.graphics_scene}"
         )
         logger.debug(f"Node type registry: {self._node_type_registry}")
@@ -215,7 +215,7 @@ class GraphUIManager:
         target_socket_name = target_ui_socket.socket_entity_name
 
         logger.info(
-            f"GraphUIManager: Requesting to create edge between entity sockets: "
+            f"GraphController: Requesting to create edge between entity sockets: "
             f"({source_node_id}::{source_socket_name}) -> ({target_node_id}::{target_socket_name})"
         )
 
@@ -236,13 +236,7 @@ class GraphUIManager:
         if connection_success:
             logger.debug("  Entity connection successful. Creating UI EdgeItem.")
 
-            # XXX:
-            # node = self.entity_graph.get_node(target_node_id)
-            # logger.debug(f"!!!  Node {target_node_id} input sockets: {node.input_sockets[target_socket_name].connections}")
-
             # Create the UI EdgeItem
-            # Ensure source_ui_socket and target_ui_socket are valid QGraphicsItem instances
-            # The EdgeItem constructor expects the target position initially, then sets the target socket.
             new_edge_item = EdgeItem(source_ui_socket, target_ui_socket.scenePos())
             new_edge_item.set_target_socket(target_ui_socket)
             new_edge_item.settle_z_value()  # Set to normal Z value for finalized edges
@@ -257,16 +251,13 @@ class GraphUIManager:
             logger.warning(
                 f"  Entity connection FAILED between ({source_node_id}::{source_socket_name}) and ({target_node_id}::{target_socket_name}). Reason: {reason}. No UI edge created."
             )
-            # Optionally, provide user feedback based on the reason
-            # For example, if reason == SocketConnectionErrorReason.TYPE_MISMATCH:
-            #   self.graphics_scene.post_status_message("Connection failed: Incompatible types.")
             return None
 
     def request_remove_node(self, entity_node_id: str):
         """
         Handles a request to remove a node (entity and UI) and its connected edges.
         """
-        logger.info(f"GraphUIManager: Requesting to remove node with ID: {entity_node_id}")
+        logger.info(f"GraphController: Requesting to remove node with ID: {entity_node_id}")
 
         # 1. Remove node from the entity graph
         # This should also handle disconnecting its entity sockets.
@@ -282,9 +273,6 @@ class GraphUIManager:
             logger.warning(f"  No UI NodeItem found in node_map for ID {entity_node_id}.")
 
         # 3. Clean up EdgeItems from the edge_map connected to this node
-        # The actual EdgeItem objects should have been removed from the scene by GraphicsScene.removeItem(ui_node_to_remove)
-        # if its logic is comprehensive for handling connected edges upon node removal.
-        # Here, we primarily clean our edge_map.
         edges_to_remove_from_map: list[EdgeKeyType] = []
         for edge_key, _ in self.edge_map.items():
             # edge_key is ((source_node_id, source_socket_name), (target_node_id, target_socket_name))
@@ -295,16 +283,12 @@ class GraphUIManager:
             removed_edge_item = self.edge_map.pop(edge_key, None)
             if removed_edge_item:
                 logger.debug(f"  Edge {edge_key} removed from edge_map.")
-                # The EdgeItem itself should already be removed from the scene by GraphicsScene.removeItem(NodeItem)
-                # If GraphicsScene.removeItem(NodeItem) doesn't also call removeItem on the EdgeItem itself,
-                # we might need to do it here: self.graphics_scene.removeItem(removed_edge_item)
-                # However, GraphicsScene.removeItem for a NodeItem already iterates its self.edge_items and removes them.
             else:
                 logger.warning(
                     f"  Edge {edge_key} was in edges_to_remove_from_map but not found in edge_map during pop."
                 )
 
-        logger.info(f"GraphUIManager: Node removal process for {entity_node_id} complete.")
+        logger.info(f"GraphController: Node removal process for {entity_node_id} complete.")
 
     def request_remove_edge(self, ui_edge_item: EdgeItem):
         """
@@ -314,7 +298,7 @@ class GraphUIManager:
             ui_edge_item: The EdgeItem instance to remove.
         """
         if not ui_edge_item or not ui_edge_item.source_socket_item or not ui_edge_item.target_socket_item:
-            logger.warning("GraphUIManager: Invalid EdgeItem provided to request_remove_edge. Cannot proceed.")
+            logger.warning("GraphController: Invalid EdgeItem provided to request_remove_edge. Cannot proceed.")
             return
 
         source_node_id = ui_edge_item.source_socket_item.parent_node_entity_id
@@ -323,7 +307,7 @@ class GraphUIManager:
         target_socket_name = ui_edge_item.target_socket_item.socket_entity_name
 
         edge_repr = f"({source_node_id}::{source_socket_name}) -> ({target_node_id}::{target_socket_name})"
-        logger.info(f"GraphUIManager: Requesting to remove edge: {edge_repr}")
+        logger.info(f"GraphController: Requesting to remove edge: {edge_repr}")
 
         # 1. Disconnect in the entity graph
         disconnection_success, reason = self.entity_graph.disconnect_sockets(
@@ -339,27 +323,17 @@ class GraphUIManager:
             )
 
         # 2. Remove the UI EdgeItem from the scene
-        # GraphicsScene.removeItem will also remove it from its internal edge_items list.
         self.graphics_scene.removeEdge(ui_edge_item)
         logger.debug(f"  UI EdgeItem for {edge_repr} removed from graphics scene.")
 
         # 3. Remove the edge from our edge_map
         edge_key_to_remove: EdgeKeyType | None = None
-        # Construct the key as it would have been stored to find it.
-        # Note: The order in the key might be canonicalized (e.g., sorted) during storage.
-        # For now, assume direct ((source_id, source_name), (target_id, target_name)) from populate/create.
-        # If _populate_scene_from_entity_graph canonicalizes keys, this needs to match.
-        # Our current key is: ((source_node.id, source_socket.name), (target_node.id, target_socket.name))
-        # This matches how it's added in request_create_edge.
-
-        # We need to find the key that maps to this specific ui_edge_item instance, or reconstruct it.
-        # Reconstructing is safer if there's no ambiguity.
         prospective_key = ((source_node_id, source_socket_name), (target_node_id, target_socket_name))
 
         if prospective_key in self.edge_map and self.edge_map[prospective_key] == ui_edge_item:
             edge_key_to_remove = prospective_key
         else:
-            # Fallback: Iterate if direct key lookup fails (e.g. due to key canonicalization issues)
+            # Fallback: Iterate if direct key lookup fails
             for key, val in self.edge_map.items():
                 if val == ui_edge_item:
                     edge_key_to_remove = key
@@ -370,12 +344,11 @@ class GraphUIManager:
             if removed_item:
                 logger.debug(f"  Edge {edge_key_to_remove} removed from edge_map.")
             else:
-                # Should not happen if edge_key_to_remove was found and valid
                 logger.warning(f"  Edge key {edge_key_to_remove} found but pop failed from edge_map.")
         else:
             logger.warning(f"  Could not find edge {edge_repr} (instance: {ui_edge_item}) in edge_map to remove.")
 
-        logger.info(f"GraphUIManager: Edge removal process for {edge_repr} complete.")
+        logger.info(f"GraphController: Edge removal process for {edge_repr} complete.")
 
     def request_edge_drop_targets(self, source_socket_ui_item: "SocketCircleItem") -> set:
         """
@@ -395,11 +368,6 @@ class GraphUIManager:
 
         # Determine if the source_socket_ui_item represents an input or output for entity lookup
         if source_socket_ui_item.is_input:  # This implies a reverse drag scenario for the source
-            # If dragging from an input, we'd be looking for output targets. This function currently targets inputs.
-            # For now, let's assume standard drag: source_socket_ui_item is an output.
-            # If it IS an input, it cannot be a source for connecting to other inputs.
-            # This part needs to be robust if reverse drags are intended to be fully supported by this function.
-            # For now, if source is input, it won't find valid targets in the loop below.
             entity_source_socket = source_entity_node.input_sockets.get(source_socket_ui_item.socket_entity_name)
             socket_iter = "output_sockets"
         else:  # Standard drag: source_socket_ui_item is an output
@@ -436,7 +404,7 @@ class GraphUIManager:
         If both sockets are None, this indicates a request to disconnect the currently lifted edge.
         """
         logger.debug(
-            f"GraphUIManager: Received handle_ui_edge_connection_attempt from "
+            f"GraphController: Received handle_ui_edge_connection_attempt from "
             f"{source_ui_socket.parent_node_entity_id}::{source_ui_socket.socket_entity_name} to "
             f"{target_ui_socket.parent_node_entity_id}::{target_ui_socket.socket_entity_name}"
         )
@@ -468,7 +436,7 @@ class GraphUIManager:
         calls the main request_add_node method.
         """
         logger.info(
-            f"GraphUIManager: Received handle_ui_node_creation_request for type '{node_type_hint}' at {scene_pos}"
+            f"GraphController: Received handle_ui_node_creation_request for type '{node_type_hint}' at {scene_pos}"
         )
 
         node_class_to_create = self._node_type_registry.get(node_type_hint)
@@ -490,7 +458,7 @@ class GraphUIManager:
         """
         Slot to handle the node_deletion_requested signal from the GraphicsView.
         """
-        logger.info(f"GraphUIManager: Received handle_ui_node_deletion_request for IDs: {entity_node_ids}")
+        logger.info(f"GraphController: Received handle_ui_node_deletion_request for IDs: {entity_node_ids}")
         for node_id in entity_node_ids:
             self.request_remove_node(node_id)
 
@@ -498,7 +466,7 @@ class GraphUIManager:
         """
         Slot to handle the edge_deletion_requested signal from the GraphicsView.
         """
-        logger.info(f"GraphUIManager: Received handle_ui_edge_deletion_request for {len(edge_items)} edge(s).")
+        logger.info(f"GraphController: Received handle_ui_edge_deletion_request for {len(edge_items)} edge(s).")
         for edge_item in edge_items:
             self.request_remove_edge(edge_item)
 
@@ -509,7 +477,7 @@ class GraphUIManager:
         """
         if not edge_item or not edge_item.source_socket_item or not edge_item.target_socket_item:
             logger.warning(
-                "GraphUIManager: Invalid EdgeItem provided to handle_ui_edge_disconnection_request. Cannot proceed."
+                "GraphController: Invalid EdgeItem provided to handle_ui_edge_disconnection_request. Cannot proceed."
             )
             return
 
@@ -519,7 +487,7 @@ class GraphUIManager:
         target_socket_name = edge_item.target_socket_item.socket_entity_name
 
         logger.info(
-            f"GraphUIManager: Disconnecting edge between entity sockets: "
+            f"GraphController: Disconnecting edge between entity sockets: "
             f"({source_node_id}::{source_socket_name}) -> ({target_node_id}::{target_socket_name})"
         )
 

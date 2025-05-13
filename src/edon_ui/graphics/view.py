@@ -1,24 +1,43 @@
-from PySide6.QtCore import QPoint, Qt, Signal, QPointF
-from PySide6.QtGui import QPainter, QKeyEvent, QMouseEvent, QCursor
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+from loguru import logger
+from PySide6.QtCore import QPointF, Qt, Signal
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QInputEvent
 from PySide6.QtWidgets import QGraphicsView
-from typing import Any
 
-from .context_menu import AppContextMenu
+from ..context_menu import AppContextMenu
+
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QGraphicsItem, QMainWindow
+    from edon.graph import EntityGraph
+    from edon_ui.graph_controller import GraphController
+    from edon_ui.graphics.scene import GraphicsScene
+    from edon_ui.commands.key_processor import KeyProcessor  # For type hint
+
+
+@dataclass
+class EditorContext:
+    view: "GraphicsView"
+    scene: "GraphicsScene"
+    window: "QMainWindow"
+    manager: "GraphController"
+    entity_graph: "EntityGraph"
+    selected_items: list["QGraphicsItem"]
+    event: QInputEvent | None = None
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 class GraphicsView(QGraphicsView):
-    # Signal emitted when the user requests to add a new node.
-    # Arguments:
-    #   - QPointF: The desired position in scene coordinates.
-    #   - str: A hint for the type of node to create (e.g., "default", "math_add").
-    new_node_requested_at_scene_pos = Signal(QPointF, str)
-    node_deletion_requested = Signal(list)  # List of node_entity_id strings
-    edge_deletion_requested = Signal(list)  # List of EdgeItem instances
-
     RIGHT_CLICK_MOVE_THRESHOLD = 5  # Pixels to move before considering it a drag for window move
 
     def __init__(self, scene, parent=None):
         super().__init__(scene, parent)
+
+        # Add attributes for the new command system
+        self.key_processor: "KeyProcessor | None" = None
+        # GraphicsView itself will be the context_provider passed to KeyProcessor in main.py
+        # So, when KeyProcessor calls context_provider.provide_context, it calls this view's method.
 
         # View settings
         self.setRenderHint(QPainter.Antialiasing)  # Enable smooth rendering of lines and shapes
@@ -49,7 +68,7 @@ class GraphicsView(QGraphicsView):
 
     def _update_view_behavior(self):
         current_scene = self.scene()
-        if not current_scene.node_items:
+        if not current_scene or not hasattr(current_scene, "node_items") or not current_scene.node_items:  # Defensive
             self._interaction_enabled = False
             self.setDragMode(QGraphicsView.NoDrag)
             self.resetTransform()
@@ -95,28 +114,50 @@ class GraphicsView(QGraphicsView):
         if new_scene_rect != current_s_rect:
             current_scene.setSceneRect(new_scene_rect)
 
-    def wheelEvent(self, event):
+    def scene_content_changed(self):
+        """Public method that can be called if scene changes state externally"""
+        self._update_view_behavior()
+
+    def provide_context(self, event: QInputEvent | None = None) -> EditorContext:
+        return EditorContext(
+            view=self,
+            scene=self.scene(),
+            window=self.window(),
+            manager=self.scene().controller,
+            entity_graph=self.scene().controller.entity_graph,
+            selected_items=self.scene().selectedItems(),
+            event=event,
+            params={},
+        )
+
+    def wheelEvent(self, event: QMouseEvent):  # QWheelEvent, but QMouseEvent is a common base for angleDelta checks
         if not self._interaction_enabled:
             event.ignore()
             return
-
         zoom_in = event.angleDelta().y() > 0
         zoom_factor_val = self._zoom_factor if zoom_in else (1 / self._zoom_factor)
-
         self.scale(zoom_factor_val, zoom_factor_val)
         self._request_scene_rect_adjustment()
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: QMouseEvent):
+        # Try command system first
+        if self.key_processor and self:  # 'self' is the ContextProvider
+            handled_by_command = self.key_processor.process_input_event(event, self)
+            if handled_by_command:
+                event.accept()
+                return
+
         if event.button() == Qt.LeftButton:
             main_window = self.window()
-            if main_window.is_position_on_resize_edge(event.globalPosition()):
-                return event.ignore()
+            if main_window and hasattr(main_window, "is_position_on_resize_edge"):
+                if main_window.is_position_on_resize_edge(event.globalPosition()):
+                    super().mousePressEvent(event)
+                    return
 
         if event.button() == Qt.MiddleButton:
             if not self._interaction_enabled:
                 event.ignore()
                 return
-
             self._pan_active = True
             self._last_pan_pos = event.position().toPoint()
             self.setCursor(Qt.ClosedHandCursor)
@@ -131,7 +172,7 @@ class GraphicsView(QGraphicsView):
                 return
             super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event: QMouseEvent):
         if self._pan_active and self._last_pan_pos:
             if not self._interaction_enabled:
                 return
@@ -157,8 +198,8 @@ class GraphicsView(QGraphicsView):
                 abs(delta.x()) > self.RIGHT_CLICK_MOVE_THRESHOLD or abs(delta.y()) > self.RIGHT_CLICK_MOVE_THRESHOLD
             ) and not self._right_click_moved:
                 self._right_click_moved = True
-                if self.window() and self.window().windowHandle():  # Check if window and handle exist
-                    self.window().windowHandle().startSystemMove()
+                if self.window() and self.window().windowHandle():
+                    self.window().windowHandle().startSystemMove()  # type: ignore
             event.accept()
 
         elif event.buttons() & Qt.LeftButton and self._interaction_enabled:
@@ -170,15 +211,13 @@ class GraphicsView(QGraphicsView):
         else:
             super().mouseMoveEvent(event)  # Catch-all for other unhandled GView events
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MiddleButton:
             if self._pan_active:
                 self._pan_active = False
                 self._last_pan_pos = None
                 self.setCursor(Qt.ArrowCursor)
                 event.accept()
-            # else:
-            #     super().mouseReleaseEvent(event) # This was causing issues with context menu
 
         elif event.button() == Qt.RightButton:
             if self._right_click_pos and not self._right_click_moved:
@@ -197,101 +236,12 @@ class GraphicsView(QGraphicsView):
                 return
             super().mouseReleaseEvent(event)
 
-    def scene_content_changed(self):
-        """Public method that can be called if scene changes state externally"""
-        self._update_view_behavior()
+    def keyPressEvent(self, event: QKeyEvent):
+        # Try command system first
+        if self.key_processor and self:  # 'self' is the ContextProvider
+            handled_by_command = self.key_processor.process_input_event(event, self)
+            if handled_by_command:
+                event.accept()
+                return
 
-    def initiate_add_new_node_request(self, global_menu_pos: QPoint):
-        """
-        Called when a request to add a new node is initiated (e.g., from context menu).
-        This method calculates the scene position and emits the
-        new_node_requested_at_scene_pos signal.
-        """
-        if not self.scene():
-            print("GraphicsView: No scene to add node to.")
-            return
-
-        # Map the global mouse position to view coordinates, then to scene coordinates
-        view_pos = self.mapFromGlobal(global_menu_pos)
-        scene_pos = self.mapToScene(view_pos)  # scene_pos is a QPointF
-
-        # XXX: For now, use a placeholder node type hint.
-        # This can be made more dynamic later if the context menu offers choices.
-        node_type_hint = "MyTestNode"  # Let's use a hint that matches our test node class for now
-
-        self.new_node_requested_at_scene_pos.emit(scene_pos, node_type_hint)
-        print(f"GraphicsView: Emitted new_node_requested_at_scene_pos({scene_pos}, '{node_type_hint}')")
-
-    def get_command_context(self, event: QKeyEvent | QMouseEvent, command_name: str) -> Any:
-        """Get the appropriate context for a command
-
-        This method provides different contexts based on the command being executed:
-        - For selection-based commands: returns the selected items
-        - For view commands: returns self (the view)
-        - For window commands: returns the main window
-        - Default: returns a dict with common objects
-        """
-        if command_name == "add_node":
-            mouse_pos = self.mapFromGlobal(QCursor.pos())
-            scene_pos = self.mapToScene(mouse_pos)
-            return {'node_type': 'MyNodeType', 'position': scene_pos}
-
-        # Command-specific contexts
-        if command_name in ["delete_selection", "duplicate_selection", "cut", "copy"]:
-            return self.scene().selectedItems()
-
-        elif command_name in ["toggle_fullscreen", "window_maximize", "window_minimize"]:
-            return self.window()
-
-        elif command_name in ["zoom_in", "zoom_out", "reset_zoom", "pan_view"]:
-            return self  # The view itself
-
-        return {
-            "view": self,
-            "event": event,
-            "scene": self.scene(),
-            "window": self.window(),
-            "selected_items": self.scene().selectedItems(),
-        }
-
-    def keyPressEvent(self, event):
-        # Pass self as the context provider
-        if hasattr(self, "key_manager") and self.key_manager.handle_key_event(event, self):
-            return
-
-        # if event.key() == Qt.Key_Delete:
-        #     if not self._interaction_enabled:
-        #         event.ignore()
-        #         return
-
-        # current_scene = self.scene()
-        # if (
-        #     current_scene and hasattr(current_scene, "selectedItems") and hasattr(current_scene, "node_items")
-        # ):  # Ensure scene is valid
-        #     selected_items = current_scene.selectedItems()
-        #     node_entity_ids_to_delete = []
-        #     edges_to_delete = []
-
-        #     from .node import NodeItem  # Local import for type check
-        #     from .edge import EdgeItem  # Local import for type check
-
-        #     for item in selected_items:
-        #         if isinstance(item, NodeItem):
-        #             if hasattr(item, "node_entity_id") and item.node_entity_id:
-        #                 node_entity_ids_to_delete.append(item.node_entity_id)
-        #         elif isinstance(item, EdgeItem):
-        #             edges_to_delete.append(item)
-
-        #     if node_entity_ids_to_delete:
-        #         print(f"GraphicsView: Deletion requested for node IDs: {node_entity_ids_to_delete}")
-        #         self.node_deletion_requested.emit(node_entity_ids_to_delete)
-        #         event.accept()
-        #         return  # XXX: Nodes processed, don't process edges in same event for now
-
-        #     if edges_to_delete:
-        #         print(f"GraphicsView: Deletion requested for EdgeItems: {edges_to_delete}")
-        #         self.edge_deletion_requested.emit(edges_to_delete)
-        #         event.accept()
-        #         return
-
-        super().keyPressEvent(event)  # Pass to base class if not handled
+        super().keyPressEvent(event)

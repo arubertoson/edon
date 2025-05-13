@@ -1,14 +1,16 @@
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from .graphics_scene import GraphicsScene
-from .graphics_view import GraphicsView
+if TYPE_CHECKING:
+    from edon_ui.graphics.view import GraphicsView
 
 
 class MainWindow(QWidget):
     MARGIN = 8
 
-    def __init__(self):
+    def __init__(self, view: "GraphicsView"):
         super().__init__()
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
         self.setAttribute(Qt.WA_TranslucentBackground, False)
@@ -19,10 +21,10 @@ class MainWindow(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.scene = GraphicsScene(self)  # Create the scene first
-        self.canvas = GraphicsView(self.scene, self)  # Pass scene to GraphicsView
+        self.view = view
+        self.scene = view.scene()
 
-        layout.addWidget(self.canvas)
+        layout.addWidget(self.view)
         self.setLayout(layout)
 
         # Window movement and resize state

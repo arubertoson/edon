@@ -23,7 +23,7 @@ The grid size (snap interval) should be configurable, ideally as a constant in `
   - `NodeItem.itemChange`: Add logic for `ItemPositionChange` to snap the new position to the grid.
 - `src/edon_ui/theme.py`:
   - Add a constant for grid size.
-- (Optional) `GraphUIManager` or other code that moves nodes programmatically should also use the grid.
+- (Optional) `GraphController` or other code that moves nodes programmatically should also use the grid.
 
 ## Example Implementation
 

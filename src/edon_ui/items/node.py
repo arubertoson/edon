@@ -1,4 +1,4 @@
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen
@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsTextItem,
 
 
 from edon_ui import theme
-from edon_ui.item.socket import SocketRowItem
+from edon_ui.items.socket import SocketRowItem
 
 # Forward type declaration for edon.node.Node to avoid circular import if it were to import NodeItem
 if TYPE_CHECKING:

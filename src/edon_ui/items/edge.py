@@ -3,7 +3,7 @@ from PySide6.QtGui import QPainter, QPen, QPainterPath
 from PySide6.QtWidgets import QGraphicsPathItem, QStyleOptionGraphicsItem, QWidget, QGraphicsItem
 
 from edon_ui import theme
-from edon_ui.item.socket import SocketCircleItem
+from edon_ui.items.socket import SocketCircleItem
 
 
 class EdgeItem(QGraphicsPathItem):

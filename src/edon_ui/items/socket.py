@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsObject
 from edon_ui import theme
 
 if TYPE_CHECKING:
-    from edon_ui.item.edge import EdgeItem
+    from edon_ui.items.edge import EdgeItem
 
 
 class SocketCircleItem(QGraphicsEllipseItem):
@@ -150,6 +150,7 @@ class SocketRowItem(QGraphicsObject):
         socket_entity_name: str,
         parent_node_entity_id: str,
         socket_widget: QGraphicsObject,
+        socket_circle: SocketCircleItem | None = None,
     ):
         super().__init__(parent)
         self.is_input = is_input
@@ -157,14 +158,9 @@ class SocketRowItem(QGraphicsObject):
         self.parent_node_entity_id = parent_node_entity_id
 
         self.socket_widget = socket_widget
+        self.socket_circle = socket_circle
         self.socket_widget.setParentItem(self)
-        self.socket_circle = SocketCircleItem(
-            self,
-            socket_entity_name=self.socket_entity_name,
-            parent_node_entity_id=self.parent_node_entity_id,
-            # XXX: some styling from the socket_widget should be applied here
-            visual_type_key="default",  # You may want to pass this in as well
-        )
+        self.socket_circle.setParentItem(self)
 
         self._layout_socket_row()
 

@@ -46,7 +46,9 @@ class EntitySocket:
             logger.error("Socket __post_init__: Socket direction must be a SocketDirection enum member.")
             raise ValueError("Socket direction must be a SocketDirection enum member.")
         if not isinstance(self.data_type, type) and self.data_type != Any:
-            logger.error(f"Socket __post_init__: Socket data_type must be a type object or typing.Any, got {self.data_type}")
+            logger.error(
+                f"Socket __post_init__: Socket data_type must be a type object or typing.Any, got {self.data_type}"
+            )
             raise ValueError(f"Socket data_type must be a type object or typing.Any, got {self.data_type}")
 
     def is_connected(self) -> bool:
@@ -68,18 +70,18 @@ class EntitySocket:
         Returns:
             A tuple: (bool_success, SocketConnectionErrorReason | None)
         """
-        if not other_socket:
-            logger.debug(f"Socket '{self.name}' can_connect_to: Target socket is invalid.")
-            return False, SocketConnectionErrorReason.TARGET_SOCKET_INVALID
-
         if self == other_socket:
             logger.debug(f"Socket '{self.name}' can_connect_to '{other_socket.name}': Cannot connect to self.")
             return False, SocketConnectionErrorReason.CANNOT_CONNECT_TO_SELF
         if self.direction == other_socket.direction:
-            logger.debug(f"Socket '{self.name}' can_connect_to '{other_socket.name}': Directions are the same ({self.direction}).")
+            logger.debug(
+                f"Socket '{self.name}' can_connect_to '{other_socket.name}': Directions are the same ({self.direction})."
+            )
             return False, SocketConnectionErrorReason.DIRECTIONS_NOT_OPPOSITE
         if self.parent_node == other_socket.parent_node:
-            logger.debug(f"Socket '{self.name}' can_connect_to '{other_socket.name}': Same parent node ('{self.parent_node.name}').")
+            logger.debug(
+                f"Socket '{self.name}' can_connect_to '{other_socket.name}': Same parent node ('{self.parent_node.name}')."
+            )
             return False, SocketConnectionErrorReason.SAME_PARENT_NODE
 
         # Determine which socket is output and which is input for type checking
@@ -88,7 +90,9 @@ class EntitySocket:
 
         if not (output_socket.direction == SocketDirection.OUTPUT and input_socket.direction == SocketDirection.INPUT):
             # This case should theoretically be caught by self.direction == other_socket.direction, but good for safety.
-            logger.debug(f"Socket '{self.name}' can_connect_to '{other_socket.name}': Logical error - one not OUTPUT and other not INPUT after initial checks.")
+            logger.debug(
+                f"Socket '{self.name}' can_connect_to '{other_socket.name}': Logical error - one not OUTPUT and other not INPUT after initial checks."
+            )
             return False, SocketConnectionErrorReason.DIRECTIONS_NOT_OPPOSITE
 
         # Type compatibility check
@@ -104,7 +108,9 @@ class EntitySocket:
                     can_types_connect = True
 
         if not can_types_connect:
-            logger.debug(f"Socket '{self.name}' ({output_socket.data_type}) can_connect_to '{other_socket.name}' ({input_socket.data_type}): Type mismatch.")
+            logger.debug(
+                f"Socket '{self.name}' ({output_socket.data_type}) can_connect_to '{other_socket.name}' ({input_socket.data_type}): Type mismatch."
+            )
             return False, SocketConnectionErrorReason.TYPE_MISMATCH
 
         # The Graph.connect_sockets method will handle overwriting (disconnecting old edge)
@@ -122,7 +128,9 @@ class EntitySocket:
         """
         # Check compatibility first
         can_connect_flag, reason = self.can_connect_to(other_socket)
-        logger.debug(f"Socket '{self.name}' add_connection to '{other_socket.name}': can_connect_to returned {can_connect_flag}, reason: {reason}")
+        logger.debug(
+            f"Socket '{self.name}' add_connection to '{other_socket.name}': can_connect_to returned {can_connect_flag}, reason: {reason}"
+        )
         if not can_connect_flag:
             return False, reason
 
@@ -155,14 +163,20 @@ class EntitySocket:
         if self in other_socket.connections:
             other_socket.connections.remove(self)
             removed_from_other = True
-            logger.debug(f"Socket '{self.name}' remove_connection: Removed self from '{other_socket.name}'.connections.")
+            logger.debug(
+                f"Socket '{self.name}' remove_connection: Removed self from '{other_socket.name}'.connections."
+            )
 
         if removed_from_self or removed_from_other:
-            logger.debug(f"Socket '{self.name}' remove_connection from '{other_socket.name}': Success. Self removed: {removed_from_self}, Other removed: {removed_from_other}")
+            logger.debug(
+                f"Socket '{self.name}' remove_connection from '{other_socket.name}': Success. Self removed: {removed_from_self}, Other removed: {removed_from_other}"
+            )
             return True, None  # Success if at least one side was cleaned up
         else:
             # If neither contained the other, they weren't connected
-            logger.warning(f"Socket '{self.name}' remove_connection from '{other_socket.name}': Sockets were not connected.")
+            logger.warning(
+                f"Socket '{self.name}' remove_connection from '{other_socket.name}': Sockets were not connected."
+            )
             return False, SocketDisconnectionErrorReason.SOCKETS_NOT_CONNECTED
 
     def __repr__(self) -> str:
