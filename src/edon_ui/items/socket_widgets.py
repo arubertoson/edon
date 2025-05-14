@@ -197,15 +197,16 @@ class SocketWidgetAdaptor(QGraphicsObject):
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._fixed_width, self._fixed_height)
 
-    # paint() is not strictly needed for SocketWidgetAdaptor itself if it's just a container.
-    # The QGraphicsProxyWidget handles painting its QWidget.
-    # If you wanted to draw a border or background for the adaptor itself, you would override paint.
-    # def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
-    #     super().paint(painter, option, widget) # Important if QGraphicsObject has own painting
-    # Example: Draw a debug border for the adaptor itself
-    # pen = QPen(QColor("blue"))
-    # painter.setPen(pen)
-    # painter.drawRect(self.boundingRect())
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+        # is not strictly needed for SocketWidgetAdaptor itself if it's just a container.
+        # The QGraphicsProxyWidget handles painting its QWidget.
+        # If you wanted to draw a border or background for the adaptor itself, you would override paint.
+        # Example: Draw a debug border for the adaptor itself
+        # super().paint(painter, option, widget)
+        # pen = QPen(QColor("blue"))
+        # painter.setPen(pen)
+        # painter.drawRect(self.boundingRect())
+        pass
 
     # --- Convenience methods to access underlying widget if needed ---
     def widget(self) -> QWidget:
@@ -248,23 +249,6 @@ def create_integer_socket_component(
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     line_edit.setText(str(initial_value if initial_value is not None else 0))
 
-    # Styling using theme constants
-    bg_color = getattr(theme, "INPUT_WIDGET_BACKGROUND_COLOR", QColor("white")).name()
-    text_color = getattr(theme, "INPUT_WIDGET_TEXT_COLOR", QColor("black")).name()
-    border_color = getattr(theme, "INPUT_WIDGET_BORDER_COLOR", QColor("gray")).name()
-    border_radius = getattr(theme, "INPUT_WIDGET_BORDER_RADIUS", 2)
-    padding = getattr(theme, "INPUT_WIDGET_PADDING", 2)
-
-    line_edit.setStyleSheet(f"""
-        QLineEdit {{
-            background-color: {bg_color};
-            color: {text_color};
-            border: 1px solid {border_color};
-            border-radius: {border_radius}px;
-            padding: {padding}px;
-        }}
-    """)
-
     if controller and node_id and socket_name:
         # Connection logic for controller (e.g., on editingFinished or textChanged)
         # This is currently commented out as per previous discussions, assuming controller handles updates elsewhere or via direct widget access.
@@ -301,23 +285,6 @@ def create_float_socket_component(
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     line_edit.setText(str(initial_value if initial_value is not None else 0.0))
 
-    # Styling using theme constants
-    bg_color = getattr(theme, "INPUT_WIDGET_BACKGROUND_COLOR", QColor("white")).name()
-    text_color = getattr(theme, "INPUT_WIDGET_TEXT_COLOR", QColor("black")).name()
-    border_color = getattr(theme, "INPUT_WIDGET_BORDER_COLOR", QColor("gray")).name()
-    border_radius = getattr(theme, "INPUT_WIDGET_BORDER_RADIUS", 2)
-    padding = getattr(theme, "INPUT_WIDGET_PADDING", 2)
-
-    line_edit.setStyleSheet(f"""
-        QLineEdit {{
-            background-color: {bg_color};
-            color: {text_color};
-            border: 1px solid {border_color};
-            border-radius: {border_radius}px;
-            padding: {padding}px;
-        }}
-    """)
-
     if controller and node_id and socket_name:
         pass  # Connection logic (if any) is handled by controller or direct access
 
@@ -349,23 +316,6 @@ def create_string_socket_component(
     line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)  # Or AlignLeft
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     line_edit.setText(str(initial_value if initial_value is not None else ""))
-
-    # Styling using theme constants
-    bg_color = getattr(theme, "INPUT_WIDGET_BACKGROUND_COLOR", QColor("white")).name()
-    text_color = getattr(theme, "INPUT_WIDGET_TEXT_COLOR", QColor("black")).name()
-    border_color = getattr(theme, "INPUT_WIDGET_BORDER_COLOR", QColor("gray")).name()
-    border_radius = getattr(theme, "INPUT_WIDGET_BORDER_RADIUS", 2)
-    padding = getattr(theme, "INPUT_WIDGET_PADDING", 2)
-
-    line_edit.setStyleSheet(f"""
-        QLineEdit {{
-            background-color: {bg_color};
-            color: {text_color};
-            border: 1px solid {border_color};
-            border-radius: {border_radius}px;
-            padding: {padding}px;
-        }}
-    """)
 
     if controller and node_id and socket_name:
         pass  # Connection logic (if any) is handled by controller or direct access

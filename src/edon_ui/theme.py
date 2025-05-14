@@ -147,3 +147,73 @@ SOCKET_STRING_WIDGET_ADAPTOR_WIDTH = 100.0  # Strings often need more space
 # For SocketLabel text
 SOCKET_LABEL_TEXT_COLOR = QColor("#D8D8D8")  # A bright, light gray for labels
 FONT_SOCKET_LABEL_DEFAULT_SIZE = 9  # Default font size for socket labels (adjust as needed)
+
+# --- Global Application Stylesheet ---
+# This is where we'll define QSS rules for the entire application.
+# We'll use f-strings to embed theme constants directly into the stylesheet.
+
+APPLICATION_STYLESHEET = f"""
+/* === QLineEdit === */
+QLineEdit {{
+    background-color: {INPUT_WIDGET_BACKGROUND_COLOR.name()};
+    color: {INPUT_WIDGET_TEXT_COLOR.name()};
+    border: 1px solid {INPUT_WIDGET_BORDER_COLOR.name()};
+    border-radius: {INPUT_WIDGET_BORDER_RADIUS}px;
+    padding: {INPUT_WIDGET_PADDING}px;
+    selection-background-color: {ACCENT_SECONDARY.name()};
+    selection-color: {COLOR_TEXT_LIGHT.name()}; /* For selected text color */
+}}
+
+QLineEdit:focus {{
+    border-color: {NODE_BORDER_SELECTED.name()}; /* Highlight border on focus */
+}}
+
+/* === QPushButton (Placeholder - customize as needed) === */
+QPushButton {{
+    background-color: {ACCENT_PRIMARY.name()};
+    color: {COLOR_TEXT_LIGHT.name()};
+    border-radius: {INPUT_BORDER_RADIUS}px;
+    padding: 5px 10px;
+    border: 1px solid {ACCENT_PRIMARY.darker(120).name()};
+}}
+
+QPushButton:hover {{
+    background-color: {ACCENT_PRIMARY.lighter(120).name()};
+}}
+
+QPushButton:pressed {{
+    background-color: {ACCENT_PRIMARY.darker(130).name()};
+}}
+
+/* === QCheckBox (Placeholder - customize as needed) === */
+QCheckBox {{
+    spacing: 5px; /* Space between indicator and text */
+    color: {CHECKBOX_TEXT.name()};
+}}
+
+QCheckBox::indicator {{
+    width: 13px;
+    height: 13px;
+    border-radius: 3px;
+    border: 1px solid {INPUT_BORDER_COLOR.name()};
+    background-color: {INPUT_BACKGROUND.name()};
+}}
+
+QCheckBox::indicator:checked {{
+    background-color: {CHECKBOX_INDICATOR_CHECKED_BG.name()};
+    border: 1px solid {CHECKBOX_INDICATOR_CHECKED_BG.darker(120).name()};
+    image: url(none); /* Remove default checkmark if you want to use a custom one or none */
+}}
+
+QCheckBox::indicator:unchecked:hover {{
+    border-color: {NODE_BORDER_SELECTED.name()};
+}}
+
+QCheckBox::indicator:checked:hover {{
+    background-color: {CHECKBOX_INDICATOR_CHECKED_BG.lighter(120).name()};
+    border-color: {CHECKBOX_INDICATOR_CHECKED_BG.darker(130).name()};
+}}
+
+/* Add more global styles here for other widgets or custom items by class name */
+
+"""

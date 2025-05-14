@@ -9,7 +9,7 @@ import sys
 
 from loguru import logger
 from PySide6.QtCore import QtMsgType, qInstallMessageHandler
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication
 
 from edon.graph import EntityGraph
 from edon.logging import setup_logging
@@ -23,6 +23,7 @@ from .commands import (
 )
 from .graph_controller import GraphController
 from .graphics import GraphicsScene, GraphicsView, MainWindow
+from . import theme
 
 
 def _qt_message_handler(msg_type, message):
@@ -64,7 +65,7 @@ class EdonApplication:
         app.run()
     """
 
-    def __init__(self, debug_mode: bool = False, node_registry: dict[str, type[EntityNode]] = None) -> None:
+    def __init__(self, debug_mode: bool = False, node_registry: dict[str, type[EntityNode]] | None = None) -> None:
         """Initialize the Edon application with all required components.
 
         Args:
@@ -78,6 +79,8 @@ class EdonApplication:
 
         # Initialize Qt application and UI components
         self._qt_app: QApplication = self._create_qt_application()
+        self._qt_app.setStyleSheet(theme.APPLICATION_STYLESHEET)
+
         self._graphics_scene: GraphicsScene = GraphicsScene()
         self._graphics_view: GraphicsView = GraphicsView(self._graphics_scene)
 
