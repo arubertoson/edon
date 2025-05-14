@@ -107,31 +107,53 @@ class EdgeItem(QGraphicsPathItem):
     def update_path(self):
         """
         Recalculates and sets the QPainterPath for the edge.
-
         This method fetches the current scene positions of its source and target
         (if finalized) sockets to ensure the path is up-to-date.
-        The path is a straight line by default but can be modified for curves.
+        Uses a cubic Bezier curve for drawing.
         """
+        if not self._source_socket_item or not self.scene():  # Basic safety check
+            # If source_socket_item is None (e.g., edge being created but source not fully set)
+            # or if the item is not yet in a scene, we can't get scenePos reliably.
+            return
+
         self.prepareGeometryChange()
 
-        self._source_pos = self._source_socket_item.scenePos()
+        p1: QPointF = self._source_socket_item.scenePos()
+        p2: QPointF
         if self._target_socket_item:
-            self._target_pos = self._target_socket_item.scenePos()
+            p2 = self._target_socket_item.scenePos()
+        else:
+            # For temp_edge, _target_pos is already in scene coordinates (mouse cursor)
+            p2 = self._target_pos
 
         path = QPainterPath()
-        path.moveTo(self._source_pos)
+        path.moveTo(p1)
 
-        # NOTE: Bezier curve drawing (example, can be refined)
-        # dx = self._target_pos.x() - self._source_pos.x()
-        # dy = self._target_pos.y() - self._source_pos.y()
-        # horizontal_offset_factor = 0.5 # Adjust for more/less curve
-        # ctrl1_x = self._source_pos.x() + dx * horizontal_offset_factor
-        # ctrl1_y = self._source_pos.y()
-        # ctrl2_x = self._target_pos.x() - dx * horizontal_offset_factor
-        # ctrl2_y = self._target_pos.y()
-        # path.cubicTo(QPointF(ctrl1_x, ctrl1_y), QPointF(ctrl2_x, ctrl2_y), self._target_pos)
+        # --- Cubic Bezier Curve Calculation ---
+        dx = p2.x() - p1.x()
+        # dy = p2.y() - p1.y() # Vertical distance, not directly used for this curve style
 
-        path.lineTo(self._target_pos)
+        # Configurable parameters (ideally from theme.py)
+        horizontal_offset_factor = 0.6  # How far out control points extend, proportional to dx
+        min_horizontal_offset = 30.0  # Minimum curve handle length in pixels
+        max_horizontal_offset = 150.0  # Maximum curve handle length in pixels
+
+        offset_magnitude = abs(dx) * horizontal_offset_factor
+        offset_magnitude = max(min_horizontal_offset, offset_magnitude)
+        offset_magnitude = min(max_horizontal_offset, offset_magnitude)
+
+        # Control points are extended horizontally from source and target
+        # This creates a gentle S-curve for typical left-to-right node connections
+        ctrl1 = QPointF(p1.x() + offset_magnitude, p1.y())
+        ctrl2 = QPointF(p2.x() - offset_magnitude, p2.y())
+
+        # If dx is negative (e.g. target is to the left of source), the standard S-curve might look inverted.
+        # For a more universally appealing curve regardless of direction, some node editors
+        # ensure control points always go "outwards" from the socket along the general direction of the edge,
+        # or use a different calculation if dx is small or negative.
+        # This current implementation is simpler and works well for LTR flow.
+
+        path.cubicTo(ctrl1, ctrl2, p2)
         self.setPath(path)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None):
