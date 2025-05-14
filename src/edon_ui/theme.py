@@ -20,7 +20,7 @@ ACCENT_WARNING = QColor("#F39C12")  # Orange
 ACCENT_ERROR = QColor("#E74C3C")  # Red
 
 # --- Node Specific (derived from image and palette) ---
-NODE_BACKGROUND = COLOR_BACKGROUND_MEDIUM
+NODE_BACKGROUND = QColor("#4A4A4A")
 NODE_BORDER_DEFAULT = NODE_BACKGROUND.lighter(110)  # Subtle darker border
 NODE_BORDER_SELECTED = QColor("#5F9FDF")  # A distinct blue for selection
 NODE_BORDER_RADIUS = 8.0
@@ -118,10 +118,32 @@ INPUT_BACKGROUND_COLOR = QColor("#FF000000")  # Black
 INPUT_TEXT_COLOR = QColor("#FFFFFFFF")  # White
 
 # Add these lines (if not already present)
-SOCKET_HORIZONTAL_PADDING = 2.0
+SOCKET_HORIZONTAL_PADDING = 4.0
 SOCKET_VERTICAL_ITEM_PADDING = 2.0
 SOCKET_VERTICAL_CONTENT_MARGIN = 4.0
 SOCKET_CIRCLE_SPACING = 8.0
 SOCKET_ITEM_FIXED_WIDTH = 70.0
 SOCKET_ITEM_VERTICAL_MARGIN = 4.0
 NODE_MIN_CONTENT_HEIGHT = 20.0
+
+# For QLineEdit based input widgets in sockets
+INPUT_WIDGET_BACKGROUND_COLOR = COLOR_BACKGROUND_MEDIUM  # A medium-dark gray
+INPUT_WIDGET_TEXT_COLOR = QColor("#E0E0E0")  # Light gray for text
+INPUT_WIDGET_BORDER_COLOR = QColor("#606060")  # Border for the input widget
+INPUT_WIDGET_BORDER_RADIUS = 2  # Integer for rounded corners
+INPUT_WIDGET_PADDING = 2  # Internal padding for QLineEdit
+
+# Widths for the SocketWidgetAdaptor (total width including its margins)
+SOCKET_INTEGER_WIDGET_ADAPTOR_WIDTH = 70.0
+SOCKET_FLOAT_WIDGET_ADAPTOR_WIDTH = 70.0
+SOCKET_STRING_WIDGET_ADAPTOR_WIDTH = 100.0  # Strings often need more space
+
+# Horizontal margin for the SocketWidgetAdaptor itself
+# This is the space the adaptor adds *around* the QLineEdit
+# SOCKET_WIDGET_ADAPTOR_HORIZONTAL_MARGIN = getattr(
+#     theme, "SOCKET_HORIZONTAL_PADDING", 2.0
+# )  # Default to existing socket padding
+
+# For SocketLabel text
+SOCKET_LABEL_TEXT_COLOR = QColor("#D8D8D8")  # A bright, light gray for labels
+FONT_SOCKET_LABEL_DEFAULT_SIZE = 9  # Default font size for socket labels (adjust as needed)

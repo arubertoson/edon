@@ -269,7 +269,7 @@ class GraphicsScene(QGraphicsScene):
 
     def _handle_node_resize(self, resized_node_id: str):
         """Handles updates when a specific node (identified by resized_node_id) resizes."""
-        logger.debug(f"Scene: Handling resize for node {resized_node_id}")
+        # logger.debug(f"Scene: Handling resize for node {resized_node_id}") # Temporarily commented out for debugging SystemError
         self._update_common_scene_elements()
 
         # Update edges connected to the specific resized node
@@ -279,7 +279,7 @@ class GraphicsScene(QGraphicsScene):
                 edge_item.target_socket_item and edge_item.target_socket_item.parent_node_entity_id == resized_node_id
             )
             if is_source_node or is_target_node:
-                logger.debug(f"Updating edge connected to resized node: {edge_item}")
+                # logger.debug(f"Updating edge connected to resized node: {edge_item}")
                 edge_item.update_path()
 
         self.scene_changed.emit()

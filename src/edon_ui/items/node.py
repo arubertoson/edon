@@ -21,7 +21,7 @@ class NodeItem(QGraphicsObject):
 
     def __init__(
         self,
-        title: str,
+        title: str | None,
         x: float,
         y: float,
         node_entity_id: str,
@@ -32,7 +32,7 @@ class NodeItem(QGraphicsObject):
     ):
         super().__init__()
 
-        self.title = title
+        self.title = title if title is not None else "Untitled"
         self.node_entity_id = node_entity_id
         self._min_width_param = width
         self._min_height_param = height

@@ -1,8 +1,23 @@
-from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QDoubleValidator, QIntValidator, QPen, QColor, QFontMetricsF, QFont, QPainter
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsProxyWidget, QLineEdit, QGraphicsTextItem
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QDoubleValidator, QFont, QFontMetricsF, QIntValidator, QColor
+from PySide6.QtWidgets import (
+    QGraphicsItem,
+    QGraphicsObject,
+    QGraphicsProxyWidget,
+    QGraphicsTextItem,
+    QLineEdit,
+    QWidget,
+)
 
 from edon_ui import theme
+
+if TYPE_CHECKING:
+    from edon_ui.graph_controller import GraphController
+    from PySide6.QtGui import QPainter
+    from PySide6.QtWidgets import QStyleOptionGraphicsItem
 
 
 def fit_font_to_height(font: QFont, target_height: float, min_size: int = 1, max_size: int = 30) -> QFont:
@@ -24,29 +39,35 @@ def _font_height_diff(font: QFont, target_height: float) -> float:
 
 
 class SocketLabel(QGraphicsTextItem):
-    def __init__(self, text: str, width: int, parent=None):
+    def __init__(self, text: str, target_layout_height: float, parent=None):
         super().__init__(text, parent)
 
         font = self.font()
-        font.setPointSize(10)
+        # Assuming a theme constant like theme.FONT_SOCKET_LABEL_DEFAULT_SIZE exists or will be added
+        font.setPointSize(getattr(theme, "FONT_SOCKET_LABEL_DEFAULT_SIZE", 10))
 
-        # Ensure the font fits within the socket row height
-        # We first check if the current font size would fit in our target height
-        # If not, we'll find the largest font size that does fit
-        # This ensures consistent text display across different socket types
-        diff = _font_height_diff(font, theme.SOCKET_ROW_HEIGHT)
+        # Ensure the font fits within the socket row height by dynamically adjusting its size.
+        # We first check if the current font would overflow our target height.
+        # If it would overflow, we find the largest font size that fits properly.
+        # This approach ensures consistent text display and proper vertical alignment
+        # across different socket types regardless of their content.
+        diff = _font_height_diff(font, target_layout_height)
         if diff < 0:
-            font = fit_font_to_height(font, theme.SOCKET_ROW_HEIGHT)
-            diff = _font_height_diff(font, theme.SOCKET_ROW_HEIGHT)
+            font = fit_font_to_height(font, target_layout_height)
+            diff = _font_height_diff(font, target_layout_height)
 
         self.setFont(font)
         self.document().setDocumentMargin(diff / 2 if diff > 0 else 0)
-        self.setDefaultTextColor(theme.INPUT_TEXT_COLOR)
+        # Assuming a theme constant like theme.SOCKET_LABEL_TEXT_COLOR exists or INPUT_TEXT_COLOR is fine
+        self.setDefaultTextColor(getattr(theme, "SOCKET_LABEL_TEXT_COLOR", theme.INPUT_TEXT_COLOR))
 
-        self.setTextWidth(width)
+    def get_required_component_width(self) -> float:
+        """Returns the width as determined by setTextWidth or natural text width."""
+        return self.boundingRect().width()
 
-    def effective_height(self, padding: float = 0) -> float:
-        return self.boundingRect().height() + padding
+    def get_required_component_height(self) -> float:
+        """Returns the actual bounding height of the text item, including document margins."""
+        return self.boundingRect().height()
 
     def set_alignment(self, alignment: Qt.AlignmentFlag):
         doc = self.document()
@@ -54,263 +75,311 @@ class SocketLabel(QGraphicsTextItem):
         option.setAlignment(alignment)
         doc.setDefaultTextOption(option)
 
-    # def paint(self, painter, option, widget=None):
-    #     super().paint(painter, option, widget)
-    #     # Draw bounding rect outline
-    #     pen = QPen(QColor("red"))
-    #     pen.setWidth(1)
-    #     painter.setPen(pen)
-    #     painter.setBrush(Qt.NoBrush)
-    #     painter.drawRect(self.boundingRect())
 
-
-class IntegerSocketWidget(QGraphicsObject):
+class SocketTextAdaptor(QGraphicsObject):
     """
-    A QGraphicsObject that embeds a QLineEdit for integer socket UIs.
-    It aims to fit within the standard socket row content area.
+    Adapts a QGraphicsTextItem (like SocketLabel) to be used as a SocketComponent.
+    It manages the overall footprint including horizontal margins, and positions the text item within.
     """
-
-    valueChanged = Signal(int)  # Emitted when the integer value changes by UI interaction
 
     def __init__(
         self,
-        initial_value: int = 0,
-        parent_node_entity_id: str = "",
-        socket_entity_name: str = "",
-        type_label: str = "Integer",
-        parent=None,
+        text_item: QGraphicsTextItem,
+        fixed_width: float = theme.NODE_MIN_WIDTH,
+        fixed_height: float = theme.SOCKET_ROW_HEIGHT,
+        horizontal_margin: float = theme.SOCKET_HORIZONTAL_PADDING,
+        parent: QGraphicsItem | None = None,
     ):
         super().__init__(parent)
+        self._text_item = text_item
+        self._fixed_width = fixed_width
+        self._fixed_height = fixed_height
+        self._horizontal_margin = horizontal_margin
 
-        self.type_label = type_label or "Integer"
-        self.parent_node_entity_id = parent_node_entity_id
-        self.socket_entity_name = socket_entity_name
+        if self._text_item.parentItem() != self:  # Ensure correct parenting
+            self._text_item.setParentItem(self)
 
-        self.line_edit = QLineEdit()
-        self.line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-        self.line_edit.setValidator(QIntValidator(-2147483648, 2147483647, self.line_edit))
-        self.line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.line_edit.setText(str(initial_value))
+        # Calculate the actual content width for the QGraphicsTextItem
+        content_width = self._fixed_width - (2 * self._horizontal_margin)
+        self._fixed_width = max(0, content_width)
 
-        fixed_height = int(theme.SOCKET_ROW_HEIGHT)
-        fixed_width = int(theme.NODE_MIN_WIDTH)
+        self._text_item.setTextWidth(content_width)
 
-        self.line_edit.setFixedHeight(fixed_height)
-        self.line_edit.setFixedWidth(fixed_width)
+        # Position the text item with a horizontal offset for the margin.
+        # Vertical position is 0 as text_item should fill fixed_height via its internal mechanisms.
+        self._text_item.setPos(self._horizontal_margin, 0)
 
-        # self.line_edit.setStyleSheet(f"""
-        #     QLineEdit {{
-        #         border: 1px solid {theme.INPUT_BORDER_COLOR.name()};
-        #         border-radius: {theme.INPUT_BORDER_RADIUS}px;
-        #         background-color: {theme.INPUT_BACKGROUND_COLOR.name()};
-        #         color: {theme.INPUT_TEXT_COLOR.name()};
-        #         padding: 2px 4px;
-        #     }}
-        # """)
+    # --- SocketComponent required methods ---
+    def get_required_component_width(self) -> float:
+        return self._fixed_width
 
-        self.proxy = QGraphicsProxyWidget(self)
-        self.proxy.setWidget(self.line_edit)
+    def get_required_component_height(self) -> float:
+        return self._fixed_height
 
-        self.line_edit.textChanged.connect(self._on_text_changed)
-
-        self._width = fixed_width
-        self._height = fixed_height
-
-    def _on_text_changed(self, text: str):
-        """Convert text to integer and emit valueChanged signal if valid"""
-        if text:
-            try:
-                value = int(text)
-                self.valueChanged.emit(value)
-            except ValueError:
-                pass
-
+    # --- QGraphicsItem methods ---
     def boundingRect(self) -> QRectF:
-        return QRectF(
-            0,
-            0,
-            self._width,
-            self._height,
-        )
+        return QRectF(0, 0, self._fixed_width, self._fixed_height)
 
-    def get_value(self) -> int:
-        """Get the current integer value or 0 if empty/invalid"""
-        try:
-            return int(self.line_edit.text()) if self.line_edit.text() else 0
-        except ValueError:
-            return 0
+    def paint(self, painter: "QPainter", option: "QStyleOptionGraphicsItem", widget: "QWidget | None" = None) -> None:
+        # This QGraphicsObject is a container and does not paint anything itself.
+        # Its child (SocketLabel) handles its own painting.
+        # Providing an empty paint method prevents NotImplementedError if Qt tries to paint it,
+        # especially due to parent caching (e.g., NodeItem).
+        pass
 
-    def set_value(self, value: int):
-        """Sets the value without emitting the valueChanged signal"""
-        # Block signals to prevent re-emitting valueChanged
-        self.line_edit.blockSignals(True)
-        self.line_edit.setText(str(value))
-        self.line_edit.blockSignals(False)
+    # --- Convenience methods to access underlying text item if needed ---
+    def text_item(self) -> QGraphicsTextItem:
+        return self._text_item
+
+    def set_text_alignment(self, alignment: Qt.AlignmentFlag) -> None:
+        """Sets the text alignment of the underlying QGraphicsTextItem if it supports it."""
+        if hasattr(self._text_item, "set_alignment"):
+            self._text_item.set_alignment(alignment)
+        else:
+            # Fallback or warning if the text_item doesn't have set_alignment
+            # This shouldn't happen if it's always a SocketLabel instance
+            print(f"Warning: Text item {type(self._text_item)} does not have set_alignment method.")
 
 
-class FloatSocketWidget(QGraphicsObject):
+class SocketWidgetAdaptor(QGraphicsObject):
     """
-    A QGraphicsObject that embeds a QLineEdit for float socket UIs.
-    It aims to fit within the standard socket row content area.
+    Adapts a QWidget (e.g., QLineEdit) to be used as a SocketComponent.
+    It wraps the QWidget in a QGraphicsProxyWidget and handles size, position, and internal horizontal margins.
+    The fixed_width and fixed_height define the total space for the adaptor.
+    The actual QWidget is placed inside this space, inset horizontally by the specified margin.
+    Vertical alignment is handled by the QWidget itself within its allocated fixed_height.
     """
-
-    valueChanged = Signal(float)  # Emitted when the float value changes by UI interaction
 
     def __init__(
         self,
-        initial_value: float = 0.0,
-        parent_node_entity_id: str = "",
-        socket_entity_name: str = "",
-        type_label: str = "Float",
-        parent=None,
+        widget: QWidget,
+        fixed_width: float = theme.NODE_MIN_WIDTH,
+        fixed_height: float = theme.SOCKET_ROW_HEIGHT,
+        horizontal_margin: float = theme.SOCKET_HORIZONTAL_PADDING,
+        parent: QGraphicsItem | None = None,
     ):
         super().__init__(parent)
-        self.parent_node_entity_id = parent_node_entity_id
-        self.socket_entity_name = socket_entity_name
-        self.type_label = type_label or "Float"
-
-        self.line_edit = QLineEdit()
-        self.line_edit.setText(str(initial_value))
-        self.line_edit.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        validator = QDoubleValidator()
-        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
-        self.line_edit.setValidator(validator)
-
-        fixed_height = int(theme.SOCKET_ROW_HEIGHT - 4.0 * 2)
-        fixed_width = int(70.0)
-        self.line_edit.setFixedHeight(fixed_height)
-        self.line_edit.setFixedWidth(fixed_width)
-
-        self.line_edit.setStyleSheet(f"""
-            QLineEdit {{
-                border: 1px solid {theme.INPUT_BORDER_COLOR.name()};
-                border-radius: {theme.INPUT_BORDER_RADIUS}px;
-                background-color: {theme.INPUT_BACKGROUND_COLOR.name()};
-                color: {theme.INPUT_TEXT_COLOR.name()};
-                padding: 2px 4px;
-            }}
-        """)
+        self._widget = widget
+        self._fixed_width = fixed_width
+        self._fixed_height = fixed_height
+        self._horizontal_margin = horizontal_margin
 
         self.proxy = QGraphicsProxyWidget(self)
-        self.proxy.setWidget(self.line_edit)
+        self.proxy.setWidget(self._widget)
 
-        self.line_edit.textChanged.connect(self._on_text_changed)
+        # Calculate the actual dimensions for the QWidget
+        widget_width = self._fixed_width - (2 * self._horizontal_margin)
+        widget_height = self._fixed_height  # Widget takes the full provided height
 
-        self._width = fixed_width
-        self._height = fixed_height
-        self._layout()
+        # Ensure widget dimensions are not negative
+        widget_width = max(0, widget_width)
+        # widget_height is already handled by fixed_height, should not be < 0 if fixed_height is sensible
 
-    def _layout(self):
-        self.proxy.setPos(0, 0)
+        # Position the proxy widget (which contains the QWidget) with a horizontal offset for the margin.
+        # Vertical position is 0 as widget_height is the full fixed_height.
+        self.proxy.setPos(self._horizontal_margin, 0)
 
-    def _on_text_changed(self, text: str):
-        """Convert text to float and emit valueChanged signal if valid"""
-        if text:
-            try:
-                value = float(text)
-                self.valueChanged.emit(value)
-            except ValueError:
-                # Handle invalid input (shouldn't happen with validator)
-                pass
+        # Ensure the underlying QWidget has the calculated fixed size
+        self._widget.setFixedWidth(int(widget_width))
+        self._widget.setFixedHeight(int(widget_height))
 
-    def boundingRect(self) -> QRectF:
-        return QRectF(0, 0, self._width, self._height)
+    # --- SocketComponent required methods ---
+    def get_required_component_width(self) -> float:
+        return self._fixed_width
 
-    def get_value(self) -> float:
-        """Get the current float value or 0.0 if empty/invalid"""
-        try:
-            return float(self.line_edit.text()) if self.line_edit.text() else 0.0
-        except ValueError:
-            return 0.0
+    def get_required_component_height(self) -> float:
+        return self._fixed_height
 
-    def set_value(self, value: float):
-        """Sets the value without emitting the valueChanged signal"""
-        # Block signals to prevent re-emitting valueChanged
-        self.line_edit.blockSignals(True)
-        self.line_edit.setText(str(value))
-        self.line_edit.blockSignals(False)
-
-
-class StringSocketWidget(QGraphicsObject):
-    """
-    A QGraphicsObject that embeds a QLineEdit for string socket UIs.
-    It aims to fit within the standard socket row content area.
-    """
-
-    valueChanged = Signal(str)  # Emitted when the string value changes by UI interaction
-
-    def __init__(
-        self,
-        initial_value: str = "",
-        parent_node_entity_id: str = "",
-        socket_entity_name: str = "",
-        type_label: str = "String",
-        parent=None,
-    ):
-        super().__init__(parent)
-        self.parent_node_entity_id = parent_node_entity_id
-        self.socket_entity_name = socket_entity_name
-        self.type_label = type_label or "String"
-
-        # self.label_item = QGraphicsTextItem(self.type_label, self)
-        # self.label_item.setDefaultTextColor(theme.INPUT_TEXT_COLOR)
-        # font = self.label_item.font()
-        # font.setPointSize(10)
-        # self.label_item.setFont(font)
-
-        self.line_edit = QLineEdit()
-        self.line_edit.setText(initial_value)
-        self.line_edit.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        fixed_height = int(theme.SOCKET_ROW_HEIGHT - 4.0 * 2)
-        fixed_width = int(70.0)
-        self.line_edit.setFixedHeight(fixed_height)
-        self.line_edit.setFixedWidth(fixed_width)
-
-        self.line_edit.setStyleSheet(f"""
-            QLineEdit {{
-                border: 1px solid {theme.INPUT_BORDER_COLOR.name()};
-                border-radius: {theme.INPUT_BORDER_RADIUS}px;
-                background-color: {theme.INPUT_BACKGROUND_COLOR.name()};
-                color: {theme.INPUT_TEXT_COLOR.name()};
-                padding: 2px 4px;
-            }}
-        """)
-
-        self.proxy = QGraphicsProxyWidget(self)
-        self.proxy.setWidget(self.line_edit)
-
-        self.line_edit.textChanged.connect(self._on_text_changed)
-
-        self._width = fixed_width
-        self._height = fixed_height
-        self._layout()
-
-    def _layout(self):
-        self.proxy.setPos(0, 0)
-
-    def _on_text_changed(self, text: str):
-        """Emit valueChanged signal with the current text"""
-        self.valueChanged.emit(text)
+    # --- QGraphicsItem methods ---
+    # QGraphicsObject provides implementations for many of these (setPos, pos, show, hide, etc.)
+    # We only need to override what's necessary, like boundingRect.
 
     def boundingRect(self) -> QRectF:
-        return QRectF(0, 0, self._width, self._height)
+        return QRectF(0, 0, self._fixed_width, self._fixed_height)
 
-    def get_value(self) -> str:
-        """Get the current string value or empty string if none"""
-        return self.line_edit.text() or ""
+    # paint() is not strictly needed for SocketWidgetAdaptor itself if it's just a container.
+    # The QGraphicsProxyWidget handles painting its QWidget.
+    # If you wanted to draw a border or background for the adaptor itself, you would override paint.
+    # def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+    #     super().paint(painter, option, widget) # Important if QGraphicsObject has own painting
+    # Example: Draw a debug border for the adaptor itself
+    # pen = QPen(QColor("blue"))
+    # painter.setPen(pen)
+    # painter.drawRect(self.boundingRect())
 
-    def set_value(self, value: str):
-        """Sets the value without emitting the valueChanged signal"""
-        # Block signals to prevent re-emitting valueChanged
-        self.line_edit.blockSignals(True)
-        self.line_edit.setText(value)
-        self.line_edit.blockSignals(False)
+    # --- Convenience methods to access underlying widget if needed ---
+    def widget(self) -> QWidget:
+        return self._widget
 
 
-SOCKET_WIDGET_REGISTRY: dict[type, type[QGraphicsItem]] = {}
-SOCKET_WIDGET_REGISTRY[int] = IntegerSocketWidget
-SOCKET_WIDGET_REGISTRY[float] = FloatSocketWidget
-SOCKET_WIDGET_REGISTRY[str] = StringSocketWidget
+# Type alias for socket widget component factory functions
+SocketWidgetComponentFactory = Callable[
+    [Any, "GraphController | None", str, str, QGraphicsItem | None], tuple[SocketWidgetAdaptor, QWidget]
+]
+
+# Registry for socket widget component factories
+SOCKET_WIDGET_COMPONENT_FACTORIES: dict[type, SocketWidgetComponentFactory] = {}
+
+
+def create_integer_socket_component(
+    initial_value: Any = 0,
+    controller: "GraphController | None" = None,
+    node_id: str = "",
+    socket_name: str = "",
+    parent_gfx_item: QGraphicsItem | None = None,
+) -> tuple[SocketWidgetAdaptor, QLineEdit]:
+    """
+    Creates a QLineEdit configured for integer input and wraps it in a SocketWidgetAdaptor.
+
+    Args:
+        initial_value: The initial integer value for the QLineEdit.
+        controller: The graph controller instance for updating the backend.
+        node_id: The ID of the parent node entity.
+        socket_name: The name of the socket entity.
+        parent_gfx_item: The parent QGraphicsItem for the SocketWidgetAdaptor.
+
+    Returns:
+        A tuple containing the configured SocketWidgetAdaptor and the QLineEdit instance.
+    """
+    line_edit = QLineEdit()
+    line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+    # Consider if QIntValidator needs a parent if line_edit isn't parented yet by proxy
+    line_edit.setValidator(QIntValidator(-2147483648, 2147483647, line_edit))
+    line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    line_edit.setText(str(initial_value if initial_value is not None else 0))
+
+    # Styling using theme constants
+    bg_color = getattr(theme, "INPUT_WIDGET_BACKGROUND_COLOR", QColor("white")).name()
+    text_color = getattr(theme, "INPUT_WIDGET_TEXT_COLOR", QColor("black")).name()
+    border_color = getattr(theme, "INPUT_WIDGET_BORDER_COLOR", QColor("gray")).name()
+    border_radius = getattr(theme, "INPUT_WIDGET_BORDER_RADIUS", 2)
+    padding = getattr(theme, "INPUT_WIDGET_PADDING", 2)
+
+    line_edit.setStyleSheet(f"""
+        QLineEdit {{
+            background-color: {bg_color};
+            color: {text_color};
+            border: 1px solid {border_color};
+            border-radius: {border_radius}px;
+            padding: {padding}px;
+        }}
+    """)
+
+    if controller and node_id and socket_name:
+        # Connection logic for controller (e.g., on editingFinished or textChanged)
+        # This is currently commented out as per previous discussions, assuming controller handles updates elsewhere or via direct widget access.
+        pass
+    adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
+    return adaptor, line_edit
+
+
+def create_float_socket_component(
+    initial_value: Any = 0.0,
+    controller: "GraphController | None" = None,
+    node_id: str = "",
+    socket_name: str = "",
+    parent_gfx_item: QGraphicsItem | None = None,
+) -> tuple[SocketWidgetAdaptor, QLineEdit]:
+    """
+    Creates a QLineEdit configured for float input and wraps it in a SocketWidgetAdaptor.
+
+    Args:
+        initial_value: The initial float value for the QLineEdit.
+        controller: The graph controller instance for updating the backend.
+        node_id: The ID of the parent node entity.
+        socket_name: The name of the socket entity.
+        parent_gfx_item: The parent QGraphicsItem for the SocketWidgetAdaptor.
+
+    Returns:
+        A tuple containing the configured SocketWidgetAdaptor and the QLineEdit instance.
+    """
+    line_edit = QLineEdit()
+    line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+    validator = QDoubleValidator(line_edit)
+    validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+    line_edit.setValidator(validator)
+    line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    line_edit.setText(str(initial_value if initial_value is not None else 0.0))
+
+    # Styling using theme constants
+    bg_color = getattr(theme, "INPUT_WIDGET_BACKGROUND_COLOR", QColor("white")).name()
+    text_color = getattr(theme, "INPUT_WIDGET_TEXT_COLOR", QColor("black")).name()
+    border_color = getattr(theme, "INPUT_WIDGET_BORDER_COLOR", QColor("gray")).name()
+    border_radius = getattr(theme, "INPUT_WIDGET_BORDER_RADIUS", 2)
+    padding = getattr(theme, "INPUT_WIDGET_PADDING", 2)
+
+    line_edit.setStyleSheet(f"""
+        QLineEdit {{
+            background-color: {bg_color};
+            color: {text_color};
+            border: 1px solid {border_color};
+            border-radius: {border_radius}px;
+            padding: {padding}px;
+        }}
+    """)
+
+    if controller and node_id and socket_name:
+        pass  # Connection logic (if any) is handled by controller or direct access
+
+    adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
+    return adaptor, line_edit
+
+
+def create_string_socket_component(
+    initial_value: Any = "",
+    controller: "GraphController | None" = None,
+    node_id: str = "",
+    socket_name: str = "",
+    parent_gfx_item: QGraphicsItem | None = None,
+) -> tuple[SocketWidgetAdaptor, QLineEdit]:
+    """
+    Creates a QLineEdit configured for string input and wraps it in a SocketWidgetAdaptor.
+
+    Args:
+        initial_value: The initial string value for the QLineEdit.
+        controller: The graph controller instance for updating the backend.
+        node_id: The ID of the parent node entity.
+        socket_name: The name of the socket entity.
+        parent_gfx_item: The parent QGraphicsItem for the SocketWidgetAdaptor.
+
+    Returns:
+        A tuple containing the configured SocketWidgetAdaptor and the QLineEdit instance.
+    """
+    line_edit = QLineEdit()
+    line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)  # Or AlignLeft
+    line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    line_edit.setText(str(initial_value if initial_value is not None else ""))
+
+    # Styling using theme constants
+    bg_color = getattr(theme, "INPUT_WIDGET_BACKGROUND_COLOR", QColor("white")).name()
+    text_color = getattr(theme, "INPUT_WIDGET_TEXT_COLOR", QColor("black")).name()
+    border_color = getattr(theme, "INPUT_WIDGET_BORDER_COLOR", QColor("gray")).name()
+    border_radius = getattr(theme, "INPUT_WIDGET_BORDER_RADIUS", 2)
+    padding = getattr(theme, "INPUT_WIDGET_PADDING", 2)
+
+    line_edit.setStyleSheet(f"""
+        QLineEdit {{
+            background-color: {bg_color};
+            color: {text_color};
+            border: 1px solid {border_color};
+            border-radius: {border_radius}px;
+            padding: {padding}px;
+        }}
+    """)
+
+    if controller and node_id and socket_name:
+        pass  # Connection logic (if any) is handled by controller or direct access
+
+    adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
+    return adaptor, line_edit
+
+
+# Now, register all factories
+SOCKET_WIDGET_COMPONENT_FACTORIES[int] = create_integer_socket_component
+SOCKET_WIDGET_COMPONENT_FACTORIES[float] = create_float_socket_component
+SOCKET_WIDGET_COMPONENT_FACTORIES[str] = create_string_socket_component
+
+
+# Clean up any old registry if it existed and is no longer needed
+# For example, if there was an old SOCKET_WIDGET_REGISTRY
+# del SOCKET_WIDGET_REGISTRY # Or comment out its definition if found elsewhere

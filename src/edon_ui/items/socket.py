@@ -1,14 +1,44 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from loguru import logger
-from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QPen
-from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsObject, QGraphicsItem
+from PySide6.QtCore import QRectF, Qt, Signal, QPointF
+from PySide6.QtGui import QBrush, QColor, QPen, QPainter
+from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsObject, QGraphicsItem, QStyleOptionGraphicsItem, QWidget
 
 from edon_ui import theme
 
 if TYPE_CHECKING:
     from edon_ui.items.edge import EdgeItem
+
+
+@runtime_checkable
+class SocketComponent(Protocol):
+    """
+    Protocol defining the interface for a visual component within a SocketRowItem.
+
+    A SocketComponent is expected to be a QGraphicsItem or behave like one for layout purposes.
+    It must be able to report its required size and position itself within an allocated rectangle.
+    """
+
+    # --- Core QGraphicsItem properties/methods expected ---
+    def setParentItem(self, parent: QGraphicsItem | None) -> None: ...
+    def parentItem(self) -> QGraphicsItem | None: ...
+    def setPos(self, pos: QPointF | float, y: float | None = None) -> None: ...
+    def pos(self) -> QPointF: ...
+    def boundingRect(self) -> QRectF: ...
+    def isVisible(self) -> bool: ...
+    def show(self) -> None: ...
+    def hide(self) -> None: ...
+    def update(self, rect: QRectF = QRectF()) -> None: ...  # Added update method
+
+    # --- Methods specific to SocketRowItem layout ---
+    def get_required_component_width(self) -> float:
+        """Returns the intrinsic width this component requires for layout."""
+        ...
+
+    def get_required_component_height(self) -> float:
+        """Returns the intrinsic height this component requires for layout."""
+        ...
 
 
 class SocketCircleItem(QGraphicsEllipseItem):
@@ -140,15 +170,23 @@ class SocketCircleItem(QGraphicsEllipseItem):
         else:
             super().mouseReleaseEvent(event)  # Pass to parent if not left button
 
+    def get_required_component_width(self) -> float:
+        return self.boundingRect().width()
+
+    def get_required_component_height(self) -> float:
+        return self.boundingRect().height()
+
 
 class SocketRowItem(QGraphicsObject):
     """A composable row for a socket, containing optional label, circle, and widget.
 
     Args:
-        label: The type label (optional).
-        circle: The connection circle (optional).
-        widget: The input/output widget (optional).
-        layout_mode: 'input' or 'output' (affects layout).
+        label: The type label (optional), conforming to SocketComponent.
+        circle: The connection circle (optional), conforming to SocketComponent.
+        widget: The input/output widget (optional), conforming to SocketComponent.
+        socket_entity_name: The unique name of the socket entity.
+        parent_entity_node_id: The unique ID of the parent node entity.
+        is_input: True if this is an input socket, False for output.
         parent: The parent QGraphicsItem.
     """
 
@@ -156,9 +194,9 @@ class SocketRowItem(QGraphicsObject):
 
     def __init__(
         self,
-        label: QGraphicsItem | None = None,
-        circle: QGraphicsItem | None = None,
-        widget: QGraphicsItem | None = None,
+        label: SocketComponent | None = None,
+        circle: SocketComponent | None = None,
+        widget: SocketComponent | None = None,
         socket_entity_name: str | None = None,
         parent_entity_node_id: str | None = None,
         is_input: bool = True,
@@ -173,14 +211,14 @@ class SocketRowItem(QGraphicsObject):
         self.parent_entity_node_id = parent_entity_node_id
 
         for item in (self.label, self.circle, self.widget):
-            if item is not None:
+            if item is not None and isinstance(item, QGraphicsItem):
                 item.setParentItem(self)
 
-        if self.label:
+        if self.label and hasattr(self.label, "set_text_alignment"):
             if self.is_input:
-                self.label.set_alignment(Qt.AlignmentFlag.AlignLeft)
+                self.label.set_text_alignment(Qt.AlignmentFlag.AlignLeft)
             else:
-                self.label.set_alignment(Qt.AlignmentFlag.AlignRight)
+                self.label.set_text_alignment(Qt.AlignmentFlag.AlignRight)
 
         self._width: float = 0
         self._height: float = 0
@@ -279,6 +317,12 @@ class SocketRowItem(QGraphicsObject):
             The bounding rectangle covering the entire row.
         """
         return QRectF(0, 0, self._width, self._height)
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+        # This QGraphicsObject is a container and does not paint anything itself.
+        # Its children (label, circle, widget) handle their own painting.
+        # Providing an empty paint method prevents NotImplementedError if Qt tries to paint it.
+        pass
 
     def _swap_to_label(self):
         if not self.is_input:

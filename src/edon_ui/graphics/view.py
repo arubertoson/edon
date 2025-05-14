@@ -1,19 +1,19 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
-from loguru import logger
-from PySide6.QtCore import QPointF, Qt, Signal
-from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QInputEvent
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QInputEvent, QKeyEvent, QMouseEvent, QPainter, QWheelEvent
 from PySide6.QtWidgets import QGraphicsView
 
 from ..context_menu import AppContextMenu
 
-
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QGraphicsItem, QMainWindow
+
     from edon.graph import EntityGraph
+    from edon_ui.commands.key_processor import KeyProcessor  # For type hint
     from edon_ui.graph_controller import GraphController
     from edon_ui.graphics.scene import GraphicsScene
-    from edon_ui.commands.key_processor import KeyProcessor  # For type hint
 
 
 @dataclass
@@ -40,16 +40,20 @@ class GraphicsView(QGraphicsView):
         # So, when KeyProcessor calls context_provider.provide_context, it calls this view's method.
 
         # View settings
-        self.setRenderHint(QPainter.Antialiasing)  # Enable smooth rendering of lines and shapes
-        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)  # Zoom centers on mouse cursor
-        self.setResizeAnchor(QGraphicsView.AnchorViewCenter)  # Keep content centered when resizing window
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # Hide scrollbars since we use pan/zoom
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # Hide scrollbars since we use pan/zoom
+        self.setRenderHint(QPainter.RenderHint.Antialiasing)  # Enable smooth rendering of lines and shapes
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)  # Zoom centers on mouse cursor
+        self.setResizeAnchor(
+            QGraphicsView.ViewportAnchor.AnchorViewCenter
+        )  # Keep content centered when resizing window
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # Hide scrollbars since we use pan/zoom
+        self.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )  # Hide scrollbars since we use pan/zoom
         # Set RubberBandDrag as the default when interactions are enabled
         # This will be overridden by _update_view_behavior if scene is empty
         # RubberBandDrag lets users click and drag to draw a selection rectangle
         # that selects multiple items in the scene
-        self.setDragMode(QGraphicsView.RubberBandDrag)
+        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
 
         # Zoom and pan state
         self._pan_active = False
@@ -70,13 +74,13 @@ class GraphicsView(QGraphicsView):
         current_scene = self.scene()
         if not current_scene or not hasattr(current_scene, "node_items") or not current_scene.node_items:  # Defensive
             self._interaction_enabled = False
-            self.setDragMode(QGraphicsView.NoDrag)
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
             self.resetTransform()
             if current_scene and hasattr(current_scene, "empty_scene_text"):
                 self.centerOn(current_scene.empty_scene_text)
         else:
             self._interaction_enabled = True
-            self.setDragMode(QGraphicsView.RubberBandDrag)
+            self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
 
     def _request_scene_rect_adjustment(self):
         """Helper method to get visible scene rect and request adjustment from the scene.
@@ -130,7 +134,7 @@ class GraphicsView(QGraphicsView):
             params={},
         )
 
-    def wheelEvent(self, event: QMouseEvent):  # QWheelEvent, but QMouseEvent is a common base for angleDelta checks
+    def wheelEvent(self, event: QWheelEvent):
         if not self._interaction_enabled:
             event.ignore()
             return
@@ -147,22 +151,22 @@ class GraphicsView(QGraphicsView):
                 event.accept()
                 return
 
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             main_window = self.window()
             if main_window and hasattr(main_window, "is_position_on_resize_edge"):
                 if main_window.is_position_on_resize_edge(event.globalPosition()):
                     super().mousePressEvent(event)
                     return
 
-        if event.button() == Qt.MiddleButton:
+        if event.button() == Qt.MouseButton.MiddleButton:
             if not self._interaction_enabled:
                 event.ignore()
                 return
             self._pan_active = True
             self._last_pan_pos = event.position().toPoint()
-            self.setCursor(Qt.ClosedHandCursor)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
-        elif event.button() == Qt.RightButton:
+        elif event.button() == Qt.MouseButton.RightButton:
             self._right_click_pos = event.globalPosition().toPoint()
             self._right_click_moved = False
             event.accept()
@@ -189,7 +193,7 @@ class GraphicsView(QGraphicsView):
 
             self._request_scene_rect_adjustment()
             event.accept()
-        elif self._right_click_pos and event.buttons() & Qt.RightButton:
+        elif self._right_click_pos and event.buttons() & Qt.MouseButton.RightButton:
             current_pos = event.globalPosition().toPoint()
             delta = current_pos - self._right_click_pos
             # If mouse has moved beyond threshold and we haven't started moving window yet,
@@ -202,7 +206,7 @@ class GraphicsView(QGraphicsView):
                     self.window().windowHandle().startSystemMove()  # type: ignore
             event.accept()
 
-        elif event.buttons() & Qt.LeftButton and self._interaction_enabled:
+        elif event.buttons() & Qt.MouseButton.LeftButton and self._interaction_enabled:
             super().mouseMoveEvent(event)
 
         elif not self._interaction_enabled:
@@ -212,14 +216,14 @@ class GraphicsView(QGraphicsView):
             super().mouseMoveEvent(event)  # Catch-all for other unhandled GView events
 
     def mouseReleaseEvent(self, event: QMouseEvent):
-        if event.button() == Qt.MiddleButton:
+        if event.button() == Qt.MouseButton.MiddleButton:
             if self._pan_active:
                 self._pan_active = False
                 self._last_pan_pos = None
-                self.setCursor(Qt.ArrowCursor)
+                self.setCursor(Qt.CursorShape.ArrowCursor)
                 event.accept()
 
-        elif event.button() == Qt.RightButton:
+        elif event.button() == Qt.MouseButton.RightButton:
             if self._right_click_pos and not self._right_click_moved:
                 # NOTE: This is a hack to get the context menu to work when the right button is released
                 # This is because the right button is used to move the window, and we need to show the context menu

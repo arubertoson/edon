@@ -5,7 +5,6 @@ from PySide6.QtWidgets import QGraphicsPathItem, QStyleOptionGraphicsItem, QWidg
 from edon_ui import theme
 
 from edon_ui.items.socket import SocketCircleItem
-from edon_ui.items.node import NodeItem
 
 
 class EdgeItem(QGraphicsPathItem):
