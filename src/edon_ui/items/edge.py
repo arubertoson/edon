@@ -104,17 +104,6 @@ class EdgeItem(QGraphicsPathItem):
         """Clears the target socket of this edge, making its target end floating."""
         self._target_socket_item = None
 
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedChange:
-            if value:  # Edge is about to be selected
-                # Check if any nodes are ALREADY selected or are being selected in this same event cycle.
-                # We want to avoid selecting edges when nodes are being selected as the edges are a child of the nodes.
-                # and follows whatever he node selection state is.
-                if any(isinstance(item, NodeItem) for item in self.scene().selectedItems()):
-                    return False
-
-        return super().itemChange(change, value)
-
     def update_path(self):
         """
         Recalculates and sets the QPainterPath for the edge.

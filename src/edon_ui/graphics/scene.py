@@ -153,7 +153,23 @@ class GraphicsScene(QGraphicsScene):
         self.temp_edge: EdgeItem | None = None
         self._currently_highlighted_target_socket: SocketCircleItem | None = None
 
+        self.selectionChanged.connect(self._handle_selection_changed)
+
         self._update_scene_appearance()
+
+    def _handle_selection_changed(self):
+        # XXX: We should keep an eye on this function as it could potentially be recursed and cause a crash/lock.
+        # If that happens we need to look into temporarily disconnecting the signal and reconnecting it.
+        current_selected_items = self.selectedItems()
+        nodes_are_present_in_selection = any(isinstance(item, NodeItem) for item in current_selected_items)
+
+        if nodes_are_present_in_selection:
+            # If any node is selected, iterate through a copy of the selected items and deselect any EdgeItem.
+            # We iterate a copy because setSelected(False) will modify the list returned by selectedItems() live.
+            # This might not be necessary if we are careful with the logic of the edge item selection.
+            for item in list(current_selected_items):
+                if isinstance(item, EdgeItem):
+                    item.setSelected(False)
 
     def addNode(self, node: NodeItem):
         if node in self.node_items:
