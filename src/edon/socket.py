@@ -71,17 +71,10 @@ class EntitySocket:
             A tuple: (bool_success, SocketConnectionErrorReason | None)
         """
         if self == other_socket:
-            logger.debug(f"Socket '{self.name}' can_connect_to '{other_socket.name}': Cannot connect to self.")
             return False, SocketConnectionErrorReason.CANNOT_CONNECT_TO_SELF
         if self.direction == other_socket.direction:
-            logger.debug(
-                f"Socket '{self.name}' can_connect_to '{other_socket.name}': Directions are the same ({self.direction})."
-            )
             return False, SocketConnectionErrorReason.DIRECTIONS_NOT_OPPOSITE
         if self.parent_node == other_socket.parent_node:
-            logger.debug(
-                f"Socket '{self.name}' can_connect_to '{other_socket.name}': Same parent node ('{self.parent_node.name}')."
-            )
             return False, SocketConnectionErrorReason.SAME_PARENT_NODE
 
         # Determine which socket is output and which is input for type checking
@@ -89,10 +82,6 @@ class EntitySocket:
         input_socket = other_socket if self.direction == SocketDirection.OUTPUT else self
 
         if not (output_socket.direction == SocketDirection.OUTPUT and input_socket.direction == SocketDirection.INPUT):
-            # This case should theoretically be caught by self.direction == other_socket.direction, but good for safety.
-            logger.debug(
-                f"Socket '{self.name}' can_connect_to '{other_socket.name}': Logical error - one not OUTPUT and other not INPUT after initial checks."
-            )
             return False, SocketConnectionErrorReason.DIRECTIONS_NOT_OPPOSITE
 
         # Type compatibility check
@@ -108,9 +97,6 @@ class EntitySocket:
                     can_types_connect = True
 
         if not can_types_connect:
-            logger.debug(
-                f"Socket '{self.name}' ({output_socket.data_type}) can_connect_to '{other_socket.name}' ({input_socket.data_type}): Type mismatch."
-            )
             return False, SocketConnectionErrorReason.TYPE_MISMATCH
 
         # The Graph.connect_sockets method will handle overwriting (disconnecting old edge)

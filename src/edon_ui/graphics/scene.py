@@ -148,8 +148,8 @@ class GraphicsScene(QGraphicsScene):
         super().addItem(self.empty_scene_text)
         self.empty_scene_text.setVisible(False)
 
-        self.node_items = []
-        self.edge_items = []
+        self.node_items: list[NodeItem] = []
+        self.edge_items: list[EdgeItem] = []
         self.temp_edge: EdgeItem | None = None
         self._currently_highlighted_target_socket: SocketCircleItem | None = None
 
@@ -161,6 +161,7 @@ class GraphicsScene(QGraphicsScene):
 
         self.node_items.append(node)
         node.positionChanged.connect(self._update_scene_appearance)
+        node.sizeChanged.connect(self._handle_node_resize, Qt.ConnectionType.QueuedConnection)
 
         super().addItem(node)
         self._update_scene_appearance()
@@ -177,9 +178,7 @@ class GraphicsScene(QGraphicsScene):
             or (edge.target_socket_item and edge.target_socket_item.parent_node_entity_id == node.node_entity_id)
         ]
         for edge in edges_to_remove:
-            self.edge_items.remove(edge)
-            super().removeItem(edge)
-            del edge
+            self.removeEdge(edge)
 
         self.node_items.remove(node)
         super().removeItem(node)
@@ -238,34 +237,50 @@ class GraphicsScene(QGraphicsScene):
         height = max(max_y - min_y, 400)
         self.active_area.setRect(min_x, min_y, width, height)
 
-    def _update_scene_appearance(self):
-        # To ensure that the active area is only visible when there are nodes in the scene
-        # and the empty scene text is only visible when there are no nodes in the scene.
+    def _update_common_scene_elements(self):
+        """Updates common visual elements of the scene like active area and empty text."""
         if not self.node_items:
             if self.active_area.scene() == self:
                 super().removeItem(self.active_area)
             self.empty_scene_text.setVisible(True)
-
-            self.scene_changed.emit()
             return
 
-        # If there are nodes in the scene, ensure the active area is visible and displayed
-        # correctly.
         self.empty_scene_text.setVisible(False)
         if not self.active_area.scene() == self:
             super().addItem(self.active_area)
+
         self._calculate_active_area_rect()
 
-        # Update the temporary connection if it's being dragged
+    def _handle_node_resize(self, resized_node_id: str):
+        """Handles updates when a specific node (identified by resized_node_id) resizes."""
+        logger.debug(f"Scene: Handling resize for node {resized_node_id}")
+        self._update_common_scene_elements()
+
+        # Update edges connected to the specific resized node
+        for edge_item in self.edge_items:
+            is_source_node = edge_item.source_socket_item.parent_node_entity_id == resized_node_id
+            is_target_node = (
+                edge_item.target_socket_item and edge_item.target_socket_item.parent_node_entity_id == resized_node_id
+            )
+            if is_source_node or is_target_node:
+                logger.debug(f"Updating edge connected to resized node: {edge_item}")
+                edge_item.update_path()
+
+        self.scene_changed.emit()
+
+    def _update_scene_appearance(self):
+        # This method is now primarily for general updates (node moves, add/remove item)
+        logger.trace("Scene: General appearance update.")
+        self._update_common_scene_elements()
+
+        # Optimization: if dragging a temp_edge, only update it for performance during drag.
+        # Otherwise, update all committed edges.
         if self.temp_edge:
-            # Its _target_pos is the mouse cursor. update_path() will use the
-            # current _source_socket_item.scenePos() and this _target_pos.
             self.temp_edge.update_path()
         else:
             for edge_item in self.edge_items:
                 edge_item.update_path()
 
-        # Emit the general scene_changed signal whenever this update logic runs.
         self.scene_changed.emit()
 
     # --- Connection Management Methods ---

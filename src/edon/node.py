@@ -12,6 +12,7 @@ class SocketDef:
     type: Type[Any]
     default: Any = None
     visual_type_key: str = "default"
+    accepts_connection: bool = True
 
 
 @dataclass

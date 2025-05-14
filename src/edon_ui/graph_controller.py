@@ -149,7 +149,7 @@ class GraphController:
                         f"  Creating EdgeItem: {source_entity_node.id}::{source_entity_socket.name} -> "
                         f"{target_entity_socket.parent_node.id}::{target_entity_socket.name}"
                     )
-                    ui_edge = create_edge_item(source_ui_socket_row.socket_circle, target_ui_socket_row.socket_circle)
+                    ui_edge = create_edge_item(source_ui_socket_row.circle, target_ui_socket_row.circle)
                     self._register_edge_map(edge_key, ui_edge)
 
         logger.debug("Edge population complete.")
@@ -385,9 +385,6 @@ class GraphController:
             for target_socket_name, entity_target_input_socket in getattr(target_node, socket_iter).items():
                 can_connect, _ = entity_target_input_socket.can_connect_to(entity_source_socket)
 
-                logger.debug(
-                    f"  Checking if {entity_target_input_socket.parent_node.id} can connect to {entity_source_socket.parent_node.id}"
-                )
                 if can_connect:
                     would_cycle = self.entity_graph._has_path(
                         entity_target_input_socket.parent_node.id, entity_source_socket.parent_node.id

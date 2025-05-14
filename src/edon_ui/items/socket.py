@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPen
-from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsObject
+from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsObject, QGraphicsItem
 
 from edon_ui import theme
 
@@ -50,9 +50,14 @@ class SocketCircleItem(QGraphicsEllipseItem):
 
     def add_edge(self, edge_item):
         self._connected_edges.add(edge_item)
+        if self.parentItem():
+            self.parentItem().set_connected_state(True)
 
     def remove_edge(self, edge_item):
         self._connected_edges.discard(edge_item)
+        if self.parentItem():
+            if not self._connected_edges:
+                self.parentItem().set_connected_state(False)
 
     @property
     def connected_edges(self) -> set["EdgeItem"]:
@@ -86,7 +91,6 @@ class SocketCircleItem(QGraphicsEllipseItem):
         """
         Visually indicate that this socket is not a valid drop target (e.g., gray out).
         """
-        logger.debug(f"Setting socket {self.socket_entity_name} disabled state to {disabled}")
         self._is_disabled = disabled
         self.setOpacity(0.3 if disabled else 1.0)
         self.update()
@@ -138,67 +142,166 @@ class SocketCircleItem(QGraphicsEllipseItem):
 
 
 class SocketRowItem(QGraphicsObject):
-    """Represents a full row for a socket, including its placeholder content and connection circle.
-    Its (0,0) is its top-left corner.
-    It is linked to a logical socket entity via its name and parent node entity ID.
+    """A composable row for a socket, containing optional label, circle, and widget.
+
+    Args:
+        label: The type label (optional).
+        circle: The connection circle (optional).
+        widget: The input/output widget (optional).
+        layout_mode: 'input' or 'output' (affects layout).
+        parent: The parent QGraphicsItem.
     """
+
+    layoutChanged: Signal = Signal()
 
     def __init__(
         self,
-        parent,
-        is_input: bool,
-        socket_entity_name: str,
-        parent_node_entity_id: str,
-        socket_widget: QGraphicsObject,
-        socket_circle: SocketCircleItem | None = None,
-    ):
+        label: QGraphicsItem | None = None,
+        circle: QGraphicsItem | None = None,
+        widget: QGraphicsItem | None = None,
+        socket_entity_name: str | None = None,
+        parent_entity_node_id: str | None = None,
+        is_input: bool = True,
+        parent: QGraphicsItem | None = None,
+    ) -> None:
         super().__init__(parent)
+        self.label = label
+        self.circle = circle
+        self.widget = widget
         self.is_input = is_input
         self.socket_entity_name = socket_entity_name
-        self.parent_node_entity_id = parent_node_entity_id
+        self.parent_entity_node_id = parent_entity_node_id
 
-        self.socket_widget = socket_widget
-        self.socket_circle = socket_circle
-        self.socket_widget.setParentItem(self)
-        self.socket_circle.setParentItem(self)
+        for item in (self.label, self.circle, self.widget):
+            if item is not None:
+                item.setParentItem(self)
 
-        self._layout_socket_row()
+        if self.label:
+            if self.is_input:
+                self.label.set_alignment(Qt.AlignmentFlag.AlignLeft)
+            else:
+                self.label.set_alignment(Qt.AlignmentFlag.AlignRight)
 
-    # XXX: Handler if SocketRowItem needs to react directly to value changes
-    # def on_content_value_changed(self, value):
-    #     logger.debug(f"SocketRowItem ({self.parent_node_entity_id}::{self.socket_entity_name}) detected value change: {value}")
-    # Potentially emit another signal or interact with GraphManager
+        self._width: float = 0
+        self._height: float = 0
+        self._do_layout()
 
-    def get_required_height(self) -> float:
-        # The row height should be the max of the socket circle diameter and the widget's height
-        widget_height = self.socket_widget.boundingRect().height()
-        circle_diameter = self.socket_circle._radius * 2
-        return max(widget_height, circle_diameter)
+    def _do_layout(self) -> None:
+        """Layout the label, circle, and widget according to the mode. Emits layoutChanged."""
+        padding: float = theme.SOCKET_HORIZONTAL_PADDING
+        x: float = 0
+        y: float = 0
+
+        circle_diameter: float = self.circle.boundingRect().height() if self.circle else 0
+        circle_radius: float = circle_diameter / 2
+        row_height: float = theme.SOCKET_ROW_HEIGHT
+
+        # Layout for input:     [circle][padding][label]
+        #                               [padding][widget]
+        # Layout for connected: [padding][label]
+        if self.is_input:
+            if self.circle:
+                x = -circle_radius - padding
+                self.circle.setPos(x, row_height / 2)
+                x += circle_radius + padding
+            if self.label:
+                self.label.setPos(x, 0)
+                y = self.label.boundingRect().height()
+            if self.widget:
+                self.widget.setPos(x, y)
+        # Layout for output: [label][padding][circle]
+        else:
+            if self.label:
+                self.label.setPos(0, 0)
+                x += self.label.boundingRect().width() + padding
+            if self.circle:
+                y = self.label.boundingRect().height() / 2
+                x += circle_radius
+                self.circle.setPos(x, y)
+            if self.widget:
+                self.widget.setPos(0, 0)
+                # x += self.widget.boundingRect().width() + padding
+
+        children = [item for item in (self.label, self.widget, self.circle) if item is not None and item.isVisible()]
+
+        min_x = min(child.pos().x() for child in children)
+        min_y = min(child.pos().y() for child in children)
+        max_x = max(child.pos().x() + child.boundingRect().width() for child in children)
+        max_y = max(child.pos().y() + child.boundingRect().height() for child in children)
+
+        new_width = max_x - min_x
+        new_height = max_y - min_y
+
+        if self._width != new_width or self._height != new_height:
+            self.prepareGeometryChange()
+            self._width = new_width
+            self._height = new_height
+            self.update()
+
+        self.layoutChanged.emit()
+
+    def get_effective_width(self) -> float:
+        """Returns the effective width of the row, accounting for label and widget widths."""
+        if self.label:
+            return self.label.boundingRect().width()
+        if self.widget:
+            return self.widget.boundingRect().width()
+        return 0
 
     def get_required_width(self) -> float:
-        widget_width = self.socket_widget.boundingRect().width()
-        circle_diameter = self.socket_circle._radius * 2
+        """Returns the total width required by the row.
 
-        # Plus any horizontal padding you want between circle and widget
-        return circle_diameter + theme.SOCKET_HORIZONTAL_PADDING + widget_width
+        Returns:
+            The total width required by the row, including all components and padding.
+        """
+        width: float = 0
+        padding: float = theme.SOCKET_HORIZONTAL_PADDING
+        for item in (self.label, self.widget, self.circle):
+            if item is not None:
+                width += item.boundingRect().width() + padding
+        return max(width - padding, 0)  # Remove last padding
 
-    def _layout_socket_row(self):
-        row_center_y = self.get_required_height() / 2
-        circle_radius = self.socket_circle._radius
-        content_width = self.socket_widget.boundingRect().width()
+    def get_required_height(self) -> float:
+        """Returns the maximum height required by the row.
 
-        if self.is_input:
-            # Input: Circle [Space] ContentPlaceholder
-            offset_x = circle_radius + theme.SOCKET_HORIZONTAL_PADDING
-
-            self.socket_circle.setPos(0, row_center_y)
-            self.socket_widget.setPos(offset_x, 0)
-        else:
-            # Output: ContentPlaceholder [Space] Circle
-            circle_center_x = content_width + theme.SOCKET_HORIZONTAL_PADDING + circle_radius
-
-            self.socket_circle.setPos(circle_center_x, row_center_y)
-            self.socket_widget.setPos(0, 0)
+        Returns:
+            The maximum height required by the row, based on its components.
+        """
+        heights: list[float] = [
+            item.boundingRect().height() for item in (self.label, self.widget, self.circle) if item is not None
+        ]
+        return max(heights) if heights else 0
 
     def boundingRect(self) -> QRectF:
-        return QRectF(0, 0, self.get_required_width(), self.get_required_height())
+        """Returns the bounding rectangle of the row.
+
+        Returns:
+            The bounding rectangle covering the entire row.
+        """
+        return QRectF(0, 0, self._width, self._height)
+
+    def _swap_to_label(self):
+        if not self.is_input:
+            return
+
+        self.widget.hide()
+        self.widget.setParentItem(None)
+        self._do_layout()
+
+    def _swap_to_editable(self):
+        if not self.is_input:
+            return
+
+        self.widget.show()
+        self.widget.setParentItem(self)
+        self._do_layout()
+
+    def set_connected_state(self, connected: bool):
+        """Swap between editable widget and label depending on connection state (for input sockets only). Emits layoutChanged."""
+        if not self.is_input:
+            return
+
+        if connected:
+            self._swap_to_label()
+        else:
+            self._swap_to_editable()

@@ -7,13 +7,15 @@ from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsTextItem
 
+from edon_ui import theme
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketCircleItem, SocketRowItem
 from edon_ui.items.socket_widgets import SOCKET_WIDGET_REGISTRY
+from edon_ui.items.socket_widgets import SocketLabel
 
 if TYPE_CHECKING:
-    from edon.node import EntityNode
+    from edon.node import EntityNode, SocketDef
     from edon.socket import EntitySocket
 
 
@@ -39,34 +41,52 @@ def create_socket_widget(
         return QGraphicsTextItem(socket_name, parent)
 
 
-def create_socket_row(entity_socket: "EntitySocket", socket_def: Any, node_id: str, is_input: bool) -> SocketRowItem:
+def create_socket_row(
+    entity_socket: "EntitySocket",
+    socket_def: "SocketDef",
+    node_id: str,
+    is_input: bool,
+) -> SocketRowItem:
+    """Factory for creating a socket row with the correct composition.
+
+    Args:
+        entity_socket: The socket entity.
+        socket_def: The socket definition.
+        node_id: The node's unique identifier.
+        is_input: Whether this is an input socket.
+
+    Returns:
+        A composable SocketRowItem.
     """
-    Create a SocketRowItem for the given entity socket and definition.
-    """
-    initial_value = (
-        entity_socket.value
-        if getattr(entity_socket, "value", None) is not None
-        else (
-            getattr(socket_def, "default", None)
-            if socket_def and getattr(socket_def, "default", None) is not None
-            else None
-        )
-    )
-    widget = create_socket_widget(entity_socket, node_id, None, initial_value=initial_value)
-    visual_type_key = getattr(socket_def, "visual_type_key", "default") if socket_def else "default"
+    accepts_connection: bool = getattr(socket_def, "accepts_connection", True)
+    type_label: str = socket_def.type.__name__ if hasattr(socket_def, "type") else "Value"
+    width: int = int(theme.NODE_MIN_WIDTH)
+    label: QGraphicsItem | None = None
+    circle: QGraphicsItem | None = None
+    widget: QGraphicsItem | None = None
+
+    if not is_input:
+        # Output: always label + circle
+        label = SocketLabel(type_label, width)
+        circle = SocketCircleItem(None, entity_socket.name, node_id)
+
+    elif is_input and accepts_connection:
+        # Input: label + circle + widget
+        label = SocketLabel(type_label, width)
+        circle = SocketCircleItem(None, entity_socket.name, node_id)
+        widget = create_socket_widget(entity_socket, node_id, None)
+
+    else:
+        # Not connectable: just the widget
+        widget = create_socket_widget(entity_socket, node_id, None)
 
     return SocketRowItem(
-        parent=None,  # Will be parented by NodeItem
+        label=label,
+        circle=circle,
+        widget=widget,
         is_input=is_input,
         socket_entity_name=entity_socket.name,
-        parent_node_entity_id=node_id,
-        socket_widget=widget,
-        socket_circle=SocketCircleItem(
-            parent=None,  # Will be parented by SocketRowItem
-            socket_entity_name=entity_socket.name,
-            parent_node_entity_id=node_id,
-            visual_type_key=visual_type_key,
-        ),
+        parent_entity_node_id=node_id,
     )
 
 

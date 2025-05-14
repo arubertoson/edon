@@ -1,7 +1,6 @@
 from loguru import logger
 
 from edon.graph import EntityGraph
-from edon.logging import setup_logging  # Import setup_logging
 from edon.node import EntityNode, SocketDef
 from edon_ui.app import EdonApplication  # Import EdonApplication instead of main
 
@@ -12,22 +11,34 @@ class IntegerNode(EntityNode):
     """A node that outputs a single integer value (defined declaratively)."""
 
     # Class attributes define the node's properties and sockets
-    node_type = "math.int"
-    output_socket_definitions = [SocketDef(name="value", type=int, visual_type_key="number")]
+    node_type = "constant.int"
+    input_socket_definitions = [
+        SocketDef(name="in_int", type=int, visual_type_key="number", accepts_connection=False),
+    ]
+    output_socket_definitions = [
+        SocketDef(name="out_int", type=int, visual_type_key="number"),
+    ]
 
     def process(self):
-        return self.output_sockets["value"].value
+        self.output_sockets["out_int"].value = self.input_sockets["in_int"].value
+        return self.output_sockets["out_int"].value
 
 
 class FloatNode(EntityNode):
     """A node that outputs a single float value (defined declaratively)."""
 
     # Class attributes define the node's properties and sockets
-    node_type = "math.float"
-    output_socket_definitions = [SocketDef(name="value", type=float, visual_type_key="number")]
+    node_type = "constant.float"
+    input_socket_definitions = [
+        SocketDef(name="in_float", type=float, visual_type_key="number", accepts_connection=False),
+    ]
+    output_socket_definitions = [
+        SocketDef(name="out_float", type=float, visual_type_key="number"),
+    ]
 
     def process(self):
-        return self.output_sockets["value"].value
+        self.output_sockets["out_float"].value = self.input_sockets["in_float"].value
+        return self.output_sockets["out_float"].value
 
 
 class StringNode(EntityNode):
@@ -35,10 +46,16 @@ class StringNode(EntityNode):
 
     # Class attributes define the node's properties and sockets
     node_type = "string.text"
-    output_socket_definitions = [SocketDef(name="value", type=str, visual_type_key="string")]
+    input_socket_definitions = [
+        SocketDef(name="in_string", type=str, visual_type_key="string", accepts_connection=False),
+    ]
+    output_socket_definitions = [
+        SocketDef(name="out_string", type=str, visual_type_key="string"),
+    ]
 
     def process(self):
-        return self.output_sockets["value"].value
+        self.output_sockets["out_string"].value = self.input_sockets["in_string"].value
+        return self.output_sockets["out_string"].value
 
 
 class AddNode(EntityNode):
@@ -186,22 +203,22 @@ def create_sample_graph():
     graph.add_node(concat_node)
 
     # Set initial values for the nodes
-    int_node.output_sockets["value"].value = 5
-    float_node.output_sockets["value"].value = 2.5
-    string_node1.output_sockets["value"].value = "Hello, "
-    string_node2.output_sockets["value"].value = "World!"
+    int_node.input_sockets["in_int"].value = 5
+    float_node.input_sockets["in_float"].value = 2.5
+    string_node1.input_sockets["in_string"].value = "Hello, "
+    string_node2.input_sockets["in_string"].value = "World!"
 
     # Connect float_node and int_node to multiply_node
-    success1, reason1 = graph.connect_sockets((float_node.id, "value"), (multiply_node.id, "a"))
-    success2, reason2 = graph.connect_sockets((int_node.id, "value"), (multiply_node.id, "b"))
+    success1, reason1 = graph.connect_sockets((float_node.id, "out_float"), (multiply_node.id, "a"))
+    success2, reason2 = graph.connect_sockets((int_node.id, "out_int"), (multiply_node.id, "b"))
     if not success1:
         logger.error(f"Failed to connect float_node to multiply_node: {reason1}")
     if not success2:
         logger.error(f"Failed to connect int_node to multiply_node: {reason2}")
 
     # Connect string nodes to concat node
-    success3, reason3 = graph.connect_sockets((string_node1.id, "value"), (concat_node.id, "a"))
-    success4, reason4 = graph.connect_sockets((string_node2.id, "value"), (concat_node.id, "b"))
+    success3, reason3 = graph.connect_sockets((string_node1.id, "out_string"), (concat_node.id, "a"))
+    success4, reason4 = graph.connect_sockets((string_node2.id, "out_string"), (concat_node.id, "b"))
     if not success3:
         logger.error(f"Failed to connect string_node1 to concat_node: {reason3}")
     if not success4:

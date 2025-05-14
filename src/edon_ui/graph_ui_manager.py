@@ -149,7 +149,7 @@ class GraphUIManager:
                         f"  Creating EdgeItem: {source_entity_node.id}::{source_entity_socket.name} -> "
                         f"{target_entity_socket.parent_node.id}::{target_entity_socket.name}"
                     )
-                    ui_edge = create_edge_item(source_ui_socket_row.socket_circle, target_ui_socket_row.socket_circle)
+                    ui_edge = create_edge_item(source_ui_socket_row.circle, target_ui_socket_row.circle)
                     self._register_edge_map(edge_key, ui_edge)
 
         logger.debug("Edge population complete.")

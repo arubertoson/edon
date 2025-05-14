@@ -17,6 +17,7 @@ class NodeItem(QGraphicsObject):
     """A visual node item in the editor, representing a logical node entity."""
 
     positionChanged = Signal()
+    sizeChanged = Signal(str)
 
     def __init__(
         self,
@@ -37,10 +38,10 @@ class NodeItem(QGraphicsObject):
         self._min_height_param = height
 
         self.setPos(x, y)
-        self.setFlag(QGraphicsItem.ItemIsMovable, True)
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
-        self.setCacheMode(QGraphicsItem.ItemCoordinateCache)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
+        self.setCacheMode(QGraphicsItem.CacheMode.ItemCoordinateCache)
 
         self.title_text_item = QGraphicsTextItem(self.title, self)
         self.title_text_item.setDefaultTextColor(theme.NODE_TITLE_TEXT)
@@ -50,68 +51,91 @@ class NodeItem(QGraphicsObject):
         self._output_sockets = output_sockets or []
         for row in self._input_sockets + self._output_sockets:
             row.setParentItem(self)
+            row.layoutChanged.connect(self._on_socket_row_layout_changed)
 
-        # --- Calculate Dynamic Sizing (initial calculation) ---
-        temp_height = self._calculate_dynamic_height()
-        temp_width = self._calculate_dynamic_width()
-
-        # Now, prepare for geometry change BEFORE actually setting self._width, self._height
-        self.prepareGeometryChange()
-
-        # Set final _width and _height
-        self._height = temp_height
-        self._width = temp_width
-        # --- End Dynamic Sizing ---
-
-        self._layout_socket_rows()
+        self._on_socket_row_layout_changed()
 
     def _calculate_dynamic_height(self) -> float:
-        input_rows_height = sum(row.get_required_height() for row in self._input_sockets)
-        output_rows_height = sum(row.get_required_height() for row in self._output_sockets)
-        total_socket_rows_height = input_rows_height + output_rows_height
+        total_socket_rows_height = theme.NODE_TITLE_HEIGHT + theme.SOCKET_VERTICAL_CONTENT_MARGIN
 
-        content_area_height = (theme.SOCKET_PADDING * 2) + max(total_socket_rows_height, theme.NODE_MIN_CONTENT_HEIGHT)
-        calculated_total_height = theme.NODE_TITLE_HEIGHT + content_area_height
+        for idx, row in enumerate(self._input_sockets + self._output_sockets):
+            total_socket_rows_height += row.boundingRect().height()
+            if idx < len(self._input_sockets + self._output_sockets) - 1:
+                total_socket_rows_height += theme.SOCKET_VERTICAL_ITEM_PADDING
 
-        return max(self._min_height_param, calculated_total_height)
+        total_socket_rows_height += theme.SOCKET_VERTICAL_CONTENT_MARGIN
+        print(f"total_socket_rows_height: {total_socket_rows_height}")
+        print(f"self._min_height_param: {self._min_height_param}")
+
+        content_area_height = max(total_socket_rows_height, theme.NODE_MIN_CONTENT_HEIGHT)
+
+        return max(self._min_height_param, total_socket_rows_height, content_area_height)
 
     def _calculate_dynamic_width(self) -> float:
+        print(f"CALCULATING DYNAMIC WIDTH in {self.title}")
         max_row_w = 0
         all_rows = self._input_sockets + self._output_sockets
         if all_rows:
-            max_row_w = max(row.get_required_width() for row in all_rows)
+            max_row_w = max(row.get_effective_width() for row in all_rows)
+
+        for row in all_rows:
+            print(f"row {row.socket_entity_name}: {row.get_effective_width()}")
+
+        print(f"max_row_w: {max_row_w}")
 
         min_content_width = theme.NODE_MIN_WIDTH - (theme.NODE_HORIZONTAL_PADDING * 2)
         calculated_internal_content_width = max(max_row_w, min_content_width)
-        calculated_total_width = calculated_internal_content_width + (theme.NODE_HORIZONTAL_PADDING * 2)
+        calculated_total_width = calculated_internal_content_width  #  + (theme.NODE_HORIZONTAL_PADDING * 2)
+
+        print(f"calculated_total_width: {calculated_total_width}, vs min_width_param: {self._min_width_param}")
 
         return max(self._min_width_param, calculated_total_width)
 
-    def _layout_socket_rows(self):
-        current_row_top_y = theme.NODE_TITLE_HEIGHT + theme.SOCKET_PADDING
+    def _layout_socket_rows(self) -> None:
+        """Layout input and output socket rows using their required width and height.
 
+        This method positions each socket row within the node, stacking them vertically.
+        Output rows are right-aligned, input rows are left-aligned.
+        Padding is only added between rows, not after the last row.
+        """
+        current_row_top_y: float = theme.NODE_TITLE_HEIGHT + theme.SOCKET_VERTICAL_CONTENT_MARGIN
+
+        # Output sockets
         for row_item in self._output_sockets:
-            # We have to account for the circle's radius when positioning the row to ensure that it
-            # peeks outside the node square.
-            row_x = self._width - (row_item.get_required_width() - row_item.socket_circle._radius)
-            row_item.setPos(row_x, current_row_top_y)
-            current_row_top_y += row_item.get_required_height()
-
-        for row_item in self._input_sockets:
             row_item.setPos(0, current_row_top_y)
-            current_row_top_y += row_item.get_required_height()
+
+            current_row_top_y += row_item.boundingRect().height() + theme.SOCKET_VERTICAL_ITEM_PADDING
+
+        # Input sockets
+        for idx, row_item in enumerate(self._input_sockets):
+            row_item.setPos(0, current_row_top_y)
+
+            current_row_top_y += row_item.boundingRect().height()
+            if idx < len(self._input_sockets) - 1:
+                current_row_top_y += theme.SOCKET_VERTICAL_ITEM_PADDING
+
+    def _on_socket_row_layout_changed(self):
+        """Handle a socket row's layout change by relayout and redraw the node."""
+        self.prepareGeometryChange()
+        self._layout_socket_rows()
+        self._height = self._calculate_dynamic_height()
+        self._width = self._calculate_dynamic_width()
+
+        self.update()
+        self.sizeChanged.emit(self.node_entity_id)
 
     def boundingRect(self):
         return QRectF(0, 0, self._width, self._height)
 
     def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionHasChanged:
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self.positionChanged.emit()
+
         return super().itemChange(change, value)
 
     def paint(self, painter, option, widget=None):
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.TextAntialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
         # Main node body
         node_rect = self.boundingRect()
@@ -119,7 +143,7 @@ class NodeItem(QGraphicsObject):
 
         # Border
         border_width = theme.NODE_BORDER_WIDTH_DEFAULT
-        if option.state & QStyle.State_Selected:
+        if option.state & QStyle.StateFlag.State_Selected:
             pen = QPen(theme.NODE_BORDER_SELECTED, theme.NODE_BORDER_WIDTH_SELECTED)
             border_width = theme.NODE_BORDER_WIDTH_SELECTED  # For consistency if used elsewhere
         else:
@@ -169,7 +193,7 @@ class NodeItem(QGraphicsObject):
         title_fill_path.closeSubpath()
 
         painter.setBrush(QBrush(theme.NODE_TITLE_BACKGROUND))
-        painter.setPen(Qt.NoPen)  # No border for the fill path itself
+        painter.setPen(Qt.PenStyle.NoPen)  # No border for the fill path itself
         painter.drawPath(title_fill_path)
 
         # Position and draw title text (QGraphicsTextItem handles its own drawing)
