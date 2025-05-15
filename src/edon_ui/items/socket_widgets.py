@@ -197,7 +197,7 @@ class SocketWidgetAdaptor(QGraphicsObject):
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._fixed_width, self._fixed_height)
 
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+    def paint(self, painter: "QPainter", option: "QStyleOptionGraphicsItem", widget: QWidget | None = None) -> None:
         # is not strictly needed for SocketWidgetAdaptor itself if it's just a container.
         # The QGraphicsProxyWidget handles painting its QWidget.
         # If you wanted to draw a border or background for the adaptor itself, you would override paint.

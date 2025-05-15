@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QInputEvent, QKeyEvent, QMouseEvent, QPainter, QWheelEvent
-from PySide6.QtWidgets import QGraphicsView
+from PySide6.QtWidgets import QGraphicsView, QApplication, QLineEdit
 
 from ..context_menu import AppContextMenu
 
@@ -144,20 +144,13 @@ class GraphicsView(QGraphicsView):
         self._request_scene_rect_adjustment()
 
     def mousePressEvent(self, event: QMouseEvent):
-        # Try command system first
-        if self.key_processor and self:  # 'self' is the ContextProvider
-            handled_by_command = self.key_processor.process_input_event(event, self)
-            if handled_by_command:
-                event.accept()
-                return
+        # For other buttons (typically LeftButton), or if not handled above:
+        # First, check if interaction is generally enabled for the view.
+        if not self._interaction_enabled:
+            event.ignore()  # If not, and not handled by Middle/Right, ignore.
+            return
 
-        if event.button() == Qt.MouseButton.LeftButton:
-            main_window = self.window()
-            if main_window and hasattr(main_window, "is_position_on_resize_edge"):
-                if main_window.is_position_on_resize_edge(event.globalPosition()):
-                    super().mousePressEvent(event)
-                    return
-
+        # Handle view-specific, high-priority interactions first
         if event.button() == Qt.MouseButton.MiddleButton:
             if not self._interaction_enabled:
                 event.ignore()
@@ -166,15 +159,32 @@ class GraphicsView(QGraphicsView):
             self._last_pan_pos = event.position().toPoint()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
+            return
+
         elif event.button() == Qt.MouseButton.RightButton:
             self._right_click_pos = event.globalPosition().toPoint()
             self._right_click_moved = False
-            event.accept()
-        else:
-            if not self._interaction_enabled:
-                event.ignore()
+            event.accept()  # We are initiating a right-click action (context menu or window move)
+            return
+
+        # Let the base class (QGraphicsView) and its items process the event.
+        # This allows QGraphicsItems in the scene to receive the event.
+        # It also allows the event to propagate to the parent widget (MainWindow)
+        # if not handled by an item or the view itself (e.g., for window resizing).
+        super().mousePressEvent(event)
+
+        # If the event was accepted by an item in the scene, by standard view processing,
+        # or by a parent widget handler (like window resize), we're done.
+        if event.isAccepted():
+            return
+
+        # If the event was NOT handled by the above, then try the command system.
+        # This is for global commands, e.g., clicking on the view's background.
+        if self.key_processor:  # 'self' is the ContextProvider
+            handled_by_command = self.key_processor.process_input_event(event, self)
+            if handled_by_command:
+                event.accept()
                 return
-            super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self._pan_active and self._last_pan_pos:
@@ -206,9 +216,6 @@ class GraphicsView(QGraphicsView):
                     self.window().windowHandle().startSystemMove()  # type: ignore
             event.accept()
 
-        elif event.buttons() & Qt.MouseButton.LeftButton and self._interaction_enabled:
-            super().mouseMoveEvent(event)
-
         elif not self._interaction_enabled:
             event.ignore()
 
@@ -222,6 +229,7 @@ class GraphicsView(QGraphicsView):
                 self._last_pan_pos = None
                 self.setCursor(Qt.CursorShape.ArrowCursor)
                 event.accept()
+                return  # Explicit return after handling
 
         elif event.button() == Qt.MouseButton.RightButton:
             if self._right_click_pos and not self._right_click_moved:
@@ -234,18 +242,41 @@ class GraphicsView(QGraphicsView):
             self._right_click_pos = None
             self._right_click_moved = False
             event.accept()
-        else:
-            if not self._interaction_enabled:
-                event.ignore()
-                return
+            return  # Explicit return after handling
+
+        # For other buttons, or if interaction is disabled:
+        if not self._interaction_enabled:
+            # If not middle or right button release, and interaction disabled,
+            # we might still want to call super if an item is tracking mouse release.
+            # However, if press was ignored, release likely should be too.
+            # Let's ensure super is called if event wasn't accepted by specific logic.
+            if not event.isAccepted():
+                super().mouseReleaseEvent(event)
+            return
+
+        # If not handled by specific button logic above, pass to superclass.
+        # This ensures items that handled press also get release.
+        if not event.isAccepted():
             super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
-        # Try command system first
-        if self.key_processor and self:  # 'self' is the ContextProvider
+        # Allow focused widgets (like QLineEdit) or the base QGraphicsView
+        # to process the event first.
+        super().keyPressEvent(event)
+
+        # If the event has already been accepted (e.g., by a QLineEdit or default view behavior),
+        # do not process it further with the KeyProcessor.
+        if event.isAccepted():
+            return
+
+        # If the event was not accepted by the focused widget or standard view processing,
+        # then try the custom key command system.
+        if self.key_processor:  # 'self' is the ContextProvider
             handled_by_command = self.key_processor.process_input_event(event, self)
             if handled_by_command:
                 event.accept()
                 return
 
-        super().keyPressEvent(event)
+        # If the event is still not accepted, it will propagate further up if not accepted,
+        # or be ignored if it has no more handlers. No need for a final super.keyPressEvent(event)
+        # as the first one already covered the base class behavior.

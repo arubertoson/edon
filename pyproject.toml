@@ -16,5 +16,10 @@ line-length = 119
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[dependency-groups]
+dev = [
+    "basedpyright>=1.29.1",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/edon", "src/edon_ui"]
