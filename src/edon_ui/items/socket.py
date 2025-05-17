@@ -3,9 +3,18 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from loguru import logger
 from PySide6.QtCore import QRectF, Qt, Signal, QPointF
 from PySide6.QtGui import QBrush, QColor, QPen, QPainter
-from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsObject, QGraphicsItem, QStyleOptionGraphicsItem, QWidget
+from PySide6.QtWidgets import (
+    QGraphicsEllipseItem,
+    QApplication,
+    QGraphicsObject,
+    QGraphicsItem,
+    QStyleOptionGraphicsItem,
+    QWidget,
+    QLineEdit,
+)
 
 from edon_ui import theme
+from .socket_widgets import SocketWidgetAdaptor
 
 if TYPE_CHECKING:
     from edon_ui.items.edge import EdgeItem
@@ -254,11 +263,10 @@ class SocketRowItem(QGraphicsObject):
                 x += self.label.boundingRect().width() + padding
             if self.circle:
                 y = self.label.boundingRect().height() / 2
-                x += circle_radius
+                x += circle_diameter
                 self.circle.setPos(x, y)
             if self.widget:
                 self.widget.setPos(0, 0)
-                # x += self.widget.boundingRect().width() + padding
 
         children = [item for item in (self.label, self.widget, self.circle) if item is not None and item.isVisible()]
 
@@ -318,11 +326,11 @@ class SocketRowItem(QGraphicsObject):
         """
         return QRectF(0, 0, self._width, self._height)
 
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
-        # This QGraphicsObject is a container and does not paint anything itself.
-        # Its children (label, circle, widget) handle their own painting.
-        # Providing an empty paint method prevents NotImplementedError if Qt tries to paint it.
-        pass
+    # def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+    #     # This QGraphicsObject is a container and does not paint anything itself.
+    #     # Its children (label, circle, widget) handle their own painting.
+    #     # Providing an empty paint method prevents NotImplementedError if Qt tries to paint it.
+    #     pass
 
     def _swap_to_label(self):
         if not self.is_input:

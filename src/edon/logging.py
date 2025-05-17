@@ -1,4 +1,3 @@
-
 """
 Logging for Edon
 ================
@@ -12,6 +11,7 @@ This module configures the global Loguru logger for the entire application.
 
 This ensures all logs are routed through the same system, with unified formatting and output.
 """
+
 import os
 import sys
 from datetime import datetime
@@ -19,7 +19,7 @@ from datetime import datetime
 from loguru import logger
 
 
-def setup_logging(debug_mode=False) -> None:
+def setup_logging(log_level: str = "INFO") -> None:
     """
     Set up Loguru logging for the application.
 
@@ -38,9 +38,6 @@ def setup_logging(debug_mode=False) -> None:
     # Determine log file name with timestamp
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     log_file = os.path.join(logs_dir, f"edon-{timestamp}.log")
-
-    # Log level based on debug mode
-    log_level = "DEBUG" if debug_mode else "INFO"
 
     # Add file handler with rotation
     logger.add(

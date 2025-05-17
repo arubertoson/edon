@@ -230,7 +230,7 @@ def create_sample_graph():
 # --- Launch the app using the EdonApplication class ---
 if __name__ == "__main__":
     # Create and run the application with our custom graph and node registry
-    app = EdonApplication(debug_mode=True)
+    app = EdonApplication(log_level="DEBUG")
 
     # Set our custom graph and node registry using property setters
     app.entity_graph = create_sample_graph()

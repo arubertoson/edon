@@ -65,15 +65,15 @@ class EdonApplication:
         app.run()
     """
 
-    def __init__(self, debug_mode: bool = False, node_registry: dict[str, type[EntityNode]] | None = None) -> None:
+    def __init__(self, log_level: str = "DEBUG", node_registry: dict[str, type[EntityNode]] | None = None) -> None:
         """Initialize the Edon application with all required components.
 
         Args:
-            debug_mode: Whether to enable debug logging.
+            log_level: The log level to use for logging.
             node_registry: Optional dictionary mapping node type hints to node classes.
         """
         # Set up logging first
-        self._setup_logging(debug_mode)
+        self._setup_logging(log_level)
 
         logger.info("Initializing EdonApplication...")
 
@@ -135,13 +135,13 @@ class EdonApplication:
         self._node_registry = value
         self._update_graph_system()
 
-    def _setup_logging(self, debug_mode: bool) -> None:
+    def _setup_logging(self, log_level: str) -> None:
         """Set up logging for the application.
 
         This configures both loguru and Qt message handling.
         """
         # Set up loguru
-        setup_logging(debug_mode=debug_mode)
+        setup_logging(log_level=log_level)
 
         # Install Qt message handler
         qInstallMessageHandler(_qt_message_handler)
@@ -168,7 +168,6 @@ class EdonApplication:
         # Create key processor for handling input events
         self._key_processor = KeyProcessor(self.command_registry, self.key_mapping)
         self._graphics_view.key_processor = self._key_processor
-        logger.debug("Command system initialized with key processor")
 
     def run(self) -> int:
         """Show the main window and start the application event loop.
@@ -177,15 +176,25 @@ class EdonApplication:
             The exit code from the application.
         """
         logger.info("Running EdonApplication...")
-        # Initialize the scene with the current entity graph
-
         logger.info("Populating scene from entity graph...")
-        self._graph_controller._populate_scene_from_entity_graph()
+        self._graph_controller._populate_scene_from_entity_graph()  # Ensure this doesn't hang or error silently
 
-        self.main_window.show()
-        return self._qt_app.exec()
+        logger.debug("About to call self.main_window.show()")
+        try:
+            self.main_window.show()
+            logger.debug(
+                f"self.main_window.show() called. IsVisible: {self.main_window.isVisible()}, Geometry: {self.main_window.geometry()}"
+            )
+        except Exception as e:
+            logger.exception(f"Exception during main_window.show(): {e}")
+            return 1  # Indicate error
+
+        logger.debug("About to call self._qt_app.exec()")
+        exit_code = self._qt_app.exec()
+        logger.debug(f"self._qt_app.exec() finished with exit_code: {exit_code}")
+        return exit_code
 
 
 if __name__ == "__main__":
-    app = EdonApplication(debug_mode="--debug" in sys.argv)
+    app = EdonApplication(log_level="DEBUG")
     sys.exit(app.run())

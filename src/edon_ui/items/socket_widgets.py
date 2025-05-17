@@ -1,23 +1,42 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QDoubleValidator, QFont, QFontMetricsF, QIntValidator, QColor
+from loguru import logger
+from PySide6.QtCore import QRectF, Qt, QPointF, QTimer
+from PySide6.QtGui import (
+    QKeySequence,
+    QKeyEvent,
+    QDoubleValidator,
+    QFont,
+    QFontMetricsF,
+    QIntValidator,
+    QColor,
+    QTextCursor,
+    QTextOption,
+    QPainter,
+    QFocusEvent,
+    QFontMetrics,
+    QPalette,
+)
 from PySide6.QtWidgets import (
+    QStyleOptionFrame,
+    QStyle,
     QGraphicsItem,
     QGraphicsObject,
     QGraphicsProxyWidget,
+    QGraphicsSceneMouseEvent,
     QGraphicsTextItem,
+    QGraphicsView,
     QLineEdit,
     QWidget,
+    QStyleOptionGraphicsItem,
 )
-
+from PySide6.QtWidgets import QApplication
 from edon_ui import theme
 
 if TYPE_CHECKING:
     from edon_ui.graph_controller import GraphController
-    from PySide6.QtGui import QPainter
-    from PySide6.QtWidgets import QStyleOptionGraphicsItem
+    from PySide6.QtGui import QPainter, QMouseEvent
 
 
 def fit_font_to_height(font: QFont, target_height: float, min_size: int = 1, max_size: int = 30) -> QFont:
@@ -26,7 +45,7 @@ def fit_font_to_height(font: QFont, target_height: float, min_size: int = 1, max
     for size in range(max_size, min_size - 1, -1):
         test_font.setPointSize(size)
         metrics = QFontMetricsF(test_font)
-        print(f"size: {size}, height: {metrics.height()}")
+        # print(f"size: {size}, height: {metrics.height()}")
         if metrics.height() <= target_height:
             return test_font
     test_font.setPointSize(min_size)
@@ -41,6 +60,7 @@ def _font_height_diff(font: QFont, target_height: float) -> float:
 class SocketLabel(QGraphicsTextItem):
     def __init__(self, text: str, target_layout_height: float, parent=None):
         super().__init__(text, parent)
+        logger.trace(f"SocketLabel created with text: '{text}'")
 
         font = self.font()
         # Assuming a theme constant like theme.FONT_SOCKET_LABEL_DEFAULT_SIZE exists or will be added
@@ -91,6 +111,7 @@ class SocketTextAdaptor(QGraphicsObject):
         parent: QGraphicsItem | None = None,
     ):
         super().__init__(parent)
+        logger.trace(f"SocketTextAdaptor created for text_item: {text_item}")
         self._text_item = text_item
         self._fixed_width = fixed_width
         self._fixed_height = fixed_height
@@ -109,6 +130,17 @@ class SocketTextAdaptor(QGraphicsObject):
         # Vertical position is 0 as text_item should fill fixed_height via its internal mechanisms.
         self._text_item.setPos(self._horizontal_margin, 0)
 
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+        """
+        This is required to prevent errors such as "pure virtual method 'QGraphicsObject.paint' not implemented."
+
+        This hack is required to avoid the following error:
+        "pure virtual method 'QGraphicsObject.paint' not implemented."
+
+        The solution is to override the paint method and do nothing.
+        """
+        pass
+
     # --- SocketComponent required methods ---
     def get_required_component_width(self) -> float:
         return self._fixed_width
@@ -120,13 +152,6 @@ class SocketTextAdaptor(QGraphicsObject):
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._fixed_width, self._fixed_height)
 
-    def paint(self, painter: "QPainter", option: "QStyleOptionGraphicsItem", widget: "QWidget | None" = None) -> None:
-        # This QGraphicsObject is a container and does not paint anything itself.
-        # Its child (SocketLabel) handles its own painting.
-        # Providing an empty paint method prevents NotImplementedError if Qt tries to paint it,
-        # especially due to parent caching (e.g., NodeItem).
-        pass
-
     # --- Convenience methods to access underlying text item if needed ---
     def text_item(self) -> QGraphicsTextItem:
         return self._text_item
@@ -135,10 +160,6 @@ class SocketTextAdaptor(QGraphicsObject):
         """Sets the text alignment of the underlying QGraphicsTextItem if it supports it."""
         if hasattr(self._text_item, "set_alignment"):
             self._text_item.set_alignment(alignment)
-        else:
-            # Fallback or warning if the text_item doesn't have set_alignment
-            # This shouldn't happen if it's always a SocketLabel instance
-            print(f"Warning: Text item {type(self._text_item)} does not have set_alignment method.")
 
 
 class SocketWidgetAdaptor(QGraphicsObject):
@@ -150,6 +171,9 @@ class SocketWidgetAdaptor(QGraphicsObject):
     Vertical alignment is handled by the QWidget itself within its allocated fixed_height.
     """
 
+    # Class-level registry to help find adaptors by their contained widgets
+    _widget_to_adaptor_map = {}
+
     def __init__(
         self,
         widget: QWidget,
@@ -159,13 +183,18 @@ class SocketWidgetAdaptor(QGraphicsObject):
         parent: QGraphicsItem | None = None,
     ):
         super().__init__(parent)
+        logger.debug(f"SocketWidgetAdaptor.__init__ for widget: {widget}, parent: {parent}")
         self._widget = widget
         self._fixed_width = fixed_width
         self._fixed_height = fixed_height
         self._horizontal_margin = horizontal_margin
 
+        # Register this adaptor with its widget for lookup
+        SocketWidgetAdaptor._widget_to_adaptor_map[widget] = self
+
         self.proxy = QGraphicsProxyWidget(self)
         self.proxy.setWidget(self._widget)
+        logger.debug(f"  Proxy created: {self.proxy}, widget set: {self.proxy.widget()}")
 
         # Calculate the actual dimensions for the QWidget
         widget_width = self._fixed_width - (2 * self._horizontal_margin)
@@ -173,7 +202,6 @@ class SocketWidgetAdaptor(QGraphicsObject):
 
         # Ensure widget dimensions are not negative
         widget_width = max(0, widget_width)
-        # widget_height is already handled by fixed_height, should not be < 0 if fixed_height is sensible
 
         # Position the proxy widget (which contains the QWidget) with a horizontal offset for the margin.
         # Vertical position is 0 as widget_height is the full fixed_height.
@@ -183,7 +211,20 @@ class SocketWidgetAdaptor(QGraphicsObject):
         self._widget.setFixedWidth(int(widget_width))
         self._widget.setFixedHeight(int(widget_height))
 
-    # --- SocketComponent required methods ---
+        # Ensure the QLineEdit is focusable
+        self._widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.proxy.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # QGraphicsObject uses flags for focus; default is not focusable, which is what we want for the adaptor itself.
+        # If it were to be focusable, we would do: self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsFocusable, True)
+        logger.debug(
+            f"  Widget focus policy: {self._widget.focusPolicy()}, Proxy focus policy: {self.proxy.focusPolicy()}"
+        )
+
+    @classmethod
+    def find_adaptor_for_widget(cls, widget: QWidget) -> "SocketWidgetAdaptor | None":
+        """Find the SocketWidgetAdaptor that contains the given widget."""
+        return cls._widget_to_adaptor_map.get(widget)
+
     def get_required_component_width(self) -> float:
         return self._fixed_width
 
@@ -197,20 +238,82 @@ class SocketWidgetAdaptor(QGraphicsObject):
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._fixed_width, self._fixed_height)
 
-    def paint(self, painter: "QPainter", option: "QStyleOptionGraphicsItem", widget: QWidget | None = None) -> None:
-        # is not strictly needed for SocketWidgetAdaptor itself if it's just a container.
-        # The QGraphicsProxyWidget handles painting its QWidget.
-        # If you wanted to draw a border or background for the adaptor itself, you would override paint.
-        # Example: Draw a debug border for the adaptor itself
-        # super().paint(painter, option, widget)
-        # pen = QPen(QColor("blue"))
-        # painter.setPen(pen)
-        # painter.drawRect(self.boundingRect())
-        pass
-
-    # --- Convenience methods to access underlying widget if needed ---
     def widget(self) -> QWidget:
         return self._widget
+
+
+class FocusSelectLineEdit(QLineEdit):
+    """A QLineEdit subclass designed for use within a QGraphicsScene via SocketWidgetAdaptor.
+
+    It selects all text on focusInEvent. On Return, Enter, or Escape key release,
+    it explicitly clears the focus from the hosting QGraphicsProxyWidget (adaptor.proxy).
+    This is crucial because, in a QGraphicsScene, the proxy widget is the entity that
+    holds scene-level focus. Simply calling self.clearFocus() on the QLineEdit itself
+    is often insufficient to correctly relinquish focus within the scene, trigger the
+    QLineEdit's focusOutEvent, or allow the QGraphicsView to regain focus.
+    Clearing focus on the proxy ensures the scene correctly processes the focus change.
+    """
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+
+        self._elide_text = True
+        self._focus_in = False
+        self._ellipsis_place = Qt.TextElideMode.ElideRight
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Escape):
+            adaptor = SocketWidgetAdaptor.find_adaptor_for_widget(self)
+            if adaptor:
+                logger.debug(f"  Found adaptor {adaptor}, clearing focus on its proxy {adaptor.proxy}")
+                adaptor.proxy.clearFocus()  # This should trigger our focusOutEvent
+            else:
+                logger.warning(
+                    f"  Could not find adaptor for {self.objectName()}. Calling self.clearFocus() as fallback."
+                )
+                self.clearFocus()  # Fallback if no adaptor, might not fully work in scene
+
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
+
+    def paintEvent(self, event):
+        """
+        Include a validation icon to the left of the line edit and elide text
+        if requested.
+        """
+        if self._elide_text and not self._focus_in:
+            painter = QPainter(self)
+            option = QStyleOptionFrame()
+            self.initStyleOption(option)
+
+            self.style().drawPrimitive(QStyle.PrimitiveElement.PE_PanelLineEdit, option, painter, self)
+
+            text_rect = self.style().subElementRect(QStyle.SubElement.SE_LineEditContents, option, self)
+            text_rect.adjust(4, 0, -4, 0)
+
+            fm = QFontMetrics(self.font())
+            elided_text_str = fm.elidedText(self.text(), self._ellipsis_place, text_rect.width())
+
+            if hasattr(theme, "INPUT_TEXT_COLOR"):
+                painter.setPen(QColor(theme.INPUT_TEXT_COLOR))
+            else:
+                painter.setPen(self.palette().color(QPalette.ColorRole.Text))
+
+            current_alignment = self.alignment()
+            painter.drawText(text_rect, int(current_alignment), elided_text_str)
+            return
+
+        super().paintEvent(event)
+
+    def focusInEvent(self, event: QFocusEvent) -> None:
+        self._focus_in = True
+        QTimer.singleShot(0, self.selectAll)
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event: QFocusEvent) -> None:
+        self._focus_in = False
+        super().focusOutEvent(event)
 
 
 # Type alias for socket widget component factory functions
@@ -242,7 +345,12 @@ def create_integer_socket_component(
     Returns:
         A tuple containing the configured SocketWidgetAdaptor and the QLineEdit instance.
     """
-    line_edit = QLineEdit()
+    logger.debug(
+        f"Creating integer socket component for node_id='{node_id}', socket_name='{socket_name}' with initial_value='{initial_value}'"
+    )
+    # Create with explicit None parent - parent will be set by SocketWidgetAdaptor
+    line_edit = FocusSelectLineEdit(None)
+    line_edit.setObjectName(f"le_int_{node_id}_{socket_name}")
     line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
     # Consider if QIntValidator needs a parent if line_edit isn't parented yet by proxy
     line_edit.setValidator(QIntValidator(-2147483648, 2147483647, line_edit))
@@ -277,7 +385,12 @@ def create_float_socket_component(
     Returns:
         A tuple containing the configured SocketWidgetAdaptor and the QLineEdit instance.
     """
-    line_edit = QLineEdit()
+    logger.debug(
+        f"Creating float socket component for node_id='{node_id}', socket_name='{socket_name}' with initial_value='{initial_value}'"
+    )
+    # Create with explicit None parent - parent will be set by SocketWidgetAdaptor
+    line_edit = FocusSelectLineEdit(None)
+    line_edit.setObjectName(f"le_float_{node_id}_{socket_name}")
     line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
     validator = QDoubleValidator(line_edit)
     validator.setNotation(QDoubleValidator.Notation.StandardNotation)
@@ -299,26 +412,39 @@ def create_string_socket_component(
     socket_name: str = "",
     parent_gfx_item: QGraphicsItem | None = None,
 ) -> tuple[SocketWidgetAdaptor, QLineEdit]:
-    """
-    Creates a QLineEdit configured for string input and wraps it in a SocketWidgetAdaptor.
+    """Creates a QLineEdit for string input, wrapped in a SocketWidgetAdaptor.
 
     Args:
-        initial_value: The initial string value for the QLineEdit.
-        controller: The graph controller instance for updating the backend.
-        node_id: The ID of the parent node entity.
-        socket_name: The name of the socket entity.
+        initial_value: The initial string value for the QLineEdit. Defaults to "".
+        controller: The graph controller, if interactions need to update the backend.
+                    Currently unused in this specific factory. Defaults to None.
+        node_id: The ID of the parent node entity. Currently unused. Defaults to "".
+        socket_name: The name of the socket entity. Currently unused. Defaults to "".
         parent_gfx_item: The parent QGraphicsItem for the SocketWidgetAdaptor.
+                         Defaults to None.
 
     Returns:
         A tuple containing the configured SocketWidgetAdaptor and the QLineEdit instance.
     """
-    line_edit = QLineEdit()
-    line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)  # Or AlignLeft
+    logger.debug(
+        f"Creating string socket component (QLineEdit) for node_id='{node_id}', socket_name='{socket_name}' with initial_value='{initial_value}'"
+    )
+    # Create with explicit None parent - parent will be set by SocketWidgetAdaptor
+    line_edit = FocusSelectLineEdit(None)
+    line_edit.setObjectName(f"le_str_{node_id}_{socket_name}")
+    # line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     line_edit.setText(str(initial_value if initial_value is not None else ""))
 
+    fm = line_edit.fontMetrics()
+    text_width_pixels = fm.horizontalAdvance(line_edit.text())
+    logger.debug(
+        f"  String QLineEdit '{line_edit.objectName()}': text='{line_edit.text()}', calculated fontMetrics text_width_pixels={text_width_pixels}"
+    )
+
+    # Connection logic for controller (if any) is handled by controller or direct access
     if controller and node_id and socket_name:
-        pass  # Connection logic (if any) is handled by controller or direct access
+        pass
 
     adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
     return adaptor, line_edit
@@ -327,9 +453,4 @@ def create_string_socket_component(
 # Now, register all factories
 SOCKET_WIDGET_COMPONENT_FACTORIES[int] = create_integer_socket_component
 SOCKET_WIDGET_COMPONENT_FACTORIES[float] = create_float_socket_component
-SOCKET_WIDGET_COMPONENT_FACTORIES[str] = create_string_socket_component
-
-
-# Clean up any old registry if it existed and is no longer needed
-# For example, if there was an old SOCKET_WIDGET_REGISTRY
-# del SOCKET_WIDGET_REGISTRY # Or comment out its definition if found elsewhere
+SOCKET_WIDGET_COMPONENT_FACTORIES[str] = create_string_socket_component  # Uses the new create_string_socket_component
