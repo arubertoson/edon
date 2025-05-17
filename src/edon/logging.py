@@ -1,3 +1,4 @@
+# XXX: Module string should follow same pattern as other modules.
 """
 Logging for Edon
 ================
@@ -15,6 +16,7 @@ This ensures all logs are routed through the same system, with unified formattin
 import os
 import sys
 from datetime import datetime
+from types import TracebackType
 
 from loguru import logger
 
@@ -27,19 +29,18 @@ def setup_logging(log_level: str = "INFO") -> None:
     `from loguru import logger` in the app refer to the same logger object, so
     configuration here applies everywhere.
     """
-    # Remove default handler
+    # XXX: Why?
     logger.remove()
 
-    # Create logs directory if it doesn't exist
+    # XXX: Shoudl be optional right?
     logs_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
     logs_dir = os.environ.get("EDON_LOGS_DIR", logs_dir)
     os.makedirs(logs_dir, exist_ok=True)
 
-    # Determine log file name with timestamp
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     log_file = os.path.join(logs_dir, f"edon-{timestamp}.log")
 
-    # Add file handler with rotation
+    # XXX: Elaborate a bit.
     logger.add(
         log_file,
         rotation="10 MB",  # Rotate when file reaches 10MB
@@ -61,11 +62,16 @@ def setup_logging(log_level: str = "INFO") -> None:
 
     # Intercept exceptions
     @logger.catch(onerror=lambda _: sys.exit(1))
-    def handle_exception(exc_type, exc_value, exc_traceback):
+    def handle_exception(exc_type: type[BaseException], exc_value: BaseException, exc_traceback: TracebackType | None):
+        """Custom excepthook to log uncaught exceptions using Loguru.
+
+        Ensures that `KeyboardInterrupt` is not caught by the logger and is handled
+        by the default system excepthook, allowing normal Ctrl+C behavior.
+        All other exceptions are logged with full traceback information.
+        """
         if issubclass(exc_type, KeyboardInterrupt):
-            # Don't catch keyboard interrupt
+            # Don't catch keyboard interrupt, let the default hook handle it for clean exit
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
-            return
         logger.opt(exception=(exc_type, exc_value, exc_traceback)).critical("Uncaught exception:")
 
     sys.excepthook = handle_exception

@@ -1,18 +1,71 @@
+"""Defines the core `EntityNode` class and related structures for the Edon graph.
+
+This module provides the `EntityNode`, which is the base representation for all
+nodes within the `EntityGraph`. Nodes are the primary computational units and
+data containers in the graph. They manage their input and output sockets
+(`EntitySocket` instances) and encapsulate specific processing logic.
+
+The design facilitates a declarative approach for creating custom node types:
+users can subclass `EntityNode` and define class-level attributes for `name`,
+`node_type`, and lists of `SocketDef` objects to specify `input_socket_definitions`
+and `output_socket_definitions`. The `EntityNode`'s `__post_init__` method
+handles the instantiation of these sockets.
+
+"""
+
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Type
+from typing import Any, Type, Protocol
 
-# Assuming socket.py is in the same directory or accessible in PYTHONPATH
 from edon.socket import EntitySocket, SocketDirection
 
 
 @dataclass
 class SocketDef:
+    """Defines the specification for a socket to be created on a node.
+
+    Attributes:
+        name: The name of the socket.
+        type: The Python data type the socket will handle.
+        default: The default value for the socket if not connected or overridden.
+        visual_type_key: A key for UIs to determine visual styling (e.g., color).
+        accepts_connection: Whether this socket can have connections (typically True).
+    """
+
     name: str
     type: Type[Any]
     default: Any = None
     visual_type_key: str = "default"
     accepts_connection: bool = True
+
+
+class ProcessableNode(Protocol):
+    """A protocol for nodes that define a core processing logic.
+
+    This protocol ensures that conforming objects (typically `EntityNode` subclasses)
+    implement a `process` method, which is called by the execution engine
+    to perform the node's primary computation or action.
+    """
+
+    def process(self) -> None:
+        """
+        The core computational logic of the node. Returns None.
+
+        This method is intended to be overridden by concrete node implementations
+        to define their specific behavior. It typically involves:
+        1. Accessing input sockets via `self.input_sockets`.
+        2. Retrieving input values (respecting their `data_type` as defined by
+           the node's `SocketDef`s).
+        3. Performing computations.
+        4. Setting output values on `self.output_sockets` (again, respecting
+           their `data_type`).
+
+        The method signature is `-> None` because data is read from and written
+        to the node's own `EntitySocket` instances, which manage type compatibility
+        at the connection level. The `process` method itself orchestrates this
+        internal data flow based on the node's defined socket types.
+        """
+        ...
 
 
 @dataclass
@@ -25,29 +78,29 @@ class EntityNode:
 
     - `name: str` (optional): Defaults to the subclass name (e.g., "MyNode" -> "My").
     - `node_type: str` (optional): Defaults to the subclass name lowercased (e.g., "MyNode" -> "my").
-    - `input_socket_definitions: list[tuple[str, Type[Any]]]` (optional): Defines input sockets.
-    - `output_socket_definitions: list[tuple[str, Type[Any]]]` (optional): Defines output sockets.
+    - `input_socket_definitions: list[SocketDef]` (optional): Defines input sockets.
+    - `output_socket_definitions: list[SocketDef]` (optional): Defines output sockets.
 
     Example:
         ```python
         class MySimpleNode(EntityNode):
             node_type = "custom.simple"
-            output_socket_definitions = [("result", int)]
+            output_socket_definitions = [SocketDef(name="result", type=int, default=0)]
 
             def process(self):
                 self.output_sockets["result"].value = 42
         ```
 
     Attributes:
-        name (str): Resolved display name of the node.
-        node_type (str): Resolved string identifier for the type of this node.
-        input_socket_definitions (list | None): Instance definitions passed at creation.
-                                                Defaults to `None` to enable class attribute fallback.
-        output_socket_definitions (list | None): Instance definitions passed at creation.
-                                                 Defaults to `None` to enable class attribute fallback.
+        name (str | None): Display name of the node. If None, resolved from class name.
+        node_type (str | None): String identifier for the type of this node. If None, resolved from class name.
+        input_socket_definitions (list[SocketDef] | None): Instance definitions passed at creation.
+                                                        Defaults to `None` to enable class attribute fallback.
+        output_socket_definitions (list[SocketDef] | None): Instance definitions passed at creation.
+                                                         Defaults to `None` to enable class attribute fallback.
         id (str): Unique identifier for the node instance.
-        input_sockets (dict[str, Socket]): Dictionary of created input Socket objects.
-        output_sockets (dict[str, Socket]): Dictionary of created output Socket objects.
+        input_sockets (dict[str, EntitySocket]): Dictionary of created input Socket objects.
+        output_sockets (dict[str, EntitySocket]): Dictionary of created output Socket objects.
     """
 
     # --- Instance Attributes (can be passed via __init__ generated by @dataclass) ---
@@ -58,8 +111,8 @@ class EntityNode:
     # Socket definitions default to `None` at the instance level.
     # This allows `__post_init__` to distinguish between "not provided" (use class attr)
     # and "provided as empty list []" (use the empty list).
-    input_socket_definitions: list[tuple[str, Type[Any]]] | None = field(default=None)
-    output_socket_definitions: list[tuple[str, Type[Any]]] | None = field(default=None)
+    input_socket_definitions: list[SocketDef] | None = field(default=None)
+    output_socket_definitions: list[SocketDef] | None = field(default=None)
 
     # --- Internal Attributes ---
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -67,7 +120,12 @@ class EntityNode:
     output_sockets: dict[str, EntitySocket] = field(default_factory=dict, init=False)
 
     def __post_init__(self):
-        """Initializes defaults and sockets based on instance or class attributes."""
+        """Finalizes node initialization after dataclass setup.
+
+        This method resolves the node's actual name, type, and socket definitions
+        by considering instance attributes, then class attributes, and finally
+        applying defaults. It then creates the socket instances.
+        """
 
         # --- Determine Final Configuration ---
         # Priority: Instance Value -> Class Attribute -> Default
@@ -78,49 +136,88 @@ class EntityNode:
         # Resolve input_socket_definitions: Use instance `self.input_socket_definitions` if provided (i.e., not None),
         # otherwise, try the class attribute `self.__class__.input_socket_definitions`, else default to an empty list.
         # This allows subclasses to define sockets purely via class attributes.
-        input_defs = self.input_socket_definitions or self.__class__.input_socket_definitions or []
-        output_defs = self.output_socket_definitions or self.__class__.output_socket_definitions or []
+        input_defs: list[SocketDef] = (
+            self.input_socket_definitions
+            if self.input_socket_definitions is not None
+            else getattr(self.__class__, "input_socket_definitions", [])
+        )
+        output_defs: list[SocketDef] = (
+            self.output_socket_definitions
+            if self.output_socket_definitions is not None
+            else getattr(self.__class__, "output_socket_definitions", [])
+        )
 
         # --- Create Sockets ---
         # Iterate using the final resolved definitions determined above.
         for sock_def in input_defs:
-            # TODO: Consider extending definition tuple: (name, type, default_value) for sockets?
-            self._add_socket_internal(sock_def.name, SocketDirection.INPUT, sock_def.type, sock_def.default)
+            self._add_socket_internal(sock_def, SocketDirection.INPUT)
         for sock_def in output_defs:
-            self._add_socket_internal(sock_def.name, SocketDirection.OUTPUT, sock_def.type, sock_def.default)
+            self._add_socket_internal(sock_def, SocketDirection.OUTPUT)
 
     def _add_socket_internal(
-        self, name: str, direction: SocketDirection, data_type: Type[Any], value: Any = None
+        self,
+        socket_def: SocketDef,
+        direction: SocketDirection,
     ) -> EntitySocket:
         """
         Internal method to create and add a socket to the node.
+
         The `parent_node` for the socket is automatically set to this node instance.
+
+        Args:
+            socket_def: The SocketDef instance describing the socket.
+            direction: The direction of the socket (INPUT or OUTPUT).
+
+        Returns:
+            The created EntitySocket instance.
+
+        Raises:
+            ValueError: If a socket with the same name already exists on this node.
         """
-        if name in self.input_sockets or name in self.output_sockets:
-            raise ValueError(f"Socket with name '{name}' already exists on node '{self.name}'.")
+        if socket_def.name in self.input_sockets or socket_def.name in self.output_sockets:
+            raise ValueError(f"Socket with name '{socket_def.name}' already exists on node '{self.name}'.")
 
         socket_instance = EntitySocket(
-            name=name, direction=direction, parent_node=self, data_type=data_type, value=value
+            name=socket_def.name,
+            direction=direction,
+            parent_node=self,
+            data_type=socket_def.type,
+            value=socket_def.default,
+            visual_type_key=socket_def.visual_type_key,
+            accepts_connection=socket_def.accepts_connection,
         )
         if direction == SocketDirection.INPUT:
-            self.input_sockets[name] = socket_instance
+            self.input_sockets[socket_def.name] = socket_instance
         else:
-            self.output_sockets[name] = socket_instance
+            self.output_sockets[socket_def.name] = socket_instance
         return socket_instance
 
     def process(self):
         """
-        The core computational logic of the node.
+        The core computational logic of the node. Returns None.
+
         This method MUST be overridden by subclasses to define the node's behavior.
+        It is called by the `ExecutionEngine` when the node is ready to be processed.
 
         Subclasses should typically:
         1. Access input sockets via `self.input_sockets['socket_name']`.
-        2. Get input values: Check `socket.is_connected()` and access
-           `socket.connections[0].value` (value from connected output) or use
-           the socket's own `socket.value` as a default if not connected.
-           The graph execution logic should ensure upstream nodes are processed first.
-        3. Compute results.
-        4. Set output values directly on output sockets: `self.output_sockets['socket_name'].value = result_value`.
+        2. Get input values:
+           - Check `socket.is_connected()`.
+           - If connected, access the value from the connected output socket,
+             typically via `socket.connections[0].value`. The `ExecutionEngine`
+             ensures upstream nodes are processed first.
+           - If not connected, use the input socket's own `socket.value` as a
+             default or based on node logic.
+           - Ensure operations respect the `data_type` of the socket.
+        3. Compute results based on these input values and the node's purpose.
+        4. Set output values directly on output sockets:
+           `self.output_sockets['socket_name'].value = result_value`.
+           - Ensure the `result_value` is compatible with the output socket's `data_type`.
+
+        The method signature is `-> None` because data is read from and written
+        to the node's own `EntitySocket` instances. These sockets handle data type
+        management and connection compatibility. The `process` method orchestrates
+        the node's internal data transformation and state changes.
         """
         raise NotImplementedError(f"Node class '{self.__class__.__name__}' must implement the process() method.")
 

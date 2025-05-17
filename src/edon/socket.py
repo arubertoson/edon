@@ -1,3 +1,12 @@
+"""Defines the `EntitySocket` class, representing connection points on nodes.
+
+This module provides `EntitySocket`, the core component for defining data input
+and output points on `EntityNode` instances within the `EntityGraph`. Sockets
+are responsible for managing their data type, current value, and connections
+to other sockets.
+
+"""
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Type, TYPE_CHECKING
@@ -34,11 +43,18 @@ class EntitySocket:
     direction: SocketDirection
     parent_node: "EntityNode"
     data_type: Type[Any] = Any  # Default to wildcard type
+    # XXX: should be renamed to edges, or something else.
     connections: list["EntitySocket"] = field(default_factory=list)
     value: Any = None
 
     def __post_init__(self):
-        """Post-initialization checks."""
+        """Performs validation checks after instance initialization.
+
+        Ensures that the socket has a valid name, direction, and data_type.
+
+        Raises:
+            ValueError: If name is empty, direction is invalid, or data_type is invalid.
+        """
         if not isinstance(self.name, str) or not self.name.strip():
             logger.error("Socket __post_init__: Socket name must be a non-empty string.")
             raise ValueError("Socket name must be a non-empty string.")
@@ -52,23 +68,32 @@ class EntitySocket:
             raise ValueError(f"Socket data_type must be a type object or typing.Any, got {self.data_type}")
 
     def is_connected(self) -> bool:
-        """Checks if the socket is connected to any other socket."""
+        """Checks if the socket is connected to any other socket.
+
+        Returns:
+            True if the socket has one or more connections, False otherwise.
+        """
         return bool(self.connections)
 
     def can_connect_to(self, other_socket: "EntitySocket") -> tuple[bool, SocketConnectionErrorReason | None]:
         """
-        Determines if this socket can connect to another socket.
+        Determines if this socket can connect to another socket based on a set of rules.
+
         Rules:
         1. Cannot connect to itself.
         2. Directions must be opposite.
         3. Cannot connect if the other socket belongs to the same parent node.
-        4. Data types must be compatible:
-           - If one is INPUT and other is OUTPUT:
-             Output's data_type must be a subtype of Input's data_type,
-             or either type is typing.Any.
-        5. Input sockets are limited to one connection by default.
+        4. Data types must be compatible (output is subtype of input, or Any is involved).
+        5. Input sockets are limited to one connection by default (this rule is now primarily
+           enforced by the Graph when overwriting connections, not strictly blocking here).
+
+        Args:
+            other_socket: The other EntitySocket instance to check for connectability.
+
         Returns:
-            A tuple: (bool_success, SocketConnectionErrorReason | None)
+            A tuple: (can_connect: bool, reason: SocketConnectionErrorReason | None).
+            `can_connect` is True if connection is possible, False otherwise.
+            `reason` provides an error enum if `can_connect` is False, else None.
         """
         if self == other_socket:
             return False, SocketConnectionErrorReason.CANNOT_CONNECT_TO_SELF
@@ -81,10 +106,7 @@ class EntitySocket:
         output_socket = self if self.direction == SocketDirection.OUTPUT else other_socket
         input_socket = other_socket if self.direction == SocketDirection.OUTPUT else self
 
-        if not (output_socket.direction == SocketDirection.OUTPUT and input_socket.direction == SocketDirection.INPUT):
-            return False, SocketConnectionErrorReason.DIRECTIONS_NOT_OPPOSITE
-
-        # Type compatibility check
+        # Check for type compatibility, allowing Any or matching/subclass relationships.
         can_types_connect = False
         if output_socket.data_type == Any or input_socket.data_type == Any:
             can_types_connect = True
@@ -93,6 +115,9 @@ class EntitySocket:
                 if issubclass(output_socket.data_type, input_socket.data_type):
                     can_types_connect = True
             except TypeError:
+                # issubclass can raise TypeError if one arg is not a class suitable for checking
+                # (e.g., some complex typing constructs, though less common with simple types).
+                # Fallback to direct equality check in such edge cases.
                 if output_socket.data_type == input_socket.data_type:
                     can_types_connect = True
 
@@ -102,17 +127,24 @@ class EntitySocket:
         # The Graph.connect_sockets method will handle overwriting (disconnecting old edge)
         # if a new connection is made to an already connected input socket.
         # Therefore, can_connect_to should not block based on INPUT_SOCKET_FULL.
-
         return True, None
 
     def add_connection(self, other_socket: "EntitySocket") -> tuple[bool, SocketConnectionErrorReason | None]:
         """
-        Connects this socket to another socket if compatible.
-        Ensures bidirectional connection.
+        Connects this socket to another socket if compatible, ensuring a bidirectional link.
+
+        This method first checks `can_connect_to`. If compatible, it adds the other socket
+        to its connections list and itself to the other socket's list. The method is
+        idempotent: if already connected, it returns success without changes.
+
+        Args:
+            other_socket: The EntitySocket to connect to.
+
         Returns:
-            A tuple: (bool_success, SocketConnectionErrorReason | None)
+            A tuple: (success: bool, reason: SocketConnectionErrorReason | None).
+            `success` is True if the connection was made or already existed.
+            `reason` provides an error enum if connection failed, else None.
         """
-        # Check compatibility first
         can_connect_flag, reason = self.can_connect_to(other_socket)
         logger.debug(
             f"Socket '{self.name}' add_connection to '{other_socket.name}': can_connect_to returned {can_connect_flag}, reason: {reason}"
@@ -120,14 +152,12 @@ class EntitySocket:
         if not can_connect_flag:
             return False, reason
 
-        # If already connected, it's a success (idempotent)
         if other_socket in self.connections and self in other_socket.connections:
             logger.debug(f"Socket '{self.name}' add_connection to '{other_socket.name}': Already connected.")
             return True, None
 
         # Graph.connect_sockets is responsible for handling overwrites (disconnecting old connections
         # from an input socket if a new one is made). Socket.add_connection should simply add.
-
         if other_socket not in self.connections:
             self.connections.append(other_socket)
         if self not in other_socket.connections:
@@ -136,9 +166,15 @@ class EntitySocket:
         return True, None
 
     def remove_connection(self, other_socket: "EntitySocket") -> tuple[bool, SocketDisconnectionErrorReason | None]:
-        """Removes a connection to another socket.
+        """Removes a connection to another socket, ensuring the link is broken bidirectionally.
+
+        Args:
+            other_socket: The EntitySocket to disconnect from.
+
         Returns:
-            A tuple: (bool_success, SocketDisconnectionErrorReason | None)
+            A tuple: (success: bool, reason: SocketDisconnectionErrorReason | None).
+            `success` is True if the connection was found and removed from at least one side.
+            `reason` is `SOCKETS_NOT_CONNECTED` if they were not connected, else None.
         """
         removed_from_self = False
         if other_socket in self.connections:
@@ -157,9 +193,8 @@ class EntitySocket:
             logger.debug(
                 f"Socket '{self.name}' remove_connection from '{other_socket.name}': Success. Self removed: {removed_from_self}, Other removed: {removed_from_other}"
             )
-            return True, None  # Success if at least one side was cleaned up
+            return True, None
         else:
-            # If neither contained the other, they weren't connected
             logger.warning(
                 f"Socket '{self.name}' remove_connection from '{other_socket.name}': Sockets were not connected."
             )
