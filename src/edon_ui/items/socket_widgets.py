@@ -1,42 +1,51 @@
+"""Defines various QGraphicsObject based widgets for node sockets.
+
+This module provides specialized QGraphicsObject classes that adapt standard Qt widgets
+(like QLineEdit) or custom text items (SocketLabel) for use within the
+SocketRowItem layout system. These adaptors ensure compliance with the
+SocketComponent protocol, managing size, position, and interaction behavior
+suitable for a node-based graphical interface.
+
+It also includes factory functions to create these socket components with
+pre-configured settings for common data types like integers, floats, and strings.
+"""
+
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
-from PySide6.QtCore import QRectF, Qt, QPointF, QTimer
+from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import (
-    QKeySequence,
-    QKeyEvent,
+    QColor,
     QDoubleValidator,
+    QFocusEvent,
     QFont,
+    QFontMetrics,
     QFontMetricsF,
     QIntValidator,
-    QColor,
-    QTextCursor,
-    QTextOption,
+    QKeyEvent,
     QPainter,
-    QFocusEvent,
-    QFontMetrics,
+    QPaintEvent,
     QPalette,
 )
 from PySide6.QtWidgets import (
-    QStyleOptionFrame,
-    QStyle,
     QGraphicsItem,
     QGraphicsObject,
     QGraphicsProxyWidget,
-    QGraphicsSceneMouseEvent,
     QGraphicsTextItem,
-    QGraphicsView,
     QLineEdit,
-    QWidget,
+    QStyle,
+    QStyleOptionFrame,
     QStyleOptionGraphicsItem,
+    QWidget,
 )
-from PySide6.QtWidgets import QApplication
+
 from edon_ui import theme
 
 if TYPE_CHECKING:
     from edon_ui.graph_controller import GraphController
-    from PySide6.QtGui import QPainter, QMouseEvent
+    # QPainter removed, QMouseEvent removed as it was unused.
+    # from PySide6.QtGui import QPainter, QMouseEvent
 
 
 def fit_font_to_height(font: QFont, target_height: float, min_size: int = 1, max_size: int = 30) -> QFont:
@@ -58,7 +67,7 @@ def _font_height_diff(font: QFont, target_height: float) -> float:
 
 
 class SocketLabel(QGraphicsTextItem):
-    def __init__(self, text: str, target_layout_height: float, parent=None):
+    def __init__(self, text: str, target_layout_height: float, parent: QGraphicsItem | None = None):
         super().__init__(text, parent)
         logger.trace(f"SocketLabel created with text: '{text}'")
 
@@ -277,7 +286,7 @@ class FocusSelectLineEdit(QLineEdit):
             return
         super().keyReleaseEvent(event)
 
-    def paintEvent(self, event):
+    def paintEvent(self, event: QPaintEvent) -> None:
         """
         Include a validation icon to the left of the line edit and elide text
         if requested.
@@ -326,7 +335,7 @@ SOCKET_WIDGET_COMPONENT_FACTORIES: dict[type, SocketWidgetComponentFactory] = {}
 
 
 def create_integer_socket_component(
-    initial_value: Any = 0,
+    initial_value: int | None = 0,
     controller: "GraphController | None" = None,
     node_id: str = "",
     socket_name: str = "",
@@ -366,7 +375,7 @@ def create_integer_socket_component(
 
 
 def create_float_socket_component(
-    initial_value: Any = 0.0,
+    initial_value: float | None = 0.0,
     controller: "GraphController | None" = None,
     node_id: str = "",
     socket_name: str = "",
@@ -406,7 +415,7 @@ def create_float_socket_component(
 
 
 def create_string_socket_component(
-    initial_value: Any = "",
+    initial_value: str | None = "",
     controller: "GraphController | None" = None,
     node_id: str = "",
     socket_name: str = "",

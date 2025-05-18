@@ -1,16 +1,25 @@
-from typing import TYPE_CHECKING
+"""Defines the NodeItem class, the visual representation of a node in the UI.
+
+This module provides the QGraphicsObject subclass that handles rendering,
+interaction, and layout for individual nodes within the graphics scene.
+"""
+
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsTextItem, QStyle
-
+from PySide6.QtWidgets import (
+    QGraphicsItem,
+    QGraphicsObject,
+    QGraphicsTextItem,
+    QStyleOptionGraphicsItem,
+    QWidget,
+)
 
 from edon_ui import theme
-from edon_ui.items.socket import SocketRowItem
 
-# Forward type declaration for edon.node.Node to avoid circular import if it were to import NodeItem
 if TYPE_CHECKING:
-    from edon.node import EntityNode as EntityNode
+    from edon_ui.items.socket import SocketRowItem
 
 
 class NodeItem(QGraphicsObject):
@@ -25,11 +34,11 @@ class NodeItem(QGraphicsObject):
         x: float,
         y: float,
         node_entity_id: str,
-        input_sockets: list[SocketRowItem] | None = None,
-        output_sockets: list[SocketRowItem] | None = None,
+        input_sockets: list["SocketRowItem"] | None = None,
+        output_sockets: list["SocketRowItem"] | None = None,
         width: float = theme.NODE_MIN_WIDTH,
         height: float = theme.NODE_MIN_HEIGHT,
-    ):
+    ) -> None:
         super().__init__()
 
         self.title = title if title is not None else "Untitled"
@@ -64,30 +73,18 @@ class NodeItem(QGraphicsObject):
                 total_socket_rows_height += theme.SOCKET_VERTICAL_ITEM_PADDING
 
         total_socket_rows_height += theme.SOCKET_VERTICAL_CONTENT_MARGIN
-        print(f"total_socket_rows_height: {total_socket_rows_height}")
-        print(f"self._min_height_param: {self._min_height_param}")
-
         content_area_height = max(total_socket_rows_height, theme.NODE_MIN_CONTENT_HEIGHT)
 
         return max(self._min_height_param, total_socket_rows_height, content_area_height)
 
     def _calculate_dynamic_width(self) -> float:
-        print(f"CALCULATING DYNAMIC WIDTH in {self.title}")
         max_row_w = 0
         all_rows = self._input_sockets + self._output_sockets
         if all_rows:
-            max_row_w = max(row.get_effective_width() for row in all_rows)
-
-        for row in all_rows:
-            print(f"row {row.socket_entity_name}: {row.get_effective_width()}")
-
-        print(f"max_row_w: {max_row_w}")
+            max_row_w = max(row.boundingRect().width() for row in all_rows)
 
         min_content_width = theme.NODE_MIN_WIDTH - (theme.NODE_HORIZONTAL_PADDING * 2)
-        calculated_internal_content_width = max(max_row_w, min_content_width)
-        calculated_total_width = calculated_internal_content_width  #  + (theme.NODE_HORIZONTAL_PADDING * 2)
-
-        print(f"calculated_total_width: {calculated_total_width}, vs min_width_param: {self._min_width_param}")
+        calculated_total_width = max(max_row_w, min_content_width)
 
         return max(self._min_width_param, calculated_total_width)
 
@@ -114,7 +111,7 @@ class NodeItem(QGraphicsObject):
             if idx < len(self._input_sockets) - 1:
                 current_row_top_y += theme.SOCKET_VERTICAL_ITEM_PADDING
 
-    def _on_socket_row_layout_changed(self):
+    def _on_socket_row_layout_changed(self) -> None:
         """Handle a socket row's layout change by relayout and redraw the node."""
         self.prepareGeometryChange()
         self._layout_socket_rows()
@@ -124,16 +121,25 @@ class NodeItem(QGraphicsObject):
         self.update()
         self.sizeChanged.emit(self.node_entity_id)
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._width, self._height)
 
-    def itemChange(self, change, value):
+    def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: Any) -> Any:
+        """Handles item state changes, like position changes.
+
+        Args:
+            change: The type of change occurring.
+            value: The new value associated with the change.
+
+        Returns:
+            The processed value, potentially modified from the input value.
+        """
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self.positionChanged.emit()
 
         return super().itemChange(change, value)
 
-    def paint(self, painter, option, widget=None):
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
@@ -143,7 +149,7 @@ class NodeItem(QGraphicsObject):
 
         # Border
         border_width = theme.NODE_BORDER_WIDTH_DEFAULT
-        if option.state & QStyle.StateFlag.State_Selected:
+        if self.isSelected():
             pen = QPen(theme.NODE_BORDER_SELECTED, theme.NODE_BORDER_WIDTH_SELECTED)
             border_width = theme.NODE_BORDER_WIDTH_SELECTED  # For consistency if used elsewhere
         else:

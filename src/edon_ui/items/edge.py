@@ -1,9 +1,14 @@
+"""Defines the EdgeItem class for representing connections between sockets in the UI.
+
+This module provides the visual representation of an edge (connection)
+within the graphics scene, linking two SocketCircleItem instances.
+"""
+
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QPainter, QPen, QPainterPath
-from PySide6.QtWidgets import QGraphicsPathItem, QStyleOptionGraphicsItem, QWidget, QGraphicsItem
+from PySide6.QtGui import QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsPathItem, QStyleOptionGraphicsItem, QWidget
 
 from edon_ui import theme
-
 from edon_ui.items.socket import SocketCircleItem
 
 
@@ -28,7 +33,9 @@ class EdgeItem(QGraphicsPathItem):
         _settled_z_value (float): The Z-value the edge should have when finalized.
     """
 
-    def __init__(self, source_socket_item: SocketCircleItem, initial_target_pos: QPointF, parent=None):
+    def __init__(
+        self, source_socket_item: SocketCircleItem, initial_target_pos: QPointF, parent: QGraphicsItem | None = None
+    ) -> None:
         """
         Initializes a new EdgeItem.
 
@@ -60,7 +67,7 @@ class EdgeItem(QGraphicsPathItem):
 
         self.update_path()
 
-    def settle_z_value(self):
+    def settle_z_value(self) -> None:
         """
         Sets the Z-value of the edge to its 'settled' or finalized state.
         This is typically called when the edge is successfully connected.
@@ -73,11 +80,11 @@ class EdgeItem(QGraphicsPathItem):
         return self._source_socket_item
 
     @property
-    def target_socket_item(self) -> SocketCircleItem:
+    def target_socket_item(self) -> SocketCircleItem | None:
         """The target `SocketCircleItem` of this edge, or None if not yet connected."""
         return self._target_socket_item
 
-    def set_target_pos(self, scene_pos: QPointF):
+    def set_target_pos(self, scene_pos: QPointF) -> None:
         """
         Updates the target position of the edge, typically used when dragging.
 
@@ -87,7 +94,7 @@ class EdgeItem(QGraphicsPathItem):
         self._target_pos = scene_pos
         self.update_path()
 
-    def set_target_socket(self, target_socket_item: SocketCircleItem):
+    def set_target_socket(self, target_socket_item: SocketCircleItem) -> None:
         """
         Sets the final target socket for the edge and snaps the edge's end point
         to the target socket's center.
@@ -99,21 +106,22 @@ class EdgeItem(QGraphicsPathItem):
         self._target_pos = self._target_socket_item.scenePos()
         self.update_path()
 
-    def clear_target_socket(self):
+    def clear_target_socket(self) -> None:
         """Clears the target socket of this edge, making its target end floating."""
         self._target_socket_item = None
 
-    def update_path(self):
+    def update_path(self) -> None:
         """
         Recalculates and sets the QPainterPath for the edge.
         This method fetches the current scene positions of its source and target
         (if finalized) sockets to ensure the path is up-to-date.
         Uses a cubic Bezier curve for drawing.
         """
-        if not self._source_socket_item or not self.scene():  # Basic safety check
-            # If source_socket_item is None (e.g., edge being created but source not fully set)
-            # or if the item is not yet in a scene, we can't get scenePos reliably.
-            return
+        # XXX: Trying to comment out, don't think this is necesary.
+        # if not self._source_socket_item or not self.scene():  # Basic safety check
+        #     # If source_socket_item is None (e.g., edge being created but source not fully set)
+        #     # or if the item is not yet in a scene, we can't get scenePos reliably.
+        #     return
 
         self.prepareGeometryChange()
 
@@ -174,7 +182,7 @@ class EdgeItem(QGraphicsPathItem):
         path.cubicTo(ctrl1, ctrl2, p2)
         self.setPath(path)
 
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None):
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
         """
         Paints the edge.
 

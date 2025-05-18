@@ -3,18 +3,16 @@ UI Factory functions for constructing NodeItem, SocketRowItem, and socket widget
 This centralizes all UI construction logic for the node editor.
 """
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsTextItem, QLineEdit
-from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QGraphicsItem
 
 from edon_ui import theme
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.node import NodeItem
-from edon_ui.items.socket import SocketCircleItem, SocketRowItem, SocketComponent
+from edon_ui.items.socket import SocketCircleItem, SocketComponent, SocketRowItem
 from edon_ui.items.socket_widgets import (
     SOCKET_WIDGET_COMPONENT_FACTORIES,
-    SocketWidgetAdaptor,
     SocketLabel,
     SocketTextAdaptor,
 )

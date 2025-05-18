@@ -8,7 +8,7 @@ This module provides the GraphController class, which is responsible for:
 - Responding to signals from UI elements for graph-related actions.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, MutableMapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Type, TypeAlias
 
@@ -26,6 +26,7 @@ from edon_ui.items.socket import SocketRowItem
 if TYPE_CHECKING:
     from edon_ui.graphics.scene import GraphicsScene
     from edon_ui.items.socket import SocketCircleItem
+    from PySide6.QtWidgets import QGraphicsItem  # Added for type hint
 
 
 @dataclass(frozen=True)
@@ -45,9 +46,9 @@ class SocketRowAddress(SocketAddress):
     is_input: bool
 
 
-NodeItemMap: TypeAlias = dict[str, NodeItem]
-SocketItemMap: TypeAlias = dict[SocketRowAddress, SocketRowItem]
-EdgeItemMap: TypeAlias = dict[EdgeKey, EdgeItem]
+NodeItemMap: TypeAlias = MutableMapping[str, NodeItem]
+SocketItemMap: TypeAlias = MutableMapping[SocketRowAddress, SocketRowItem]
+EdgeItemMap: TypeAlias = MutableMapping[EdgeKey, EdgeItem]
 
 
 class GraphController:
@@ -76,7 +77,9 @@ class GraphController:
         """
         self.entity_graph: EntityGraph = entity_graph
         self.graphics_scene: "GraphicsScene" = graphics_scene
-        self._node_type_registry = node_type_registry if node_type_registry is not None else {}
+        self._node_type_registry: dict[str, Type[EntityNode]] = (
+            node_type_registry if node_type_registry is not None else {}
+        )
 
         # Maps for entity graph to UI items
         self.node_map: NodeItemMap = {}
@@ -138,7 +141,7 @@ class GraphController:
         # For now, we rely on the fact that addItem in GraphicsScene seems to manage its own list.
 
         # Let's iterate and remove items that are NodeItem or EdgeItem to be safe
-        items_to_remove = []
+        items_to_remove: list[NodeItem | EdgeItem] = []
         for item in self.graphics_scene.items():
             if isinstance(item, (NodeItem, EdgeItem)):
                 items_to_remove.append(item)
