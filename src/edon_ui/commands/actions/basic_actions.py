@@ -2,16 +2,22 @@
 
 from loguru import logger
 
-from edon_ui.graphics.view import EditorContext  # Assuming EditorContext is here
-from edon_ui.items.node import NodeItem  # For delete_selection_action
-from edon_ui.items.edge import EdgeItem  # For delete_selection_action
-
-# Note: Actual EditorContext might be defined in graphics_view.py or core.py
-# Ensure imports are correct based on your project structure.
+# XXX: Editor Context should probably be a protocol.
+from edon_ui.graphics.view import EditorContext
+from edon_ui.items.node import NodeItem
+from edon_ui.items.edge import EdgeItem
 
 
 def close_action(context: EditorContext) -> bool:
-    """Closes the main application window."""
+    """Handles the command to close the main application window.
+
+    Args:
+        context: The current editor context, expected to have a `window` attribute
+                 referencing the main application window.
+
+    Returns:
+        True if the close operation was attempted, False if the window context was missing.
+    """
     if not hasattr(context, "window") or context.window is None:
         logger.warning("Close action: No window found in context.")
         return False
@@ -21,14 +27,32 @@ def close_action(context: EditorContext) -> bool:
 
 
 def help_action(context: EditorContext) -> bool:
-    """Shows a help dialog (placeholder)."""
+    """Placeholder action for showing a help dialog or help information.
+
+    Currently, this action logs a message and prints to the console.
+    It should be implemented to display actual help content.
+
+    Args:
+        context: The current editor context (unused in placeholder).
+
+    Returns:
+        True, indicating the action was handled (as a placeholder).
+    """
     logger.info("Executing help_action (placeholder).")
-    print("Help dialog would open here.")
+    print("Help dialog would open here. (Placeholder Implementation)")
     return True
 
 
 def window_toggle_maximize_action(context: EditorContext) -> bool:
-    """Toggles the main window's fullscreen/maximized state."""
+    """Toggles the main application window between fullscreen/maximized and normal states.
+
+    Args:
+        context: The current editor context, expected to have a `window` attribute
+                 referencing the main application window.
+
+    Returns:
+        True if the toggle operation was attempted, False if the window context was missing.
+    """
     if not hasattr(context, "window") or context.window is None:
         logger.warning("Toggle maximize action: No window found in context.")
         return False
@@ -43,7 +67,19 @@ def window_toggle_maximize_action(context: EditorContext) -> bool:
 
 
 def delete_selection_action(context: EditorContext) -> bool:
-    """Deletes selected nodes and edges from the graph."""
+    """Deletes currently selected nodes and edges from the graph scene.
+
+    Retrieves selected NodeItem and EdgeItem instances from the context
+    and requests their deletion via the context's manager.
+
+    Args:
+        context: The current editor context, expected to have `selected_items`
+                 and a `manager` capable of handling deletion requests.
+
+    Returns:
+        True if deletion requests were successfully made or if nothing was selected.
+        False if the context was invalid or an error occurred during deletion requests.
+    """
     if not context or not hasattr(context, "selected_items") or not hasattr(context, "manager"):
         logger.warning("Delete selection action: Invalid context (missing selected_items or manager).")
         return False

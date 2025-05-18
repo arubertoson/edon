@@ -8,26 +8,32 @@ for running or extending the Edon UI.
 import sys
 
 from loguru import logger
-from PySide6.QtCore import QtMsgType, qInstallMessageHandler
+from PySide6.QtCore import QtMsgType, qInstallMessageHandler, QMessageLogContext
 from PySide6.QtWidgets import QApplication
 
 from edon.graph import EntityGraph
 from edon.logging import setup_logging
 from edon.node import EntityNode
 
-from .commands import (
+from edon_ui.commands import (
     ALL_COMMAND_DEFINITIONS,
     CommandRegistry,
     KeyMapping,
     KeyProcessor,
 )
-from .graph_controller import GraphController
-from .graphics import GraphicsScene, GraphicsView, MainWindow
-from . import theme
+from edon_ui.graph_controller import GraphController
+from edon_ui.graphics import GraphicsScene, GraphicsView, MainWindow
+from edon_ui import theme
 
 
-def _qt_message_handler(msg_type, message):
-    """Handler for Qt messages that redirects them to loguru."""
+def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, message: str) -> None:
+    """Redirects Qt log messages to the loguru-based application logger, including context.
+
+    Args:
+        msg_type: The type of the Qt message (e.g., debug, warning, critical).
+        context: The context information of the message (file, line, function, category).
+        message: The actual log message content.
+    """
     level = {
         QtMsgType.QtDebugMsg: "DEBUG",
         QtMsgType.QtInfoMsg: "INFO",
@@ -36,7 +42,16 @@ def _qt_message_handler(msg_type, message):
         QtMsgType.QtFatalMsg: "CRITICAL",
     }.get(msg_type, "INFO")
 
-    logger.opt(depth=1).log(level, f"Qt: {message}")
+    # Format context information. Fallback for None attributes if they can occur.
+    file_info = context.file or "unknown_file"
+    line_info = context.line if context.line is not None else 0
+    func_info = context.function or "unknown_function"
+    category_info = context.category or "unknown_category"
+
+    context_str = f"[{category_info}] ({file_info}:{line_info}, {func_info})"
+    log_message = f"Qt: {context_str} - {message}"
+
+    logger.opt(depth=2).log(level, log_message)
 
 
 class EdonApplication:
@@ -72,7 +87,7 @@ class EdonApplication:
             log_level: The log level to use for logging.
             node_registry: Optional dictionary mapping node type hints to node classes.
         """
-        # Set up logging first
+        # Initialize logging as the first step to capture all subsequent initialization messages.
         self._setup_logging(log_level)
 
         logger.info("Initializing EdonApplication...")
@@ -114,6 +129,16 @@ class EdonApplication:
         return self._node_registry
 
     def _update_graph_system(self) -> GraphController:
+        """Initializes or re-initializes the graph controller.
+
+        This method creates a new GraphController instance, connecting the
+        application's entity graph and node registry to the graphics scene.
+        It's typically called during application setup or when the entity graph
+        or node registry is replaced.
+
+        Returns:
+            The newly created and configured GraphController instance.
+        """
         # Create graph controller and connect it to the scene, the GraphController serves as
         # the bridge between the entity graph model and the UI. It handles synchronization
         # of nodes/edges and translates UI actions to model operations.
@@ -149,13 +174,28 @@ class EdonApplication:
         logger.debug("Logging system initialized")
 
     def _create_qt_application(self) -> QApplication:
-        """Create or get the Qt application instance."""
+        """Creates or retrieves the global QApplication instance.
+
+        Ensures that there is a single QApplication instance for the application.
+        If one does not exist, it creates it using sys.argv.
+
+        Returns:
+            The QApplication instance.
+        """
         app = QApplication.instance()
         if not app:
             app = QApplication(sys.argv)
         return app
 
     def _setup_command_system(self) -> None:
+        """Initializes the application's command system.
+
+        This involves:
+        - Registering all built-in command definitions.
+        - Creating key mappings from the default shortcuts of these commands.
+        - Instantiating the KeyProcessor and linking it to the graphics view
+          to handle user input and trigger commands.
+        """
         logger.debug("Setting up command system... CommandRegistry, KeyMapping and KeyProcessor")
 
         # Register all built-in commands
@@ -176,8 +216,9 @@ class EdonApplication:
             The exit code from the application.
         """
         logger.info("Running EdonApplication...")
-        logger.info("Populating scene from entity graph...")
-        self._graph_controller._populate_scene_from_entity_graph()  # Ensure this doesn't hang or error silently
+        # Populate the graphics scene from the entity graph. This is done here to ensure
+        # the graph is visually represented before the main window is shown.
+        self._graph_controller.sync_scene_from_graph()
 
         logger.debug("About to call self.main_window.show()")
         try:

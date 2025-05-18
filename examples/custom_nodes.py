@@ -1,6 +1,6 @@
 from loguru import logger
 
-from edon.graph import EntityGraph
+from edon.graph import EntityGraph, SocketAddress
 from edon.node import EntityNode, SocketDef
 from edon_ui.app import EdonApplication  # Import EdonApplication instead of main
 
@@ -195,34 +195,42 @@ def create_sample_graph():
     concat_node = ConcatNode()
 
     # Add nodes to graph
-    graph.add_node(int_node)
-    graph.add_node(float_node)
-    graph.add_node(multiply_node)
+    # graph.add_node(int_node)
+    # graph.add_node(float_node)
+    # graph.add_node(multiply_node)
     graph.add_node(string_node1)
     graph.add_node(string_node2)
     graph.add_node(concat_node)
 
     # Set initial values for the nodes
-    int_node.input_sockets["in_int"].value = 5
-    float_node.input_sockets["in_float"].value = 2.5
+    # int_node.input_sockets["in_int"].value = 5
+    # float_node.input_sockets["in_float"].value = 2.5
     string_node1.input_sockets["in_string"].value = "Hello, "
     string_node2.input_sockets["in_string"].value = "World!"
 
     # Connect float_node and int_node to multiply_node
-    success1, reason1 = graph.connect_sockets((float_node.id, "out_float"), (multiply_node.id, "a"))
-    success2, reason2 = graph.connect_sockets((int_node.id, "out_int"), (multiply_node.id, "b"))
-    if not success1:
-        logger.error(f"Failed to connect float_node to multiply_node: {reason1}")
-    if not success2:
-        logger.error(f"Failed to connect int_node to multiply_node: {reason2}")
+    # success1, reason1 = graph.connect_sockets(
+    #     SocketAddress(float_node.id, "out_float"), SocketAddress(multiply_node.id, "a")
+    # )
+    # success2, reason2 = graph.connect_sockets(
+    #     SocketAddress(int_node.id, "out_int"), SocketAddress(multiply_node.id, "b")
+    # )
+    # if not success1:
+    #     logger.error(f"Failed to connect float_node to multiply_node: {reason1}")
+    # if not success2:
+    #     logger.error(f"Failed to connect int_node to multiply_node: {reason2}")
 
-    # Connect string nodes to concat node
-    success3, reason3 = graph.connect_sockets((string_node1.id, "out_string"), (concat_node.id, "a"))
-    success4, reason4 = graph.connect_sockets((string_node2.id, "out_string"), (concat_node.id, "b"))
-    if not success3:
-        logger.error(f"Failed to connect string_node1 to concat_node: {reason3}")
-    if not success4:
-        logger.error(f"Failed to connect string_node2 to concat_node: {reason4}")
+    # # Connect string nodes to concat node
+    # success3, reason3 = graph.connect_sockets(
+    #     SocketAddress(string_node1.id, "out_string"), SocketAddress(concat_node.id, "a")
+    # )
+    # success4, reason4 = graph.connect_sockets(
+    #     SocketAddress(string_node2.id, "out_string"), SocketAddress(concat_node.id, "b")
+    # )
+    # if not success3:
+    #     logger.error(f"Failed to connect string_node1 to concat_node: {reason3}")
+    # if not success4:
+    #     logger.error(f"Failed to connect string_node2 to concat_node: {reason4}")
 
     return graph
 

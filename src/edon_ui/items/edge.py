@@ -137,20 +137,39 @@ class EdgeItem(QGraphicsPathItem):
         min_horizontal_offset = 30.0  # Minimum curve handle length in pixels
         max_horizontal_offset = 150.0  # Maximum curve handle length in pixels
 
-        offset_magnitude = abs(dx) * horizontal_offset_factor
-        offset_magnitude = max(min_horizontal_offset, offset_magnitude)
-        offset_magnitude = min(max_horizontal_offset, offset_magnitude)
+        # Calculate absolute offset magnitude based on horizontal distance (dx)
+        offset_magnitude_abs = abs(dx) * horizontal_offset_factor
+        offset_magnitude_abs = max(min_horizontal_offset, offset_magnitude_abs)
+        offset_magnitude_abs = min(max_horizontal_offset, offset_magnitude_abs)
 
-        # Control points are extended horizontally from source and target
-        # This creates a gentle S-curve for typical left-to-right node connections
-        ctrl1 = QPointF(p1.x() + offset_magnitude, p1.y())
-        ctrl2 = QPointF(p2.x() - offset_magnitude, p2.y())
+        # Determine orientation for ctrl1 based on source socket type
+        # If source is an input, control point extends to its left, else to its right.
+        if self._source_socket_item.is_input:
+            ctrl1_x_offset = -offset_magnitude_abs
+        else:
+            ctrl1_x_offset = offset_magnitude_abs
+        ctrl1 = QPointF(p1.x() + ctrl1_x_offset, p1.y())
 
-        # If dx is negative (e.g. target is to the left of source), the standard S-curve might look inverted.
-        # For a more universally appealing curve regardless of direction, some node editors
-        # ensure control points always go "outwards" from the socket along the general direction of the edge,
-        # or use a different calculation if dx is small or negative.
-        # This current implementation is simpler and works well for LTR flow.
+        # Determine orientation for ctrl2 based on target socket type or drag direction
+        ctrl2_x_offset: float
+        if self._target_socket_item:
+            # Target is a fixed socket
+            # If target is an input, control point extends to its left (relative to p2).
+            # If target is an output, control point extends to its right (relative to p2).
+            if self._target_socket_item.is_input:
+                ctrl2_x_offset = -offset_magnitude_abs
+            else:
+                ctrl2_x_offset = offset_magnitude_abs
+        else:
+            # Target is the mouse cursor (p2), edge is being dragged
+            # ctrl2's offset should be opposite to ctrl1's effective direction relative to p2.
+            # If dragging generally rightwards (dx >= 0), ctrl2 pulls left from p2.
+            # If dragging generally leftwards (dx < 0), ctrl2 pulls right from p2.
+            if dx >= 0:
+                ctrl2_x_offset = -offset_magnitude_abs
+            else:
+                ctrl2_x_offset = offset_magnitude_abs
+        ctrl2 = QPointF(p2.x() + ctrl2_x_offset, p2.y())
 
         path.cubicTo(ctrl1, ctrl2, p2)
         self.setPath(path)
