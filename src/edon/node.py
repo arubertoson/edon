@@ -183,8 +183,6 @@ class EntityNode:
             parent_node=self,
             data_type=socket_def.type,
             value=socket_def.default,
-            visual_type_key=socket_def.visual_type_key,
-            accepts_connection=socket_def.accepts_connection,
         )
         if direction == SocketDirection.INPUT:
             self.input_sockets[socket_def.name] = socket_instance

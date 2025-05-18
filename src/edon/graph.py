@@ -7,12 +7,42 @@ objects.
 
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import TypeAlias
 
+from edon.errors import GraphObjectErrorReason, SocketConnectionErrorReason, SocketDisconnectionErrorReason
 from edon.node import EntityNode
 from edon.socket import EntitySocket, SocketDirection
 
-from edon.errors import GraphObjectErrorReason, SocketConnectionErrorReason, SocketDisconnectionErrorReason
+
+@dataclass(frozen=True)
+class SocketAddress:
+    """Represents a unique socket endpoint within the graph, identifying an entity socket.
+
+    Attributes:
+        node_id: The unique identifier of the parent node.
+        socket_name: The name of the socket on the node (entity socket name).
+    """
+
+    node_id: str
+    socket_name: str
+
+
+@dataclass(frozen=True)
+class EdgeKey:
+    """Uniquely identifies an edge by its source and target socket addresses.
+
+    Attributes:
+        source: The SocketAddress of the source socket.
+        target: The SocketAddress of the target socket.
+    """
+
+    source: SocketAddress
+    target: SocketAddress
+
+
+NodeMap: TypeAlias = Mapping[str, EntityNode]
 
 
 @dataclass
@@ -26,7 +56,7 @@ class EntityGraph:
         nodes: A dictionary mapping node IDs (str) to EntityNode instances.
     """
 
-    nodes: dict[str, EntityNode] = field(default_factory=dict)  # Modern dict
+    nodes: NodeMap = field(default_factory=dict)
 
     def add_node(self, node: EntityNode):
         """Adds a node to the graph.
@@ -113,7 +143,7 @@ class EntityGraph:
         return False
 
     def connect_sockets(
-        self, output_ref: tuple[str, str], input_ref: tuple[str, str]
+        self, output_socket_addr: SocketAddress, input_socket_addr: SocketAddress
     ) -> tuple[bool, SocketConnectionErrorReason | GraphObjectErrorReason | None]:
         """
         Connects an output socket of one node to an input socket of another node.
@@ -123,8 +153,8 @@ class EntityGraph:
         circular dependencies in the graph.
 
         Args:
-            output_ref: A tuple (node_id, socket_name) for the output socket.
-            input_ref: A tuple (node_id, socket_name) for the input socket.
+            output_socket_addr: The SocketAddress for the output socket.
+            input_socket_addr: The SocketAddress for the input socket.
 
         Returns:
             A tuple: (success: bool, reason: Enum | None).
@@ -132,8 +162,10 @@ class EntityGraph:
             If unsuccessful, `success` is False and `reason` is an enum value from
             SocketConnectionErrorReason or GraphObjectErrorReason indicating the failure.
         """
-        output_node_id, output_socket_name = output_ref
-        input_node_id, input_socket_name = input_ref
+        output_node_id = output_socket_addr.node_id
+        output_socket_name = output_socket_addr.socket_name
+        input_node_id = input_socket_addr.node_id
+        input_socket_name = input_socket_addr.socket_name
 
         output_node = self.get_node(output_node_id)
         if not output_node:
@@ -161,7 +193,7 @@ class EntityGraph:
         return input_socket.add_connection(output_socket)
 
     def disconnect_sockets(
-        self, output_ref: tuple[str, str], input_ref: tuple[str, str]
+        self, output_socket_addr: SocketAddress, input_socket_addr: SocketAddress
     ) -> tuple[bool, SocketDisconnectionErrorReason | GraphObjectErrorReason | None]:
         """
         Disconnects a specific connection between an output socket and an input socket.
@@ -170,8 +202,8 @@ class EntityGraph:
         attempting the disconnection.
 
         Args:
-            output_ref: A tuple (node_id, socket_name) for the output socket.
-            input_ref: A tuple (node_id, socket_name) for the input socket.
+            output_socket_addr: The SocketAddress for the output socket.
+            input_socket_addr: The SocketAddress for the input socket.
 
         Returns:
             A tuple: (success: bool, reason: Enum | None).
@@ -179,8 +211,10 @@ class EntityGraph:
             If unsuccessful, `success` is False and `reason` is an enum value from
             SocketDisconnectionErrorReason or GraphObjectErrorReason indicating the failure.
         """
-        output_node_id, output_socket_name = output_ref
-        input_node_id, input_socket_name = input_ref
+        output_node_id = output_socket_addr.node_id
+        output_socket_name = output_socket_addr.socket_name
+        input_node_id = input_socket_addr.node_id
+        input_socket_name = input_socket_addr.socket_name
 
         output_node = self.get_node(output_node_id)
         if not output_node:
