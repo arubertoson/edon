@@ -5,13 +5,14 @@ and rows that can contain a socket circle, label, and widget (`SocketRowItem`),
 along with a protocol (`SocketComponent`) for items within a socket row.
 """
 
-from collections.abc import Set  # Import Set from collections.abc
+from collections.abc import Set
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from loguru import logger
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer
 from PySide6.QtGui import QBrush, QColor, QHoverEvent, QPen
 from PySide6.QtWidgets import (
+    QApplication,
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsObject,
@@ -19,8 +20,6 @@ from PySide6.QtWidgets import (
 )
 
 from edon_ui import theme
-
-# from .socket_widgets import SocketWidgetAdaptor # SocketWidgetAdaptor is unused
 
 if TYPE_CHECKING:
     from edon_ui.items.edge import EdgeItem
@@ -59,7 +58,7 @@ class SocketCircleItem(QGraphicsEllipseItem):
 
     Attributes:
         socket_entity_name: The name of the logical socket entity.
-        parent_node_entity_id: The ID of the parent node's logical entity.
+        node_entity_id: The ID of the parent node's logical entity.
         visual_type_key: A string key to determine visual styling from the theme.
     """
 
@@ -67,7 +66,7 @@ class SocketCircleItem(QGraphicsEllipseItem):
         self,
         parent: QGraphicsItem | None,
         socket_entity_name: str,
-        parent_node_entity_id: str,
+        node_entity_id: str,
         visual_type_key: str = "default",
     ) -> None:
         self._radius = theme.SOCKET_RADIUS
@@ -75,7 +74,7 @@ class SocketCircleItem(QGraphicsEllipseItem):
         super().__init__(ellipse_rect, parent)
 
         self.socket_entity_name = socket_entity_name
-        self.parent_node_entity_id = parent_node_entity_id
+        self.node_entity_id = node_entity_id
         self.visual_type_key = visual_type_key
 
         self.setAcceptHoverEvents(True)
@@ -174,7 +173,6 @@ class SocketCircleItem(QGraphicsEllipseItem):
         """
         self._is_disabled = disabled
         self.setOpacity(0.3 if disabled else 1.0)
-        self.update()
 
     def hoverEnterEvent(self, event: QHoverEvent) -> None:
         """Handles mouse hover enter events to update visual state.
@@ -206,8 +204,7 @@ class SocketCircleItem(QGraphicsEllipseItem):
         """
         if event.button() == Qt.MouseButton.LeftButton:
             logger.debug(
-                f"SocketCircleItem '{self.parent_node_entity_id}::{self.socket_entity_name}' "
-                f"pressed at {event.scenePos()}"
+                f"SocketCircleItem '{self.node_entity_id}::{self.socket_entity_name}' pressed at {event.scenePos()}"
             )
 
             self.scene().start_edge_drag(self, event.scenePos())
@@ -235,8 +232,7 @@ class SocketCircleItem(QGraphicsEllipseItem):
         """
         if event.button() == Qt.MouseButton.LeftButton:
             logger.debug(
-                f"SocketCircleItem '{self.parent_node_entity_id}::{self.socket_entity_name}' "
-                f"released at {event.scenePos()}"
+                f"SocketCircleItem '{self.node_entity_id}::{self.socket_entity_name}' released at {event.scenePos()}"
             )
             if self.scene().is_dragging_edge():
                 self.scene().finish_edge_drag(event.scenePos())
@@ -308,59 +304,92 @@ class SocketRowItem(QGraphicsObject):
 
         self._width: float = 0
         self._height: float = 0
-        self._do_layout()
 
-    def _do_layout(self) -> None:
-        """Layout the label, circle, and widget according to the mode. Emits layoutChanged."""
+        self.prepareGeometryChange()
+        self._update_bounding_rect()
+
+    def _update_bounding_rect(self) -> None:
+        """Updates the internal bounding rectangle of the row based on its current layout.
+        Sets self._width to the maximum width of visible label and widget, and self._height to their combined heights.
+        """
+        visible_widgets = [w for w in (self.label, self.widget) if w and w.isVisible()]
+        if not visible_widgets:
+            self._width = 0
+            self._height = 0
+            return
+        # Largest width among visible label and widget
+        self._width = max(w.boundingRect().width() for w in visible_widgets)
+        # Combined height (stacked vertically)
+        self._height = sum(w.boundingRect().height() for w in visible_widgets)
+
+    def update_layout(self, available_width: float) -> None:
+        self.prepareGeometryChange()
+        self._update_bounding_rect()
+        self._do_layout(available_width)
+        self.update()
+
+    def _do_layout(self, available_width: float) -> None:  # Modified signature
+        """Layout the label, circle, and widget according to the mode and available_width.
+
+        The available_width parameter is provided by the parent NodeItem since it has access to all socket rows
+        and can determine the maximum width needed across all rows. This ensures consistent alignment
+        of socket components (labels, widgets) across all rows in the node, even though each row
+        handles its own internal layout independently.
+        """
         padding: float = theme.SOCKET_HORIZONTAL_PADDING
-        x: float = 0
-        y: float = 0
 
-        circle_diameter: float = self.circle.boundingRect().height() if self.circle else 0
+        circle_diameter: float = self.circle.boundingRect().height() if self.circle and self.circle.isVisible() else 0
         circle_radius: float = circle_diameter / 2
-        row_height: float = theme.SOCKET_ROW_HEIGHT
 
-        # Layout for input:     [circle][padding][label]
-        #                               [padding][widget]
-        # Layout for connected: [padding][label]
+        # Heights of primary components
+        label_h = self.label.get_required_component_height() if self.label and self.label.isVisible() else 0
+        widget_h = self.widget.get_required_component_height() if self.widget and self.widget.isVisible() else 0
+
         if self.is_input:
-            if self.label:
-                self.label.setPos(0, 0)
-                y = self.label.get_required_component_height()
-            if self.circle:
-                self.circle.setPos(-circle_radius - padding, row_height / 2)
-            if self.widget:
-                self.widget.setPos(0, y)
-        # Layout for output: [label/widget][padding][circle]
+            # [circle][padding][label OR widget]
+            # If label and widget are both visible (e.g. disconnected input), label is above widget.
+            current_y = 0
+
+            # Calculate vertical center for the circle, we want the circle to line up with the
+            # label if it exists, otherwise we use the widget.
+            if self.circle and self.circle.isVisible():
+                circle_y_pos = (label_h if label_h else widget_h) / 2
+                circle_x_pos = -circle_radius - padding
+                self.circle.setPos(circle_x_pos, circle_y_pos)
+
+            if self.label and self.label.isVisible():
+                self.label.setPos(0, current_y)
+
+            if self.widget and self.widget.isVisible():
+                # If label was also visible, widget is below it.
+                current_y += label_h
+                self.widget.setPos(0, current_y)
+
         else:
-            if self.label:
-                self.label.setPos(0, 0)
-                x += self.label.get_required_component_width() + padding
-            if self.circle:
-                y = self.label.get_required_component_height() / 2
-                x += circle_diameter
-                self.circle.setPos(x, y)
-            if self.widget:
-                self.widget.setPos(0, 0)
+            # Output socket: [content (label/widget)] [padding] [circle]
+            # Content is left-aligned, circle is right-aligned within available_width.
+            current_y = 0
 
-        # Circle should not be part of this calculation.
-        children = [item for item in (self.label, self.widget) if item is not None and item.isVisible()]
+            label_w = self.label.get_required_component_width() if self.label and self.label.isVisible() else 0
+            widget_w = self.widget.get_required_component_width() if self.widget and self.widget.isVisible() else 0
 
-        min_x = min(child.pos().x() for child in children)
-        min_y = min(child.pos().y() for child in children)
-        max_x = max(child.pos().x() + child.get_required_component_width() for child in children)
-        max_y = max(child.pos().y() + child.get_required_component_height() for child in children)
+            # Most of the time, an output will just consist of a label and a circle.
+            if self.label and self.label.isVisible():
+                self.label.setPos(available_width - label_w, current_y)
+                current_y += self.label.get_required_component_height()
 
-        new_width = max_x - min_x
-        new_height = max_y - min_y
+            if self.widget and self.widget.isVisible():  # Widget takes precedence
+                self.widget.setPos(available_width - widget_w, current_y)  # Widget starts at left
+                current_y += self.widget.get_required_component_height()
 
-        if self._width != new_width or self._height != new_height:
-            self.prepareGeometryChange()
-            self._width = new_width
-            self._height = new_height
-            self.update()
-
-        self.layoutChanged.emit()
+            if self.circle and self.circle.isVisible():
+                # Circle is positioned at the far right of the available_width
+                circle_x_pos = available_width + circle_radius + padding
+                self.circle.setPos(
+                    circle_x_pos,
+                    (self.label.get_required_component_height() if self.label and self.label.isVisible() else widget_h)
+                    / 2,
+                )
 
     def boundingRect(self) -> QRectF:
         """Returns the bounding rectangle of the row.
@@ -370,8 +399,7 @@ class SocketRowItem(QGraphicsObject):
         """
         return QRectF(0, 0, self._width, self._height)
 
-    # XXX: Change name / Read Only
-    def _swap_to_label(self) -> None:
+    def _read_only(self) -> None:
         """Swaps to a label-only view, typically when an input socket is connected.
 
         Hides the widget if it exists and is part of this item.
@@ -382,11 +410,6 @@ class SocketRowItem(QGraphicsObject):
 
         if self.widget:
             self.widget.hide()
-
-        if self.label:
-            self.label.show()
-
-        self._do_layout()
 
     def _swap_to_editable(self) -> None:
         """Swaps to an editable view, typically when an input socket is disconnected.
@@ -401,11 +424,6 @@ class SocketRowItem(QGraphicsObject):
         if self.widget:
             self.widget.show()
 
-        if self.label:
-            self.label.show()
-
-        self._do_layout()
-
     def set_connected_state(self, connected: bool) -> None:
         """Swaps between editable widget and label view based on connection state.
 
@@ -417,9 +435,10 @@ class SocketRowItem(QGraphicsObject):
         if not self.is_input:
             return  # Only input sockets typically change appearance on connection
 
-        logger.debug(f"SocketRow '{self.socket_entity_name}' connected state: {connected}")
-
         if connected:
-            self._swap_to_label()
+            self._read_only()
         else:
             self._swap_to_editable()
+
+        self._update_bounding_rect()
+        self.layoutChanged.emit()

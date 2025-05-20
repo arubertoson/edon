@@ -3,6 +3,8 @@ UI Factory functions for constructing NodeItem, SocketRowItem, and socket widget
 This centralizes all UI construction logic for the node editor.
 """
 
+from edon.socket import SocketType
+from loguru import logger
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import QGraphicsItem
@@ -11,7 +13,7 @@ from edon_ui import theme
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketCircleItem, SocketComponent, SocketRowItem
-from edon_ui.items.socket_widgets import (
+from edon_ui.items.socket_components import (
     SOCKET_WIDGET_COMPONENT_FACTORIES,
     SocketLabel,
     SocketTextAdaptor,
@@ -36,15 +38,17 @@ def create_socket_widget_component(
     which returns a SocketWidgetAdaptor and the underlying QWidget.
     Handles connecting the QWidget's value changed signal to the controller.
     """
-    data_type = getattr(entity_socket, "data_type", None)
+    type_info = getattr(entity_socket, "type_info", None)
     socket_name = getattr(entity_socket, "name", "")
 
-    factory_func = SOCKET_WIDGET_COMPONENT_FACTORIES.get(data_type)
+    factory_func = SOCKET_WIDGET_COMPONENT_FACTORIES.get(type_info)
+    logger.debug(f"Tried to fetch {type_info} factory from {SOCKET_WIDGET_COMPONENT_FACTORIES} registry.")
 
     if factory_func is not None:
         if initial_value is None:
             initial_value = getattr(entity_socket, "default_value", None)
 
+        logger.debug(f"create_socket_widget_component: parent_gfx_item: {controller}")
         component_adaptor, _ = factory_func(
             initial_value=initial_value,
             controller=controller,
@@ -55,7 +59,7 @@ def create_socket_widget_component(
 
         return component_adaptor
     else:
-        print(f"Warning: No widget factory found for data_type {data_type} of socket {socket_name}")
+        print(f"Warning: No widget factory found for data_type {type_info} of socket {socket_name}")
         return None
 
 
@@ -78,23 +82,26 @@ def create_socket_row(
     Returns:
         A composable SocketRowItem.
     """
-    accepts_connection: bool = getattr(socket_def, "accepts_connection", True)
-    type_label_text: str = socket_def.type.__name__ if hasattr(socket_def, "type") else "Value"
+    linkable: bool = socket_def.linkable
+    logger.debug(f"CREATING SOCKET_ROW: {socket_def}")
+    socket_type: SocketType = socket_def.socket_type.python_type.__name__
 
     label_component: SocketComponent | None = None
     circle_component: SocketComponent | None = None
     widget_component: SocketComponent | None = None
-    initial_socket_value: Any = socket_def.default
+    initial_socket_value: Any = entity_socket.value
 
     if not is_input:  # Output socket: Label and Circle
-        socket_label = SocketLabel(text=type_label_text, target_layout_height=theme.SOCKET_ROW_HEIGHT)
+        logger.debug("SOURCE::Can be linked")
+        socket_label = SocketLabel(text=socket_type, target_layout_height=theme.SOCKET_ROW_HEIGHT)
         label_component = SocketTextAdaptor(
             text_item=socket_label,
         )
         circle_component = SocketCircleItem(None, entity_socket.name, node_id)
 
-    elif is_input and accepts_connection:  # Input socket, connectable: Label, Circle, Widget (if not connected)
-        socket_label = SocketLabel(text=type_label_text, target_layout_height=theme.SOCKET_ROW_HEIGHT)
+    elif is_input and linkable:  # Input socket, connectable: Label, Circle, Widget (if not connected)
+        logger.debug("TARGET::Can be linked")
+        socket_label = SocketLabel(text=socket_type, target_layout_height=theme.SOCKET_ROW_HEIGHT)
         label_component = SocketTextAdaptor(
             text_item=socket_label,
         )
@@ -104,6 +111,7 @@ def create_socket_row(
         )
 
     else:
+        logger.debug("TARGET::Can not be linked")
         widget_component = create_socket_widget_component(
             entity_socket, node_id, None, initial_value=initial_socket_value, controller=controller
         )
@@ -136,38 +144,40 @@ def create_node_item(
     Create a NodeItem (UI) from an entity node (data model), including all socket rows.
     Optionally registers each SocketRowItem in the provided socket_row_map for fast lookup.
     """
-    input_defs = getattr(type(entity_node), "input_socket_definitions", [])
-    output_defs = getattr(type(entity_node), "output_socket_definitions", [])
+    source_defs = getattr(type(entity_node), "source_socket_definitions", [])
+    target_defs = getattr(type(entity_node), "target_socket_definitions", [])
 
-    input_sockets_ui: list[SocketRowItem] = []
-    for entity_socket in entity_node.input_sockets.values():
+    logger.debug(f"create_node_item: controller: {controller}")
+
+    target_sockets_ui: list[SocketRowItem] = []
+    for entity_socket in entity_node.target_sockets.values():
         row = create_socket_row(
-            entity_socket, _get_socketdef(input_defs, entity_socket.name), entity_node.id, True, controller=controller
+            entity_socket, _get_socketdef(target_defs, entity_socket.name), entity_node.id, True, controller=controller
         )
         if socket_row_map is not None:
             socket_row_map[(entity_node.id, entity_socket.name, True)] = row
-        input_sockets_ui.append(row)
+        target_sockets_ui.append(row)
 
-    output_sockets_ui: list[SocketRowItem] = []
-    for entity_socket in entity_node.output_sockets.values():
+    source_sockets_ui: list[SocketRowItem] = []
+    for entity_socket in entity_node.source_sockets.values():
         row = create_socket_row(
             entity_socket,
-            _get_socketdef(output_defs, entity_socket.name),
+            _get_socketdef(source_defs, entity_socket.name),
             entity_node.id,
             False,
             controller=controller,
         )
         if socket_row_map is not None:
             socket_row_map[(entity_node.id, entity_socket.name, False)] = row
-        output_sockets_ui.append(row)
+        source_sockets_ui.append(row)
 
     return NodeItem(
         title=entity_node.name,
         x=x,
         y=y,
         node_entity_id=entity_node.id,
-        input_sockets=input_sockets_ui,
-        output_sockets=output_sockets_ui,
+        target_sockets=target_sockets_ui,
+        source_sockets=source_sockets_ui,
     )
 
 

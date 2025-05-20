@@ -46,9 +46,9 @@ class ExecutionEngine:
         # Calculate initial in-degrees for all nodes.
         # Iterate through each node and its output connections to identify dependencies.
         for u_node_id, u_node in graph.nodes.items():
-            for output_socket in u_node.output_sockets.values():
-                for connected_input_socket in output_socket.connections:
-                    v_node = connected_input_socket.parent_node
+            for output_socket in u_node.target_sockets.values():
+                for connected_input_socket in output_socket.links:
+                    v_node = connected_input_socket.node
                     # If the connected node (v_node) is part of the current graph, increment its in-degree.
                     if v_node and v_node.id in in_degree:
                         in_degree[v_node.id] += 1
@@ -74,9 +74,9 @@ class ExecutionEngine:
 
             # For each outgoing connection from the processed node (u_node):
             # Decrement the in-degree of the connected (dependent) node (v_node).
-            for output_socket in u_node.output_sockets.values():
-                for connected_input_socket in output_socket.connections:
-                    v_node = connected_input_socket.parent_node
+            for output_socket in u_node.target_sockets.values():
+                for connected_input_socket in output_socket.links:
+                    v_node = connected_input_socket.node
                     if v_node and v_node.id in in_degree:
                         in_degree[v_node.id] -= 1
                         # If a dependent node's in-degree drops to 0, it means all its

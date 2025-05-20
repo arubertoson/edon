@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
-from edon.errors import GraphObjectErrorReason, SocketConnectionErrorReason, SocketDisconnectionErrorReason
+from edon.errors import GraphObjectErrorReason, SocketLinkErrorReason, SocketUnlinkErrorReason
 from edon.node import EntityNode
 from edon.socket import EntitySocket, SocketDirection
 
@@ -49,7 +49,7 @@ NodeMap: TypeAlias = Mapping[str, EntityNode]
 class EntityGraph:
     """
     Represents the data structure for a directed graph of `EntityNode` objects,
-    managing their connections and providing operations for graph manipulation and
+    managing their links and providing operations for graph manipulation and
     inspection.
 
     Attributes:
@@ -74,7 +74,7 @@ class EntityGraph:
 
     def remove_node(self, node_id: str):
         """
-        Removes a node from the graph and disconnects all its sockets.
+        Removes a node from the graph and unlink all its sockets.
 
         If the node_id is not found, the method returns silently.
 
@@ -85,16 +85,14 @@ class EntityGraph:
         if not node_to_remove:
             return
 
-        # Collect all sockets of the node to ensure all its connections are severed
-        all_sockets_to_disconnect: list[EntitySocket] = []
-        all_sockets_to_disconnect.extend(node_to_remove.input_sockets.values())
-        all_sockets_to_disconnect.extend(node_to_remove.output_sockets.values())
+        all_sockets_to_unlink: list[EntitySocket] = []
+        all_sockets_to_unlink.extend(node_to_remove.source_sockets.values())
+        all_sockets_to_unlink.extend(node_to_remove.target_sockets.values())
 
-        for sock_to_clear in all_sockets_to_disconnect:
-            # Iterate over a copy as remove_connection modifies the original connections set
-            connected_sockets_copy = list(sock_to_clear.connections)
-            for other_sock in connected_sockets_copy:
-                sock_to_clear.remove_connection(other_sock)
+        for sock_to_unlink in all_sockets_to_unlink:
+            linked_sockets_copy = list(sock_to_unlink.links)
+            for other_sock in linked_sockets_copy:
+                sock_to_unlink.unlink_from(other_sock)
 
     def get_node(self, node_id: str) -> EntityNode | None:
         """Retrieves a node by its ID.
@@ -112,8 +110,8 @@ class EntityGraph:
         Checks if a path exists from a start node to an end node.
 
         This method uses a depth-first search (DFS) algorithm to traverse the graph
-        by following output socket connections. It's primarily used for cycle
-        detection before creating new connections.
+        by following source socket links. It's primarily used for cycle
+        detection before creating new links.
 
         Args:
             start_node_id: The ID of the node to start the path search from.
@@ -134,105 +132,105 @@ class EntityGraph:
             node = self.get_node(current_id)
             if not node:
                 continue
-            for output_socket in node.output_sockets.values():
-                for connected_input_socket in output_socket.connections:
-                    # Traverse to the parent node of the connected input socket
-                    next_node = connected_input_socket.parent_node
+            for source_socket in node.target_sockets.values():
+                for linked_source_socket in source_socket.links:
+                    # Traverse to the parent node of the linked target socket
+                    next_node = linked_source_socket.node
                     if next_node and next_node.id not in visited:
                         stack.append(next_node.id)
         return False
 
-    def connect_sockets(
-        self, output_socket_addr: SocketAddress, input_socket_addr: SocketAddress
-    ) -> tuple[bool, SocketConnectionErrorReason | GraphObjectErrorReason | None]:
+    def link_sockets(
+        self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
+    ) -> tuple[bool, SocketLinkErrorReason | GraphObjectErrorReason | None]:
         """
-        Connects an output socket of one node to an input socket of another node.
+        Links an source socket of one node to an target socket of another node.
 
-        Before attempting the connection, this method validates the existence of nodes
+        Before attempting the link, this method validates the existence of nodes
         and sockets, checks their directions, and performs cycle detection to prevent
         circular dependencies in the graph.
 
         Args:
-            output_socket_addr: The SocketAddress for the output socket.
-            input_socket_addr: The SocketAddress for the input socket.
+            source_socket_addr: The SocketAddress for the source socket.
+            target_socket_addr: The SocketAddress for the target socket.
 
         Returns:
             A tuple: (success: bool, reason: Enum | None).
             If successful, `success` is True and `reason` is None.
             If unsuccessful, `success` is False and `reason` is an enum value from
-            SocketConnectionErrorReason or GraphObjectErrorReason indicating the failure.
+            SocketLinkErrorReason or GraphObjectErrorReason indicating the failure.
         """
-        output_node_id = output_socket_addr.node_id
-        output_socket_name = output_socket_addr.socket_name
-        input_node_id = input_socket_addr.node_id
-        input_socket_name = input_socket_addr.socket_name
+        source_node_id = source_socket_addr.node_id
+        source_socket_name = source_socket_addr.socket_name
+        target_node_id = target_socket_addr.node_id
+        target_socket_name = target_socket_addr.socket_name
 
-        output_node = self.get_node(output_node_id)
-        if not output_node:
+        source_node = self.get_node(source_node_id)
+        if not source_node:
             return False, GraphObjectErrorReason.NODE_NOT_FOUND
 
-        input_node = self.get_node(input_node_id)
-        if not input_node:
+        target_node = self.get_node(target_node_id)
+        if not target_node:
             return False, GraphObjectErrorReason.NODE_NOT_FOUND
 
-        if self._has_path(input_node_id, output_node_id):
-            return False, SocketConnectionErrorReason.CYCLE_DETECTED
+        if self._has_path(target_node_id, source_node_id):
+            return False, SocketLinkErrorReason.CYCLE_DETECTED
 
-        output_socket = output_node.output_sockets.get(output_socket_name)
-        if not output_socket:
+        source_socket = source_node.source_sockets.get(source_socket_name)
+        if not source_socket:
             return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
-        if output_socket.direction != SocketDirection.OUTPUT:
+        if source_socket.direction != SocketDirection.SOURCE:
             return False, GraphObjectErrorReason.SOCKET_DIRECTION_INVALID
 
-        input_socket = input_node.input_sockets.get(input_socket_name)
-        if not input_socket:
+        target_socket = target_node.target_sockets.get(target_socket_name)
+        if not target_socket:
             return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
-        if input_socket.direction != SocketDirection.INPUT:
+        if target_socket.direction != SocketDirection.TARGET:
             return False, GraphObjectErrorReason.SOCKET_DIRECTION_INVALID
 
-        return input_socket.add_connection(output_socket)
+        return target_socket.link_to(source_socket)
 
-    def disconnect_sockets(
-        self, output_socket_addr: SocketAddress, input_socket_addr: SocketAddress
-    ) -> tuple[bool, SocketDisconnectionErrorReason | GraphObjectErrorReason | None]:
+    def unlink_sockets(
+        self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
+    ) -> tuple[bool, SocketUnlinkErrorReason | GraphObjectErrorReason | None]:
         """
-        Disconnects a specific connection between an output socket and an input socket.
+        Unlinks a specific link between an output socket and an input socket.
 
         This method validates the existence of the specified nodes and sockets before
-        attempting the disconnection.
+        attempting the unlinking.
 
         Args:
-            output_socket_addr: The SocketAddress for the output socket.
-            input_socket_addr: The SocketAddress for the input socket.
+            source_socket_addr: The SocketAddress for the source socket.
+            target_socket_addr: The SocketAddress for the target socket.
 
         Returns:
             A tuple: (success: bool, reason: Enum | None).
             If successful, `success` is True and `reason` is None.
             If unsuccessful, `success` is False and `reason` is an enum value from
-            SocketDisconnectionErrorReason or GraphObjectErrorReason indicating the failure.
+            SocketUnlinkErrorReason or GraphObjectErrorReason indicating the failure.
         """
-        output_node_id = output_socket_addr.node_id
-        output_socket_name = output_socket_addr.socket_name
-        input_node_id = input_socket_addr.node_id
-        input_socket_name = input_socket_addr.socket_name
+        source_node_id = source_socket_addr.node_id
+        source_socket_name = source_socket_addr.socket_name
+        target_node_id = target_socket_addr.node_id
+        target_socket_name = target_socket_addr.socket_name
 
-        output_node = self.get_node(output_node_id)
-        if not output_node:
+        source_node = self.get_node(source_node_id)
+        if not source_node:
             return False, GraphObjectErrorReason.NODE_NOT_FOUND
 
-        input_node = self.get_node(input_node_id)
-        if not input_node:
+        target_node = self.get_node(target_node_id)
+        if not target_node:
             return False, GraphObjectErrorReason.NODE_NOT_FOUND
 
-        output_socket = output_node.output_sockets.get(output_socket_name)
-        if not output_socket:
+        source_socket = source_node.source_sockets.get(source_socket_name)
+        if not source_socket:
             return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
 
-        input_socket = input_node.input_sockets.get(input_socket_name)
-        if not input_socket:
+        target_socket = target_node.target_sockets.get(target_socket_name)
+        if not target_socket:
             return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
 
-        return input_socket.remove_connection(output_socket)
+        return target_socket.unlink_from(source_socket)
 
     def __repr__(self) -> str:
         return f"Graph(nodes_count={len(self.nodes)})"

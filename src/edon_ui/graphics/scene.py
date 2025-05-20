@@ -159,6 +159,9 @@ class GraphicsScene(QGraphicsScene):
 
         self._update_scene_appearance()
 
+    # def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+    #     pass
+
     def _handle_selection_changed(self):
         # XXX: We should keep an eye on this function as it could potentially be recursed and cause a crash/lock.
         # If that happens we need to look into temporarily disconnecting the signal and reconnecting it.
@@ -192,8 +195,8 @@ class GraphicsScene(QGraphicsScene):
         edges_to_remove = [
             edge
             for edge in self.edge_items
-            if edge.source_socket_item.parent_node_entity_id == node.node_entity_id
-            or (edge.target_socket_item and edge.target_socket_item.parent_node_entity_id == node.node_entity_id)
+            if edge.source_socket_item.node_entity_id == node.node_entity_id
+            or (edge.target_socket_item and edge.target_socket_item.node_entity_id == node.node_entity_id)
         ]
         for edge in edges_to_remove:
             self.removeEdge(edge)
@@ -263,7 +266,9 @@ class GraphicsScene(QGraphicsScene):
             self.empty_scene_text.setVisible(True)
             return
 
-        self.empty_scene_text.setVisible(False)
+        if self.empty_scene_text.isVisible():
+            self.empty_scene_text.setVisible(False)
+
         if not self.active_area.scene() == self:
             super().addItem(self.active_area)
 
@@ -271,20 +276,24 @@ class GraphicsScene(QGraphicsScene):
 
     def _handle_node_resize(self, resized_node_id: str):
         """Handles updates when a specific node (identified by resized_node_id) resizes."""
-        # logger.debug(f"Scene: Handling resize for node {resized_node_id}") # Temporarily commented out for debugging SystemError
-        self._update_common_scene_elements()
+        logger.trace(f"Scene: Handling resize for node {resized_node_id}")
+        # self._update_common_scene_elements()
 
         # Update edges connected to the specific resized node
         for edge_item in self.edge_items:
-            is_source_node = edge_item.source_socket_item.parent_node_entity_id == resized_node_id
-            is_target_node = (
-                edge_item.target_socket_item and edge_item.target_socket_item.parent_node_entity_id == resized_node_id
-            )
-            if is_source_node or is_target_node:
-                # logger.debug(f"Updating edge connected to resized node: {edge_item}")
-                edge_item.update_path()
+            edge_item.update_path()
 
-        self.scene_changed.emit()
+        self.update()
+        # for edge_item in self.edge_items:
+        #     is_source_node = edge_item.source_socket_item.node_entity_id == resized_node_id
+        #     is_target_node = (
+        #         edge_item.target_socket_item and edge_item.target_socket_item.node_entity_id == resized_node_id
+        #     )
+        #     if is_source_node or is_target_node:
+        #         logger.debug(f"Updating Edge: {edge_item.node_entity_id}")
+        #         edge_item.update_path()
+
+        # self.scene_changed.emit()
 
     def _update_scene_appearance(self):
         # This method is now primarily for general updates (node moves, add/remove item)
@@ -325,7 +334,7 @@ class GraphicsScene(QGraphicsScene):
             self.temp_edge = next(iter(connected_edges))
 
             logger.debug(
-                f"Scene: Lifting existing edge from {clicked_socket_item.parent_node_entity_id}::{clicked_socket_item.socket_entity_name}"
+                f"Scene: Lifting existing edge from {clicked_socket_item.node_entity_id}::{clicked_socket_item.socket_entity_name}"
             )
 
             # When an edge is lifted, its logical connection needs to be severed in the model.
@@ -372,7 +381,7 @@ class GraphicsScene(QGraphicsScene):
 
         is_valid = (
             SocketAddress(
-                potential_target_socket.parent_node_entity_id,
+                potential_target_socket.node_entity_id,
                 potential_target_socket.socket_entity_name,
             )
             in self._cached_drag_valid_targets
@@ -418,7 +427,7 @@ class GraphicsScene(QGraphicsScene):
         if self.temp_edge:
             source_socket = self.temp_edge.source_socket_item
             logger.debug(
-                f"Scene: Cancelling edge from '{source_socket.parent_node_entity_id}::{source_socket.socket_entity_name}'"
+                f"Scene: Removing temporary edge from '{source_socket.node_entity_id}::{source_socket.socket_entity_name}'"
             )
             # The edge is not part of the entity graph at this point so we avoid calling
             # the controller.
@@ -438,7 +447,7 @@ class GraphicsScene(QGraphicsScene):
         Uses cached targets if available during an active drag.
         """
         assert self.controller is not None and self._cached_drag_valid_targets is not None
-        logger.trace("Using cached valid drop targets for global socket update.")
+        logger.debug("Using cached valid drop targets for global socket update.")
 
         for item in self.items():
             if not isinstance(item, SocketCircleItem):
@@ -449,7 +458,7 @@ class GraphicsScene(QGraphicsScene):
                 socket_circle.set_disabled_visual(False)
                 continue
 
-            current_socket_addr = SocketAddress(socket_circle.parent_node_entity_id, socket_circle.socket_entity_name)
+            current_socket_addr = SocketAddress(socket_circle.node_entity_id, socket_circle.socket_entity_name)
             if current_socket_addr in self._cached_drag_valid_targets:
                 socket_circle.set_disabled_visual(False)
             else:

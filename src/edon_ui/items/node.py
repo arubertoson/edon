@@ -4,6 +4,7 @@ This module provides the QGraphicsObject subclass that handles rendering,
 interaction, and layout for individual nodes within the graphics scene.
 """
 
+from loguru import logger
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QRectF, Qt, Signal
@@ -34,8 +35,8 @@ class NodeItem(QGraphicsObject):
         x: float,
         y: float,
         node_entity_id: str,
-        input_sockets: list["SocketRowItem"] | None = None,
-        output_sockets: list["SocketRowItem"] | None = None,
+        target_sockets: list["SocketRowItem"] | None = None,
+        source_sockets: list["SocketRowItem"] | None = None,
         width: float = theme.NODE_MIN_WIDTH,
         height: float = theme.NODE_MIN_HEIGHT,
     ) -> None:
@@ -56,20 +57,23 @@ class NodeItem(QGraphicsObject):
         self.title_text_item.setDefaultTextColor(theme.NODE_TITLE_TEXT)
         self.title_text_item.setFont(theme.FONT_NODE_TITLE)
 
-        self._input_sockets = input_sockets or []
-        self._output_sockets = output_sockets or []
-        for row in self._input_sockets + self._output_sockets:
+        self._target_sockets = target_sockets or []
+        self._source_sockets = source_sockets or []
+        for row in self._target_sockets + self._source_sockets:
             row.setParentItem(self)
-            row.layoutChanged.connect(self._on_socket_row_layout_changed)
+            row.layoutChanged.connect(self._on_socket_row_layout_changed, Qt.QueuedConnection)
+
+        self._width: float = 0
+        self._height: float = 0
 
         self._on_socket_row_layout_changed()
 
     def _calculate_dynamic_height(self) -> float:
         total_socket_rows_height = theme.NODE_TITLE_HEIGHT + theme.SOCKET_VERTICAL_CONTENT_MARGIN
 
-        for idx, row in enumerate(self._input_sockets + self._output_sockets):
+        for idx, row in enumerate(self._target_sockets + self._source_sockets):
             total_socket_rows_height += row.boundingRect().height()
-            if idx < len(self._input_sockets + self._output_sockets) - 1:
+            if idx < len(self._target_sockets + self._source_sockets) - 1:
                 total_socket_rows_height += theme.SOCKET_VERTICAL_ITEM_PADDING
 
         total_socket_rows_height += theme.SOCKET_VERTICAL_CONTENT_MARGIN
@@ -79,10 +83,11 @@ class NodeItem(QGraphicsObject):
 
     def _calculate_dynamic_width(self) -> float:
         max_row_w = 0
-        all_rows = self._input_sockets + self._output_sockets
+        all_rows = self._target_sockets + self._source_sockets
         if all_rows:
             max_row_w = max(row.boundingRect().width() for row in all_rows)
 
+        # Remember to remove the padding
         min_content_width = theme.NODE_MIN_WIDTH - (theme.NODE_HORIZONTAL_PADDING * 2)
         calculated_total_width = max(max_row_w, min_content_width)
 
@@ -97,28 +102,42 @@ class NodeItem(QGraphicsObject):
         """
         current_row_top_y: float = theme.NODE_TITLE_HEIGHT + theme.SOCKET_VERTICAL_CONTENT_MARGIN
 
-        # Output sockets
-        for row_item in self._output_sockets:
-            row_item.setPos(0, current_row_top_y)
+        # self._width should have been calculated by _calculate_dynamic_width() before this method is called.
+        # This is the width available for the content of the socket rows, inside the node's own padding.
+        content_area_width_for_rows = self._width
 
+        # Source sockets
+        for row_item in self._source_sockets:
+            row_item.update_layout(content_area_width_for_rows)
+            # Position the row considering the node's left padding
+            row_item.setPos(0, current_row_top_y)
             current_row_top_y += row_item.boundingRect().height() + theme.SOCKET_VERTICAL_ITEM_PADDING
 
-        # Input sockets
-        for idx, row_item in enumerate(self._input_sockets):
+        # Target sockets
+        for idx, row_item in enumerate(self._target_sockets):
+            row_item.update_layout(content_area_width_for_rows)  # Pass the available width
+            # Position the row considering the node's left padding
             row_item.setPos(0, current_row_top_y)
-
             current_row_top_y += row_item.boundingRect().height()
-            if idx < len(self._input_sockets) - 1:
+            if idx < len(self._target_sockets) - 1:
                 current_row_top_y += theme.SOCKET_VERTICAL_ITEM_PADDING
 
     def _on_socket_row_layout_changed(self) -> None:
-        """Handle a socket row's layout change by relayout and redraw the node."""
-        self.prepareGeometryChange()
-        self._layout_socket_rows()
-        self._height = self._calculate_dynamic_height()
+        """Handle a socket row's layout change by relayouting the entire node."""
+        self.prepareGeometryChange()  # Prepare the node for geometry changes
+
+        # Recalculate node's own width first based on potentially changed intrinsic needs of rows
         self._width = self._calculate_dynamic_width()
 
-        self.update()
+        # Then, layout socket rows, passing them the available content width
+        self._layout_socket_rows()
+
+        # Finally, calculate the node's height based on the new row layouts
+        self._height = self._calculate_dynamic_height()
+
+        logger.info(f"Node {self.node_entity_id} layout changed: {self._width}x{self._height}")
+
+        self.update()  # Redraw the node
         self.sizeChanged.emit(self.node_entity_id)
 
     def boundingRect(self) -> QRectF:
@@ -214,25 +233,3 @@ class NodeItem(QGraphicsObject):
         title_text_x = (self._width - title_text_rect.width()) / 2
         title_text_y = (theme.NODE_TITLE_HEIGHT - title_text_rect.height()) / 2
         self.title_text_item.setPos(title_text_x, title_text_y)
-
-    def content_rect(self) -> QRectF:
-        """Returns the rectangle for the content area, below the title bar, with padding."""
-        # Use a consistent border width, ideally fetched from theme or a class const
-        # For now, matching the visual border drawn.
-        # The main border is drawn with width current_border_width (1.5 or 2.0)
-        # We assume content should be placed inside this main border.
-        padding = 10.0  # Internal padding for content from the edges of the content space
-        content_y_start = theme.NODE_TITLE_HEIGHT
-
-        # The available width for content is node_width - 2*effective_border_for_content_placement
-        # The border is outside the fill area in QPainter if pen width > 1, half inside, half outside.
-        # To be safe, let's consider full border width for now.
-        # However, visually, content is placed relative to the inner edge of the drawn rounded rect.
-        # The self.boundingRect() is (0,0, self._width, self._height)
-        # The drawn rounded rect fills this.
-
-        content_x = padding
-        content_width = self._width - (2 * padding)
-        content_height = self._height - content_y_start - padding  # Space from bottom edge
-
-        return QRectF(content_x, content_y_start, content_width, content_height)

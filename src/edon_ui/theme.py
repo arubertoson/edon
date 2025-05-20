@@ -145,8 +145,15 @@ SOCKET_STRING_WIDGET_ADAPTOR_WIDTH = 100.0  # Strings often need more space
 # )  # Default to existing socket padding
 
 # For SocketLabel text
-SOCKET_LABEL_TEXT_COLOR = QColor("#D8D8D8")  # A bright, light gray for labels
+SOCKET_LABEL_TEXT_COLOR = QColor("#B0B0B0")  # A slightly dimmer gray for socket labels
 FONT_SOCKET_LABEL_DEFAULT_SIZE = 9  # Default font size for socket labels (adjust as needed)
+
+# Default Colors for Icons
+ICON_COLOR = "#C0C0C0"  # Light gray for icons
+ICON_COLOR_ACTIVE = "#FFFFFF"  # White for active/hovered icons
+
+# Default Colors for Text Inputs
+INPUT_TEXT_DISABLED_COLOR = "#808080"  # Medium gray for disabled input text
 
 # --- Global Application Stylesheet ---
 # This is where we'll define QSS rules for the entire application.

@@ -1,8 +1,9 @@
 from loguru import logger
 
-from edon.graph import EntityGraph, SocketAddress
+from edon.graph import EntityGraph
 from edon.node import EntityNode, SocketDef
 from edon_ui.app import EdonApplication  # Import EdonApplication instead of main
+from edon_ui.items.socket_components.factories import SocketType  # Import the new enum
 
 # --- Define custom nodes declaratively ---
 
@@ -12,16 +13,16 @@ class IntegerNode(EntityNode):
 
     # Class attributes define the node's properties and sockets
     node_type = "constant.int"
-    input_socket_definitions = [
-        SocketDef(name="in_int", type=int, visual_type_key="number", accepts_connection=False),
+    source_socket_definitions = [
+        SocketDef(name="out_int", socket_type=SocketType.INTEGER),
     ]
-    output_socket_definitions = [
-        SocketDef(name="out_int", type=int, visual_type_key="number"),
+    target_socket_definitions = [
+        SocketDef(name="in_int", socket_type=SocketType.INTEGER, linkable=False),
     ]
 
     def process(self):
-        self.output_sockets["out_int"].value = self.input_sockets["in_int"].value
-        return self.output_sockets["out_int"].value
+        self.target_sockets["in_int"].value = self.source_sockets["out_int"].value
+        return self.target_sockets["in_int"].value
 
 
 class FloatNode(EntityNode):
@@ -29,16 +30,16 @@ class FloatNode(EntityNode):
 
     # Class attributes define the node's properties and sockets
     node_type = "constant.float"
-    input_socket_definitions = [
-        SocketDef(name="in_float", type=float, visual_type_key="number", accepts_connection=False),
+    source_socket_definitions = [
+        SocketDef(name="out_float", socket_type=SocketType.FLOAT),
     ]
-    output_socket_definitions = [
-        SocketDef(name="out_float", type=float, visual_type_key="number"),
+    target_socket_definitions = [
+        SocketDef(name="in_float", socket_type=SocketType.FLOAT, linkable=False),
     ]
 
     def process(self):
-        self.output_sockets["out_float"].value = self.input_sockets["in_float"].value
-        return self.output_sockets["out_float"].value
+        self.target_sockets["in_float"].value = self.source_sockets["out_float"].value
+        return self.target_sockets["in_float"].value
 
 
 class StringNode(EntityNode):
@@ -46,32 +47,50 @@ class StringNode(EntityNode):
 
     # Class attributes define the node's properties and sockets
     node_type = "string.text"
-    input_socket_definitions = [
-        SocketDef(name="in_string", type=str, visual_type_key="string", accepts_connection=False),
+    source_socket_definitions = [
+        SocketDef(name="out_text", socket_type=SocketType.STRING),
     ]
-    output_socket_definitions = [
-        SocketDef(name="out_string", type=str, visual_type_key="string"),
+    target_socket_definitions = [
+        SocketDef(name="in_text", socket_type=SocketType.STRING, linkable=False),
     ]
 
     def process(self):
-        self.output_sockets["out_string"].value = self.input_sockets["in_string"].value
-        return self.output_sockets["out_string"].value
+        self.target_sockets["in_stext"].value = self.source_sockets["out_text"].value
+        return self.target_sockets["in_text"].value
+
+
+class LargeTextNode(EntityNode):
+    """A node that accepts a large string input via a popup editor."""
+
+    node_type = "text.large_input"
+    source_socket_definitions = [
+        SocketDef(name="out_text", socket_type=SocketType.LARGE_STRING),
+    ]
+    target_socket_definitions = [
+        SocketDef(name="in_text", socket_type=SocketType.STRING, linkable=False),  # Output regular string
+    ]
+
+    def process(self):
+        self.target_sockets["in_text"].value = self.source_sockets["out_text"].value
+        return self.target_sockets["in_text"].value
 
 
 class AddNode(EntityNode):
     """A node that adds two integer inputs and outputs the result (declaratively)."""
 
     node_type = "math.add"
-    input_socket_definitions = [
-        SocketDef(name="a", type=int, visual_type_key="number"),
-        SocketDef(name="b", type=int, visual_type_key="number"),
+    source_socket_definitions = [
+        SocketDef(name="result", socket_type=SocketType.INTEGER),
     ]
-    output_socket_definitions = [SocketDef(name="result", type=int, visual_type_key="number")]
+    target_socket_definitions = [
+        SocketDef(name="a", socket_type=SocketType.INTEGER),
+        SocketDef(name="b", socket_type=SocketType.INTEGER),
+    ]
 
     def process(self):
         # Access sockets created by the base class based on definitions
-        a_socket = self.input_sockets["a"]
-        b_socket = self.input_sockets["b"]
+        a_socket = self.source_sockets["a"]
+        b_socket = self.source_sockets["b"]
 
         # Get input values (assuming defaults or connections provide them)
         # Sockets should have a default value (e.g., None or 0) upon creation
@@ -79,20 +98,20 @@ class AddNode(EntityNode):
         a_value = 0
         b_value = 0
 
-        if a_socket.is_connected():
-            connected_socket = a_socket.connections[0]
+        if a_socket.is_linked():
+            connected_socket = a_socket.links[0]
             a_value = connected_socket.value if connected_socket.value is not None else 0
         elif a_socket.value is not None:
             a_value = a_socket.value  # Use default value if not connected
 
-        if b_socket.is_connected():
-            connected_socket = b_socket.connections[0]
+        if b_socket.is_linked():
+            connected_socket = b_socket.links[0]
             b_value = connected_socket.value if connected_socket.value is not None else 0
         elif b_socket.value is not None:
             b_value = b_socket.value  # Use default value if not connected
 
         result = a_value + b_value
-        self.output_sockets["result"].value = result
+        self.target_sockets["result"].value = result
         logger.debug(f"AddNode ({self.name}): {a_value} + {b_value} = {result}")
 
 
@@ -100,35 +119,37 @@ class MultiplyNode(EntityNode):
     """A node that multiplies a float and an integer and outputs the result (declaratively)."""
 
     node_type = "math.multiply"
-    input_socket_definitions = [
-        SocketDef(name="a", type=float, visual_type_key="number"),
-        SocketDef(name="b", type=int, visual_type_key="number"),
+    source_socket_definitions = [
+        SocketDef(name="result", socket_type=SocketType.FLOAT),
     ]
-    output_socket_definitions = [SocketDef(name="result", type=float)]
+    target_socket_definitions = [
+        SocketDef(name="a", socket_type=SocketType.FLOAT),
+        SocketDef(name="b", socket_type=SocketType.INTEGER),
+    ]
 
     def process(self):
         # Access sockets created by the base class based on definitions
-        a_socket = self.input_sockets["a"]
-        b_socket = self.input_sockets["b"]
+        a_socket = self.source_sockets["a"]
+        b_socket = self.source_sockets["b"]
 
         # Get input values
         a_value = 0.0
         b_value = 0
 
-        if a_socket.is_connected():
-            connected_socket = a_socket.connections[0]
+        if a_socket.is_linked():
+            connected_socket = a_socket.links[0]
             a_value = connected_socket.value if connected_socket.value is not None else 0.0
         elif a_socket.value is not None:
             a_value = a_socket.value  # Use default value if not connected
 
-        if b_socket.is_connected():
-            connected_socket = b_socket.connections[0]
+        if b_socket.is_linked():
+            connected_socket = b_socket.links[0]
             b_value = connected_socket.value if connected_socket.value is not None else 0
         elif b_socket.value is not None:
             b_value = b_socket.value  # Use default value if not connected
 
         result = a_value * b_value
-        self.output_sockets["result"].value = result
+        self.target_sockets["result"].value = result
         logger.debug(f"MultiplyNode ({self.name}): {a_value} * {b_value} = {result}")
 
 
@@ -136,35 +157,37 @@ class ConcatNode(EntityNode):
     """A node that concatenates two string inputs and outputs the result (declaratively)."""
 
     node_type = "string.concat"
-    input_socket_definitions = [
-        SocketDef(name="a", type=str, visual_type_key="string"),
-        SocketDef(name="b", type=str, visual_type_key="string"),
+    source_socket_definitions = [
+        SocketDef(name="result", socket_type=SocketType.STRING),
     ]
-    output_socket_definitions = [SocketDef(name="result", type=str, visual_type_key="string")]
+    target_socket_definitions = [
+        SocketDef(name="a", socket_type=SocketType.STRING),
+        SocketDef(name="b", socket_type=SocketType.STRING),
+    ]
 
     def process(self):
         # Access sockets created by the base class based on definitions
-        a_socket = self.input_sockets["a"]
-        b_socket = self.input_sockets["b"]
+        a_socket = self.source_sockets["a"]
+        b_socket = self.source_sockets["b"]
 
         # Get input values
         a_value = ""
         b_value = ""
 
-        if a_socket.is_connected():
-            connected_socket = a_socket.connections[0]
+        if a_socket.is_linked():
+            connected_socket = a_socket.links[0]
             a_value = connected_socket.value if connected_socket.value is not None else ""
         elif a_socket.value is not None:
             a_value = a_socket.value  # Use default value if not connected
 
-        if b_socket.is_connected():
-            connected_socket = b_socket.connections[0]
+        if b_socket.is_linked():
+            connected_socket = b_socket.links[0]
             b_value = connected_socket.value if connected_socket.value is not None else ""
         elif b_socket.value is not None:
             b_value = b_socket.value  # Use default value if not connected
 
         result = a_value + b_value
-        self.output_sockets["result"].value = result
+        self.target_sockets["result"].value = result
         logger.debug(f"ConcatNode ({self.name}): '{a_value}' + '{b_value}' = '{result}'")
 
 
@@ -177,6 +200,7 @@ custom_node_registry = {
     "AddNode": AddNode,
     "MultiplyNode": MultiplyNode,
     "ConcatNode": ConcatNode,
+    "LargeTextNode": LargeTextNode,  # Register LargeTextNode
 }
 
 
@@ -193,20 +217,29 @@ def create_sample_graph():
     string_node1 = StringNode()
     string_node2 = StringNode()
     concat_node = ConcatNode()
+    large_text_node1 = LargeTextNode()  # Create an instance
+
+    logger.debug(f"Node rpl: {string_node1}")
+    print("!!!!!")
 
     # Add nodes to graph
-    # graph.add_node(int_node)
-    # graph.add_node(float_node)
-    # graph.add_node(multiply_node)
+    graph.add_node(int_node)
+    graph.add_node(float_node)
+    graph.add_node(multiply_node)
     graph.add_node(string_node1)
     graph.add_node(string_node2)
     graph.add_node(concat_node)
+    graph.add_node(large_text_node1)  # Add to graph
 
     # Set initial values for the nodes
-    # int_node.input_sockets["in_int"].value = 5
-    # float_node.input_sockets["in_float"].value = 2.5
-    string_node1.input_sockets["in_string"].value = "Hello, "
-    string_node2.input_sockets["in_string"].value = "World!"
+    # int_node.source_sockets["in_int"].value = 5
+    # float_node.source_sockets["in_float"].value = 2.5
+    string_node1.target_sockets["in_text"].value = "Hello, "
+    string_node2.target_sockets["in_text"].value = "World!"
+
+    # large_text_node1.source_sockets[
+    # "in_large_text"
+    # ].value = "This is some initial large text.\nIt can span multiple lines."
 
     # Connect float_node and int_node to multiply_node
     # success1, reason1 = graph.connect_sockets(
@@ -222,10 +255,10 @@ def create_sample_graph():
 
     # # Connect string nodes to concat node
     # success3, reason3 = graph.connect_sockets(
-    #     SocketAddress(string_node1.id, "out_string"), SocketAddress(concat_node.id, "a")
+    #     SocketAddress(string_node1.id, "out_text"), SocketAddress(concat_node.id, "a")
     # )
     # success4, reason4 = graph.connect_sockets(
-    #     SocketAddress(string_node2.id, "out_string"), SocketAddress(concat_node.id, "b")
+    #     SocketAddress(string_node2.id, "out_text"), SocketAddress(concat_node.id, "b")
     # )
     # if not success3:
     #     logger.error(f"Failed to connect string_node1 to concat_node: {reason3}")
@@ -247,4 +280,4 @@ if __name__ == "__main__":
     # Run the application
     import sys
 
-sys.exit(app.run())
+    sys.exit(app.run())

@@ -13,14 +13,15 @@ The enums are categorized by the type of operation or object they pertain to:
 from enum import Enum, auto
 
 
-class SocketConnectionErrorReason(Enum):
+class SocketLinkErrorReason(Enum):
     """Enumerates reasons why a socket connection attempt might fail."""
 
     # Compatibility Issues
-    CANNOT_CONNECT_TO_SELF = auto()
+    CANNOT_LINK_TO_SELF = auto()
     DIRECTIONS_NOT_OPPOSITE = auto()
     SAME_PARENT_NODE = auto()
     TYPE_MISMATCH = auto()
+    ALREADY_LINKED = auto()
 
     # Arity/Limit Issues
     INPUT_SOCKET_FULL = auto()  # e.g., Input socket already has a connection and doesn't allow more
@@ -40,8 +41,8 @@ class GraphObjectErrorReason(Enum):
     SOCKET_DIRECTION_INVALID = auto()  # e.g. trying to use an input as an output in connect_sockets
 
 
-class SocketDisconnectionErrorReason(Enum):
+class SocketUnlinkErrorReason(Enum):
     """Enumerates reasons why a socket disconnection attempt might fail."""
 
-    SOCKETS_NOT_CONNECTED = auto()
+    SOCKETS_NOT_LINKED = auto()
     UNKNOWN = auto()  # Generic fallback

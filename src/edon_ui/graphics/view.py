@@ -64,20 +64,17 @@ class GraphicsView(QGraphicsView):
 
     def _update_view_behavior(self):
         current_scene = self.scene()
-        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
-            if not current_scene or not hasattr(current_scene, "node_items") or not current_scene.node_items:
-                self._interaction_enabled = False
-            else:
-                self._interaction_enabled = True
-            return
-        if not current_scene or not hasattr(current_scene, "node_items") or not current_scene.node_items:
-            self._interaction_enabled = False
+        # if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+        # if not current_scene or not hasattr(current_scene, "node_items") or not current_scene.node_items:
+        has_scene_elements = bool(current_scene.node_items)
+        self.setInteractive(has_scene_elements)
+        self._interaction_enabled = has_scene_elements
+
+        if not has_scene_elements:
             self.setDragMode(QGraphicsView.DragMode.NoDrag)
             self.resetTransform()
-            if current_scene and hasattr(current_scene, "empty_scene_text"):
-                self.centerOn(current_scene.empty_scene_text)
+            self.centerOn(current_scene.empty_scene_text)
         else:
-            self._interaction_enabled = True
             self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
 
     def _request_scene_rect_adjustment(self):
@@ -130,7 +127,7 @@ class GraphicsView(QGraphicsView):
         )
 
     def wheelEvent(self, event: QWheelEvent):
-        if not self._interaction_enabled:
+        if not self.isInteractive() or not self._interaction_enabled:
             event.ignore()
             return
         zoom_in = event.angleDelta().y() > 0
@@ -227,7 +224,7 @@ class GraphicsView(QGraphicsView):
         # XXX: This function should be a command, panning should not be limited to middle mouse button.
         # we also need to look into track pad support.
         if event.button() == Qt.MouseButton.MiddleButton:
-            if not self._interaction_enabled:
+            if not self.isInteractive() and not self._interaction_enabled:
                 logger.trace("  Middle mouse: Interaction disabled, ignoring.")
                 event.ignore()
                 return

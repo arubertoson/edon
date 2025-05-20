@@ -181,6 +181,7 @@ class EdgeItem(QGraphicsPathItem):
 
         path.cubicTo(ctrl1, ctrl2, p2)
         self.setPath(path)
+        self.update()
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
         """
