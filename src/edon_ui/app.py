@@ -21,8 +21,8 @@ from edon_ui.commands import (
     KeyMapping,
     KeyProcessor,
 )
-from edon_ui.graph_controller import GraphController
-from edon_ui.graphics import GraphicsScene, GraphicsView, MainWindow
+from edon_ui.graph import GraphController
+from edon_ui.views import GraphicsScene, GraphicsView, MainWindow
 from edon_ui import theme
 
 
@@ -42,15 +42,15 @@ def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, messag
         QtMsgType.QtFatalMsg: "CRITICAL",
     }.get(msg_type, "INFO")
 
-    # Format context information. Fallback for None attributes if they can occur.
-    file_info = context.file or "unknown_file"
-    line_info = context.line if context.line is not None else 0
-    func_info = context.function or "unknown_function"
-    category_info = context.category or "unknown_category"
+    def _populate_context():
+        file_info = context.file() or "unknown_file"  # type: ignore
+        line_info = context.line() if context.line() is not None else 0  # type: ignore
+        func_info = context.function() or "unknown_function"  # type: ignore
+        category_info = context.category() or "unknown_category"  # type: ignore
 
-    context_str = f"[{category_info}] ({file_info}:{line_info}, {func_info})"
-    log_message = f"Qt: {context_str} - {message}"
+        return f"[{category_info}] ({file_info}:{line_info}, {func_info})"
 
+    log_message = f"Qt: {_populate_context()} - {message}"
     logger.opt(depth=2).log(level, log_message)
 
 

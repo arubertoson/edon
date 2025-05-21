@@ -2,9 +2,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QInputEvent, QKeyEvent, QMouseEvent, QPainter, QWheelEvent
-from PySide6.QtWidgets import QGraphicsView, QApplication, QLineEdit, QTextEdit, QPlainTextEdit, QGraphicsProxyWidget
+from PySide6.QtWidgets import QApplication, QGraphicsProxyWidget, QGraphicsView
 
 from ..context_menu import AppContextMenu
 

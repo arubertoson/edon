@@ -34,7 +34,7 @@ example_entity_graph.add_node(node1)
 example_entity_graph.add_node(node2)
 
 # Connect Node Alpha's output_X to Node Beta's input_A
-example_entity_graph.connect_sockets((node1.id, "output_X"), (node2.id, "input_A"))
+example_entity_graph.link_sockets((node1.id, "output_X"), (node2.id, "input_A"))
 
 
 # --- Function to run demo commands ---

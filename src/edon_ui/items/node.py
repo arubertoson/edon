@@ -26,8 +26,8 @@ if TYPE_CHECKING:
 class NodeItem(QGraphicsObject):
     """A visual node item in the editor, representing a logical node entity."""
 
-    positionChanged = Signal()
-    sizeChanged = Signal(str)
+    node_position_update_signal = Signal()
+    node_redraw_signal = Signal(str)
 
     def __init__(
         self,
@@ -138,7 +138,7 @@ class NodeItem(QGraphicsObject):
         logger.info(f"Node {self.node_entity_id} layout changed: {self._width}x{self._height}")
 
         self.update()  # Redraw the node
-        self.sizeChanged.emit(self.node_entity_id)
+        self.node_redraw_signal.emit(self.node_entity_id)
 
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._width, self._height)
@@ -154,7 +154,7 @@ class NodeItem(QGraphicsObject):
             The processed value, potentially modified from the input value.
         """
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.positionChanged.emit()
+            self.node_position_update_signal.emit()
 
         return super().itemChange(change, value)
 

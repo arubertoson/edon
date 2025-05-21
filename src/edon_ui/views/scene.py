@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from loguru import logger
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal, Slot
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPen
 from PySide6.QtWidgets import (
     QGraphicsItem,
@@ -9,17 +10,17 @@ from PySide6.QtWidgets import (
     QStyleOptionGraphicsItem,
     QWidget,
 )
-from loguru import logger
 
+from edon.graph import SocketAddress
 from edon_ui import theme
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketCircleItem
-from edon.graph import SocketAddress
 
 if TYPE_CHECKING:
     from PySide6.QtCore import QObject
-    from edon_ui.graph_controller import GraphController
+
+    from edon_ui.graph import GraphController
 
 
 class EmptySceneTextItem(QGraphicsItem):
@@ -115,12 +116,12 @@ class GraphicsScene(QGraphicsScene):
 
     This scene manages the visual workspace where nodes can be placed and manipulated.
     It provides:
-    - A defined active area with visual boundaries
-    - Dynamic scene resizing based on node positions
-    - Empty state handling with helper text
-    - Node tracking and management
-    - Visual grid lines for alignment
-    - Custom background and styling
+        - Empty state handling with helper text
+        - A defined active area with visual boundaries
+        - Dynamic scene resizing based on node positions
+        - Node and Edge Tracking
+        - Visual grid lines for alignment
+        - Custom background and styling
 
     The scene automatically adjusts its boundaries as nodes are added, moved, or
     removed to maintain an appropriate workspace size. It also provides visual
@@ -157,10 +158,7 @@ class GraphicsScene(QGraphicsScene):
 
         self.selectionChanged.connect(self._handle_selection_changed)
 
-        self._update_scene_appearance()
-
-    # def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
-    #     pass
+        self._refresh_scene_edge_paths()
 
     def _handle_selection_changed(self):
         # XXX: We should keep an eye on this function as it could potentially be recursed and cause a crash/lock.
@@ -176,18 +174,18 @@ class GraphicsScene(QGraphicsScene):
                 if isinstance(item, EdgeItem):
                     item.setSelected(False)
 
-    def addNode(self, node: NodeItem):
+    def add_node(self, node: NodeItem):
         if node in self.node_items:
             return
 
         self.node_items.append(node)
-        node.positionChanged.connect(self._update_scene_appearance)
-        node.sizeChanged.connect(self._handle_node_resize, Qt.ConnectionType.QueuedConnection)
+        node.node_position_update_signal.connect(self._refresh_scene_edge_paths)
+        node.node_redraw_signal.connect(self._refresh_scene_node_size, Qt.ConnectionType.QueuedConnection)
 
         super().addItem(node)
-        self._update_scene_appearance()
+        self._refresh_scene_edge_paths()
 
-    def removeNode(self, node: NodeItem):
+    def remove_node(self, node: NodeItem):
         if node not in self.node_items:
             return
 
@@ -199,13 +197,13 @@ class GraphicsScene(QGraphicsScene):
             or (edge.target_socket_item and edge.target_socket_item.node_entity_id == node.node_entity_id)
         ]
         for edge in edges_to_remove:
-            self.removeEdge(edge)
+            self.remove_edge(edge)
 
         self.node_items.remove(node)
         super().removeItem(node)
-        self._update_scene_appearance()
+        self._refresh_scene_edge_paths()
 
-    def addEdge(self, edge: EdgeItem):
+    def add_edge(self, edge: EdgeItem):
         if edge in self.edge_items:
             return
 
@@ -213,10 +211,12 @@ class GraphicsScene(QGraphicsScene):
         edge.source_socket_item.add_edge(edge)
         edge.target_socket_item.add_edge(edge)
 
-        super().addItem(edge)
-        self._update_scene_appearance()
 
-    def removeEdge(self, edge: EdgeItem):
+
+        super().addItem(edge)
+        self._refresh_scene_edge_paths()
+
+    def remove_edge(self, edge: EdgeItem):
         if edge not in self.edge_items:
             return
 
@@ -225,10 +225,19 @@ class GraphicsScene(QGraphicsScene):
         edge.target_socket_item.remove_edge(edge)
 
         super().removeItem(edge)
-        self._update_scene_appearance()
+        self._refresh_scene_edge_paths()
 
-    def _calculate_active_area_rect(self):
+    @Slot()
+    def _refresh_scene_active_area_rect(self):
         """Calculate the active area rectangle based on the current node positions"""
+        # XXX: this slot needs to ensure that our scene is having a size that can contain
+        # all our elements and the main window of the application. It's an interactive scene
+        # where we move things around, so ensuring that we have a "container" is just nice
+        # style.
+        #
+        # So we need to think about when we need to about when we require this:
+        # - Node move events
+        # - Edge Drag events (not updating the rect but limiting movement at least)
         if not self.node_items:
             return
 
@@ -256,59 +265,85 @@ class GraphicsScene(QGraphicsScene):
 
         width = max(max_x - min_x, 400)
         height = max(max_y - min_y, 400)
+
         self.active_area.setRect(min_x, min_y, width, height)
 
-    def _update_common_scene_elements(self):
-        """Updates common visual elements of the scene like active area and empty text."""
+    @Slot()
+    def _refresh_scene_interaction_state(self):
+        """
+        If we don't have any elements in the scene we also don't need an active area,
+        a simple non interactive viewport that explains your first step is all we need.
+        """
+        # XXX: This is just relevant for add/remove node. We need either signlas
+        # or direct calls to this. Signals for things such as node move, direct calls
+        # for add/remove node.
         if not self.node_items:
             if self.active_area.scene() == self:
                 super().removeItem(self.active_area)
+
             self.empty_scene_text.setVisible(True)
             return
+        else:
+            if self.empty_scene_text.isVisible():
+                self.empty_scene_text.setVisible(False)
 
-        if self.empty_scene_text.isVisible():
-            self.empty_scene_text.setVisible(False)
+            if not self.active_area.scene() == self:
+                super().addItem(self.active_area)
 
-        if not self.active_area.scene() == self:
-            super().addItem(self.active_area)
+                # Updating the active area after we've added a node is necessary.
+                self._refresh_scene_active_area_rect()
 
-        self._calculate_active_area_rect()
+    @Slot(str)
+    def _refresh_scene_node_size(self, updated_node_id: str):
+        """
+        This is necessary when we pick up drop an edge on a socket, this will trigger a
+        node resize as the widgets within it might be put to read only. At that point we
+        want to redraw any edges that have links to this node as otherwise they will
+        hang in the "air".
+        """
+        logger.trace(f"Scene: handle redrawing of esdges for {updated_node_id}")
 
-    def _handle_node_resize(self, resized_node_id: str):
-        """Handles updates when a specific node (identified by resized_node_id) resizes."""
-        logger.trace(f"Scene: Handling resize for node {resized_node_id}")
-        # self._update_common_scene_elements()
+        # XXX: I don't really like this api,we should look into it
+        node = self.controller.node_map[updated_node_id]
+        for socket_circle in node.so
 
-        # Update edges connected to the specific resized node
         for edge_item in self.edge_items:
-            edge_item.update_path()
+            is_source_node = edge_item.source_socket_item.node_entity_id == updated_node_id
+            is_target_node = (
+                edge_item.target_socket_item and edge_item.target_socket_item.node_entity_id == updated_node_id
+            )
+            if is_source_node or is_target_node:
+                logger.debug(f"Updating Edge: {edge_item.node_entity_id}")
+                edge_item.update_path()
 
-        self.update()
-        # for edge_item in self.edge_items:
-        #     is_source_node = edge_item.source_socket_item.node_entity_id == resized_node_id
-        #     is_target_node = (
-        #         edge_item.target_socket_item and edge_item.target_socket_item.node_entity_id == resized_node_id
-        #     )
-        #     if is_source_node or is_target_node:
-        #         logger.debug(f"Updating Edge: {edge_item.node_entity_id}")
-        #         edge_item.update_path()
-
+        # XXX: this is not necessary here, interactive viewport is only necessary if we don't have any nodes
+        # in the scene. Add/Remove node
         # self.scene_changed.emit()
 
-    def _update_scene_appearance(self):
-        # This method is now primarily for general updates (node moves, add/remove item)
-        logger.trace("Scene: General appearance update.")
-        self._update_common_scene_elements()
+    @Slot(str)
+    def _refresh_scene_edge_paths(self, updated_node_id: str):
+        logger.trace(f"Scene: refresh scene edge paths for {updated_node_id}")
 
-        # Optimization: if dragging a temp_edge, only update it for performance during drag.
-        # Otherwise, update all committed edges.
+        # XXX: We need to have a better management of the cached items in the scene
+        # we don't have a good way of reaching the different relating elements.
+        # We either need a good way to get to the items, or direct references
+        # to our scene items from our targets, so we can write something like this:
+        # node_item = self.node_items[updated_node_id]
+        # ---
+        # for socket in node_item.source_socket_item + node_item.target_socket_item:
+        #     for edge_item in socket.links:
+        #         edge_item.update_path()
+        # ---
+        # Right now we have a brute force solution that will work, but this needs work :)
         if self.temp_edge:
             self.temp_edge.update_path()
         else:
             for edge_item in self.edge_items:
                 edge_item.update_path()
 
-        self.scene_changed.emit()
+        # XXX: This is only relevant if we need to update the interaction, this signal needs a better name
+        # needs a better name! Do we need to update anything else after path redraws?
+        # self.scene_changed.emit()
 
     # --- Connection Management Methods ---
 
@@ -318,6 +353,8 @@ class GraphicsScene(QGraphicsScene):
             if isinstance(item, SocketCircleItem):
                 return item
         return None
+
+    # XXX: Should the below really be managed by the scene?
 
     def is_dragging_edge(self) -> bool:
         return self.temp_edge is not None

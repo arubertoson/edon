@@ -6,6 +6,9 @@ This module provides the GraphController class, which is responsible for:
   and translating these into operations on the entity graph.
 - Keeping the UI representation synchronized with the state of the entity graph.
 - Responding to signals from UI elements for graph-related actions.
+
+TODO:
+ - Ensure signatures are not widgets or scene items, they need to be the datatype representations
 """
 
 from collections.abc import Mapping, MutableMapping, Sequence
@@ -85,7 +88,7 @@ class GraphController:
         )
         logger.debug(f"Node type registry: {self._node_type_registry}")
 
-    def _register_node_maps(self, entity_node: EntityNode, ui_node: NodeItem) -> None:
+    def _register_new_node(self, entity_node: EntityNode, ui_node: NodeItem) -> None:
         """Registers a new node in both entity graph and internal UI maps.
 
         If the entity_node is not already in the entity_graph, it's added.
@@ -100,7 +103,7 @@ class GraphController:
         if node_id not in self.entity_graph.nodes:
             self.entity_graph.add_node(entity_node)
 
-        self.graphics_scene.addNode(ui_node)
+        self.graphics_scene.add_node(ui_node)
         self.node_map[node_id] = ui_node
 
         for row in ui_node._target_sockets:
@@ -110,14 +113,14 @@ class GraphController:
             key = SocketRowAddress(node_id=node_id, socket_name=row.socket_entity_name, is_target=False)
             self.socket_row_map[key] = row
 
-    def _register_edge_map(self, edge_key: EdgeKey, edge_item: EdgeItem):
+    def _register_new_edge(self, edge_key: EdgeKey, edge_item: EdgeItem):
         """Registers a new edge item in the graphics scene and internal edge_map.
 
         Args:
             edge_key: The unique key identifying the edge connection.
             edge_item: The graphical representation of the edge.
         """
-        self.graphics_scene.addEdge(edge_item)
+        self.graphics_scene.add_edge(edge_item)
         self.edge_map[edge_key] = edge_item
 
     def _clear_scene_for_population(self):
@@ -132,6 +135,9 @@ class GraphController:
         # If GraphicsScene has custom lists like self.node_items, self.edge_items,
         # it should have its own comprehensive clear method that also clears those lists.
         # For now, we rely on the fact that addItem in GraphicsScene seems to manage its own list.
+
+        # XXX: This is also curious, it's the best failsafe there is but we should really
+        # use the controller maps to delete things.
 
         # Let's iterate and remove items that are NodeItem or EdgeItem to be safe
         items_to_remove: list[NodeItem | EdgeItem] = []
@@ -163,7 +169,7 @@ class GraphController:
             logger.debug(f"  Creating NodeItem for '{entity_node.name}' (ID: {node_id}) at ({pos_x}, {pos_y})")
 
             ui_node = create_node_item(entity_node, pos_x, pos_y, controller=self)
-            self._register_node_maps(entity_node, ui_node)
+            self._register_new_node(entity_node, ui_node)
 
         logger.debug("Node population complete.")
 
@@ -205,7 +211,7 @@ class GraphController:
                         f"{target_entity_socket.node.id}::{target_entity_socket.name}"
                     )
                     ui_edge = create_edge_item(source_ui_socket_row.circle, target_ui_socket_row.circle)
-                    self._register_edge_map(edge_key, ui_edge)
+                    self._register_new_edge(edge_key, ui_edge)
 
         logger.debug("Edge population complete.")
 
@@ -259,7 +265,7 @@ class GraphController:
             new_ui_node = create_node_item(
                 new_entity_node, scene_position.x(), scene_position.y(), self.socket_row_map, self
             )
-            self._register_node_maps(new_entity_node, new_ui_node)
+            self._register_new_node(new_entity_node, new_ui_node)
 
             logger.info(
                 f"Successfully created and added node: {new_entity_node.name} (Entity ID: {new_entity_node.id}, UI: {new_ui_node})"
@@ -310,7 +316,7 @@ class GraphController:
             new_edge_item.set_target_socket(target_ui_socket)
             new_edge_item.settle_z_value()  # Set to normal Z value for finalized edges
 
-            self.graphics_scene.addEdge(new_edge_item)
+            self.graphics_scene.add_edge(new_edge_item)
 
             self.edge_map[edge_key] = new_edge_item
             logger.debug(f"  UI EdgeItem created and added to scene/map for edge: {edge_key}")
@@ -327,6 +333,14 @@ class GraphController:
         """
         logger.info(f"GraphController: Requesting to remove node with ID: {entity_node_id}")
 
+        # XXX: This is bad, the order should be reversed and we should use existing functionality
+        # for removing things:
+        # 1. Remove edges relating to the node first to avoid dangling references
+        # 2. Remove nodes from the graph and scene
+        #
+        # directives: use existing functions to handle deletion. e.g. remove_edge, remove_node
+        # looks like the request_add/remove_node is the lowest level function call.
+
         # 1. Remove node from the entity graph
         # This should also handle disconnecting its entity sockets.
         self.entity_graph.remove_node(entity_node_id)
@@ -335,7 +349,7 @@ class GraphController:
         # 2. Remove the UI NodeItem from the scene and our map
         ui_node_to_remove = self.node_map.pop(entity_node_id, None)
         if ui_node_to_remove:
-            self.graphics_scene.removeNode(ui_node_to_remove)
+            self.graphics_scene.remove_node(ui_node_to_remove)
             logger.debug(f"UI NodeItem for {entity_node_id} removed from graphics scene and node_map.")
         else:
             logger.warning(f"No UI NodeItem found in node_map for ID {entity_node_id}.")
@@ -351,7 +365,7 @@ class GraphController:
         for edge_key_to_remove in edges_to_remove_keys:
             removed_edge_item = self.edge_map.pop(edge_key_to_remove, None)
             if removed_edge_item:
-                self.graphics_scene.removeEdge(removed_edge_item)
+                self.graphics_scene.remove_edge(removed_edge_item)
                 logger.debug(f"  Edge {edge_key_to_remove} and its UI item removed from edge_map and scene.")
             else:
                 logger.warning(
@@ -367,6 +381,9 @@ class GraphController:
         Args:
             ui_edge_item: The EdgeItem instance to remove.
         """
+        # XXX: We need to think about what this function should take, remove_edge will most likely come from the
+        # scene, but teh scene should be aware of socket addresses and should be able to send a EdgeKey and
+        # let the controller manage from there.
         if not ui_edge_item or not ui_edge_item.source_socket_item or not ui_edge_item.target_socket_item:
             logger.warning("GraphController: Invalid EdgeItem provided to request_remove_edge. Cannot proceed.")
             return
@@ -392,7 +409,7 @@ class GraphController:
             )
 
         # 2. Remove the UI EdgeItem from the scene
-        self.graphics_scene.removeEdge(ui_edge_item)
+        self.graphics_scene.remove_edge(ui_edge_item)
         logger.debug(f"  UI EdgeItem for {edge_repr} removed from graphics scene.")
 
         # 3. Remove the edge from our edge_map
@@ -412,7 +429,7 @@ class GraphController:
         if edge_key_to_remove:
             removed_item = self.edge_map.pop(edge_key_to_remove, None)
             if removed_item:
-                self.graphics_scene.removeEdge(removed_item)  # Explicitly remove from scene
+                self.graphics_scene.remove_edge(removed_item)  # Explicitly remove from scene
                 logger.debug(f"  Edge {edge_key_to_remove} and its UI item removed from edge_map and scene.")
             else:
                 logger.warning(f"  Edge key {edge_key_to_remove} found but pop failed from edge_map.")

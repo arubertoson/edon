@@ -20,6 +20,8 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "basedpyright>=1.29.1",
+    "ruff>=0.11.10",
+    "ty>=0.0.1a6",
 ]
 
 [tool.hatch.build.targets.wheel]
