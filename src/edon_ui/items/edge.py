@@ -75,6 +75,10 @@ class EdgeItem(QGraphicsPathItem):
         self.setZValue(self._settled_z_value)
 
     @property
+    def edge_key(self):
+        return 
+
+    @property
     def source_socket_item(self) -> SocketCircleItem:
         """The source `SocketCircleItem` of this edge."""
         return self._source_socket_item
