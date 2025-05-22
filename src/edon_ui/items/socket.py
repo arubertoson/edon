@@ -414,7 +414,7 @@ class SocketRowItem(QGraphicsObject):
         self._update_bounding_rect()
         self.layoutChanged.emit()
     @property
-    def socket_address(self) -> SocketAddress:
+    def socket_address(self) -> "SocketAddress":
         from edon.graph import SocketAddress
         if self.socket_entity_name is None or self.parent_entity_node_id is None:
             raise ValueError("SocketRowItem missing logical identifiers")
