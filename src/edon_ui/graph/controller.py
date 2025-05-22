@@ -85,29 +85,7 @@ class GraphController:
         scene_position: QPointF,
         **node_specific_kwargs,
     ) -> NodeItem | None:
-        # Clean up this docstring to only explain why this function exists, don't document Args Returns AI!
-        """Processes a request to add a new node to both the data model and the UI.
-
-        This method orchestrates the creation of a new node by:
-        1. Instantiating the core `EntityNode` based on the provided class and arguments.
-        2. Creating its corresponding `NodeItem` for the UI, positioning it at the
-           specified scene coordinates.
-        3. Registering both the entity and UI node representations with the controller
-           and the underlying `EntityGraph` and `GraphicsScene`.
-
-        If any step in the creation or registration process fails, an error is logged,
-        and the method returns `None`. Callers should check the return value.
-
-        Args:
-            node_entity_class: The class of the `EntityNode` to instantiate (e.g., `MyCustomNode`).
-            scene_position: The `QPointF` coordinates where the top-left of the new
-                              UI node should be placed in the scene.
-            **node_specific_kwargs: Additional keyword arguments to be passed to the
-                                     constructor of the `node_entity_class`.
-
-        Returns:
-            The created `NodeItem` if successful, otherwise `None`.
-        """
+        """Create a new entity node and its corresponding UI node, registering both with the controller."""
         node_type = node_entity_class.__name__
         logger.info(f"request_add_node of type {node_type} at {scene_position}")
 
