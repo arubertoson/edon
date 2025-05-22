@@ -245,7 +245,6 @@ class GraphController:
         """
         logger.info(f"GraphController: Requesting to remove edge: {edge_key}")
 
-        # 1. Disconnect in the entity graph
         disconnection_success, reason = self.entity_graph.unlink_sockets(edge_key.source, edge_key.target)
         if disconnection_success:
             logger.debug(f"  Entity disconnection successful for {edge_key}.")
@@ -254,7 +253,6 @@ class GraphController:
                 f"  Entity disconnection FAILED for {edge_key}. Reason: {reason}. Proceeding with UI removal."
             )
 
-        # 2. Remove the UI EdgeItem from the scene
         ui_edge_item = self.edge_map.pop(edge_key, None)
         if ui_edge_item:
             self.graphics_scene.remove_edge(ui_edge_item)
