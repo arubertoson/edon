@@ -5,24 +5,20 @@ and rows that can contain a socket circle, label, and widget (`SocketRowItem`),
 along with a protocol (`SocketComponent`) for items within a socket row.
 """
 
-from collections.abc import Set
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from loguru import logger
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QHoverEvent, QPen
 from PySide6.QtWidgets import (
-    QApplication,
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsObject,
     QGraphicsSceneMouseEvent,
 )
 
+from edon.graph import SocketAddress
 from edon_ui import theme
-
-if TYPE_CHECKING:
-    from edon_ui.items.edge import EdgeItem
 
 
 @runtime_checkable
@@ -65,16 +61,12 @@ class SocketCircleItem(QGraphicsEllipseItem):
     def __init__(
         self,
         parent: QGraphicsItem | None,
-        socket_entity_name: str,
-        node_entity_id: str,
         visual_type_key: str = "default",
     ) -> None:
         self._radius = theme.SOCKET_RADIUS
         ellipse_rect = QRectF(-self._radius, -self._radius, 2 * self._radius, 2 * self._radius)
         super().__init__(ellipse_rect, parent)
 
-        self.socket_entity_name = socket_entity_name
-        self.node_entity_id = node_entity_id
         self.visual_type_key = visual_type_key
 
         self.setAcceptHoverEvents(True)
@@ -95,9 +87,6 @@ class SocketCircleItem(QGraphicsEllipseItem):
         pen.setWidthF(1.0)
         self.setPen(pen)
         self.setBrush(QBrush(self._original_fill_color))
-
-
-
 
     @property
     def is_input(self) -> bool:
@@ -175,9 +164,7 @@ class SocketCircleItem(QGraphicsEllipseItem):
         """
         if event.button() == Qt.MouseButton.LeftButton:
             parent_row = self.parentItem()
-            logger.debug(
-                f"SocketCircleItem in {parent_row.socket_address} pressed at {event.scenePos()}"
-            )
+            logger.debug(f"SocketCircleItem in {parent_row.socket_address} pressed at {event.scenePos()}")
             self.scene().start_edge_drag(parent_row.socket_address, event.scenePos())
             event.accept()
         else:
@@ -217,23 +204,6 @@ class SocketRowItem(QGraphicsObject):
 
     This item manages the layout of its child components (label, circle, widget)
     based on whether it's an input or output socket and its connection state.
-
-    Args:
-        label: The type label (optional), conforming to SocketComponent.
-        circle: The connection circle (optional), conforming to SocketComponent.
-        widget: The input/output widget (optional), conforming to SocketComponent.
-        socket_entity_name: The unique name of the socket entity.
-        parent_entity_node_id: The unique ID of the parent node entity.
-        is_input: True if this is an input socket, False for output.
-        parent: The parent QGraphicsItem.
-
-    Attributes:
-        label: The visual component for the socket's label.
-        circle: The visual component for the socket's connection circle.
-        widget: The visual component for the socket's interactive widget.
-        is_input: Boolean indicating if this is an input socket.
-        socket_entity_name: Logical name of the socket.
-        parent_entity_node_id: Logical ID of the parent node.
     """
 
     layoutChanged: Signal = Signal()
@@ -242,19 +212,19 @@ class SocketRowItem(QGraphicsObject):
         self,
         label: SocketComponent,
         circle: SocketCircleItem,
-        widget: SocketComponent | None = None,
-        socket_entity_name: str | None = None,
-        parent_entity_node_id: str | None = None,
+        socket_entity_name: str,
+        parent_entity_node_id: str,
         is_input: bool = True,
+        widget: SocketComponent | None = None,
         parent: QGraphicsItem | None = None,
     ) -> None:
         super().__init__(parent)
-        self.label: SocketComponent = label
-        self.circle: SocketCircleItem | None = circle
-        self.widget: SocketComponent | None = widget
-        self.is_input: bool = is_input
-        self.socket_entity_name: str | None = socket_entity_name
-        self.parent_entity_node_id: str | None = parent_entity_node_id
+        self.label = label
+        self.circle = circle
+        self.widget = widget
+        self.is_input = is_input
+        self.socket_entity_name = socket_entity_name
+        self.parent_entity_node_id = parent_entity_node_id
 
         for item in (self.label, self.circle, self.widget):
             if item is not None and isinstance(item, QGraphicsItem):  # Ensure it's a QGraphicsItem
@@ -278,6 +248,12 @@ class SocketRowItem(QGraphicsObject):
 
         self.prepareGeometryChange()
         self._update_bounding_rect()
+
+    @property
+    def socket_address(self) -> "SocketAddress":
+        if self.socket_entity_name is None or self.parent_entity_node_id is None:
+            raise ValueError("SocketRowItem missing logical identifiers")
+        return SocketAddress(self.parent_entity_node_id, self.socket_entity_name)
 
     def _update_bounding_rect(self) -> None:
         """Updates the internal bounding rectangle of the row based on its current layout.
@@ -413,9 +389,3 @@ class SocketRowItem(QGraphicsObject):
 
         self._update_bounding_rect()
         self.layoutChanged.emit()
-    @property
-    def socket_address(self) -> "SocketAddress":
-        from edon.graph import SocketAddress
-        if self.socket_entity_name is None or self.parent_entity_node_id is None:
-            raise ValueError("SocketRowItem missing logical identifiers")
-        return SocketAddress(self.parent_entity_node_id, self.socket_entity_name)

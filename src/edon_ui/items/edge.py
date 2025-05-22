@@ -8,6 +8,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsPathItem, QStyleOptionGraphicsItem, QWidget
 
+from edon.graph import EdgeKey, SocketAddress
 from edon_ui import theme
 from edon_ui.items.socket import SocketCircleItem
 
@@ -67,13 +68,6 @@ class EdgeItem(QGraphicsPathItem):
 
         self.update_path()
 
-    def settle_z_value(self) -> None:
-        """
-        Sets the Z-value of the edge to its 'settled' or finalized state.
-        This is typically called when the edge is successfully connected.
-        """
-        self.setZValue(self._settled_z_value)
-
     @property
     def edge_key(self) -> EdgeKey:
         source_socket_addr = SocketAddress(
@@ -93,6 +87,13 @@ class EdgeItem(QGraphicsPathItem):
     def target_socket_item(self) -> SocketCircleItem | None:
         """The target `SocketCircleItem` of this edge, or None if not yet connected."""
         return self._target_socket_item
+
+    def settle_z_value(self) -> None:
+        """
+        Sets the Z-value of the edge to its 'settled' or finalized state.
+        This is typically called when the edge is successfully connected.
+        """
+        self.setZValue(self._settled_z_value)
 
     def set_target_pos(self, scene_pos: QPointF) -> None:
         """
