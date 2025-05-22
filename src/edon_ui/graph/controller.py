@@ -236,7 +236,7 @@ class GraphController:
 
         logger.info(f"GraphController: Node removal process for {entity_node_id} complete.")
 
-    def request_remove_edge(self, edge_key: EdgeKey):
+    def request_remove_edge(self, edge_key: EdgeKey) -> bool:
         """
         Handles a request to remove a single edge (entity and UI).
 
@@ -257,10 +257,12 @@ class GraphController:
         if ui_edge_item:
             self.graphics_scene.remove_edge(ui_edge_item)
             logger.debug(f"  UI EdgeItem for {edge_key} removed from graphics scene.")
+            logger.info(f"GraphController: Edge removal process for {edge_key} complete.")
+            return True
         else:
             logger.warning(f"  Could not find edge {edge_key} in edge_map to remove.")
-
-        logger.info(f"GraphController: Edge removal process for {edge_key} complete.")
+            logger.info(f"GraphController: Edge removal process for {edge_key} complete.")
+            return False
 
     def request_edge_drop_targets(self, source_socket_ui_item: "SocketCircleItem") -> set[SocketAddress]:
         """
@@ -338,7 +340,7 @@ class GraphController:
                 f"Target socket {target_ui_socket.socket_entity_name} already has edges. Ignoring connection attempt."
             )
             edge_to_remove = next(iter(target_ui_socket.connected_edges))
-            self.request_remove_edge(edge_to_remove)
+            self.request_remove_edge(edge_to_remove.edge_key)
 
         self.request_add_edge(source_ui_socket, target_ui_socket)
 
@@ -377,4 +379,4 @@ class GraphController:
     def handle_ui_edge_deletion_request(self, edge_items: Sequence[EdgeItem]):
         logger.info(f"GraphController: Received handle_ui_edge_deletion_request for {len(edge_items)} edge(s).")
         for edge_item in edge_items:
-            self.request_remove_edge(edge_item)
+            self.request_remove_edge(edge_item.edge_key)
