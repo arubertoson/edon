@@ -343,9 +343,7 @@ class GraphController:
         # If the target socket already has an edge, we remove it, tartet nodes can only have one edge
         # and we decided on behavior that the new edge will replace the old one.
         if target_socket_addr in self.socket_edge_map and self.socket_edge_map[target_socket_addr]:
-            logger.warning(
-                f"Target socket {target_socket_addr} already has edges. Ignoring connection attempt."
-            )
+            logger.warning(f"Target socket {target_socket_addr} already has edges. Ignoring connection attempt.")
             edge_key_to_remove = next(iter(self.socket_edge_map[target_socket_addr]))
             self.request_remove_edge(edge_key_to_remove)
 
