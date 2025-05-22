@@ -127,44 +127,53 @@ class GraphController:
             logger.error(f"Error creating or adding node '{node_type}': {e}")
             return None
 
-    def request_add_edge(
-        self, source_ui_socket: "SocketCircleItem", target_ui_socket: "SocketCircleItem"
-    ) -> EdgeItem | None:
+    def request_add_edge(self, edge_key: EdgeKey) -> EdgeItem | None:
         """
-        Handles a request to create a new edge, typically from a UI interaction.
-        Attempts to connect the entity sockets first. If successful, creates and
-        adds the UI EdgeItem to the scene and internal tracking.
+        Handles a request to create a new edge using an EdgeKey.
+        Attempts to connect the entity sockets first. If successful, finds the
+        corresponding UI SocketCircleItems, creates and adds the UI EdgeItem
+        to the scene and internal tracking.
 
         Args:
-            source_ui_socket: The SocketCircleItem from which the edge originates.
-            target_ui_socket: The SocketCircleItem to which the edge connects.
+            edge_key: The EdgeKey identifying the source and target logical sockets.
 
         Returns:
             The created EdgeItem if successful, otherwise None.
         """
-        source_socket_addr = SocketAddress(source_ui_socket.node_entity_id, source_ui_socket.socket_entity_name)
-        target_socket_addr = SocketAddress(target_ui_socket.node_entity_id, target_ui_socket.socket_entity_name)
+        source_socket_addr = edge_key.source
+        target_socket_addr = edge_key.target
+
+        # Look up SocketRowItems using SocketAddress keys directly
+        source_row_item = self.socket_row_map.get(source_socket_addr)
+        target_row_item = self.socket_row_map.get(target_socket_addr)
+
+        if not source_row_item or not hasattr(source_row_item, "circle") or source_row_item.circle is None:
+            logger.error(f"Could not find UI source socket circle for {source_socket_addr} from edge key {edge_key}")
+            return None
+        if not target_row_item or not hasattr(target_row_item, "circle") or target_row_item.circle is None:
+            logger.error(f"Could not find UI target socket circle for {target_socket_addr} from edge key {edge_key}")
+            return None
+
+        source_ui_socket = source_row_item.circle
+        target_ui_socket = target_row_item.circle
 
         logger.info(
-            f"GraphController: Requesting to create edge between entity sockets: "
-            f"({source_socket_addr.node_id}::{source_socket_addr.socket_name}) -> "
-            f"({target_socket_addr.node_id}::{target_socket_addr.socket_name})"
+            f"GraphController: Requesting to create edge: {edge_key}"
         )
 
-        edge_key = EdgeKey(source_socket_addr, target_socket_addr)
-        if edge_key in self.edge_map:
+        if edge_key in self.edge_map: # Check if this exact edge already exists
             logger.debug(
-                f"  Connection already exists between {source_socket_addr} and "
-                f"{target_socket_addr}. No new connection created."
+                f"  Connection {edge_key} already exists. No new connection created."
             )
             return None
 
         connection_success, reason = self.entity_graph.link_sockets(source_socket_addr, target_socket_addr)
 
         if connection_success:
-            logger.debug("  Entity connection successful. Creating UI EdgeItem.")
+            logger.debug(f"  Entity connection successful for {edge_key}. Creating UI EdgeItem.")
 
-            new_edge_item = EdgeItem(source_ui_socket, target_ui_socket.scenePos())
+            # Pass edge_key to EdgeItem constructor
+            new_edge_item = EdgeItem(source_ui_socket, target_ui_socket.scenePos(), edge_key=edge_key)
             new_edge_item.set_target_socket(target_ui_socket)
             new_edge_item.settle_z_value()  # Set to normal Z value for finalized edges
 
@@ -177,8 +186,9 @@ class GraphController:
             return new_edge_item
         else:
             logger.warning(
-                f"  Entity connection FAILED between {source_socket_addr} and {target_socket_addr}. Reason: {reason}. No UI edge created."
+                f"  Entity connection FAILED for {edge_key}. Reason: {reason}. No UI edge created."
             )
+            return None # Explicitly return None on failure
 
     def request_remove_node(self, entity_node_id: str) -> bool:
         """
@@ -312,31 +322,44 @@ class GraphController:
         return valid_targets
 
     def handle_ui_edge_connection_attempt(
-        self, source_ui_socket: "SocketCircleItem", target_ui_socket: "SocketCircleItem"
+        self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
     ):
-        source_socket_addr = source_ui_socket.parentItem().socket_address
-        target_socket_addr = target_ui_socket.parentItem().socket_address
+        """
+        Handles a UI request to connect two sockets identified by their SocketAddress.
+        Ensures that a target socket has only one incoming edge by removing any
+        existing ones. Then, attempts to add the new edge.
 
+        Args:
+            source_socket_addr: The SocketAddress of the source socket.
+            target_socket_addr: The SocketAddress of the target socket.
+        """
         logger.debug(
             f"GraphController: Received handle_ui_edge_connection_attempt from "
-            f"{source_socket_addr} to "
-            f"{target_socket_addr}"
+            f"source {source_socket_addr} to target {target_socket_addr}"
         )
 
-        # we need to check if the edge that we are trying to create already exists.
-        edge_key = EdgeKey(source_socket_addr, target_socket_addr)
-        if edge_key in self.edge_map:
-            logger.warning(f"Edge {edge_key} already exists. Ignoring connection attempt.")
+        edge_key_to_attempt = EdgeKey(source_socket_addr, target_socket_addr)
+
+        if edge_key_to_attempt in self.edge_map:
+            logger.warning(f"Edge {edge_key_to_attempt} already exists. Ignoring connection attempt.")
             return
 
-        # If the target socket already has an edge, we remove it, tartet nodes can only have one edge
-        # and we decided on behavior that the new edge will replace the old one.
-        if target_socket_addr in self.socket_edge_map and self.socket_edge_map[target_socket_addr]:
-            logger.warning(f"Target socket {target_socket_addr} already has edges. Ignoring connection attempt.")
-            edge_key_to_remove = next(iter(self.socket_edge_map[target_socket_addr]))
-            self.request_remove_edge(edge_key_to_remove)
+        # Ensure target socket has only one incoming edge.
+        # If target_socket_addr has entries in socket_edge_map, iterate them.
+        if target_socket_addr in self.socket_edge_map:
+            # Make a copy for safe iteration while modifying the set.
+            edges_connected_to_target_socket = list(self.socket_edge_map[target_socket_addr])
+            for existing_edge_key in edges_connected_to_target_socket:
+                # Only remove if this existing edge is an *incoming* edge to target_socket_addr.
+                if existing_edge_key.target == target_socket_addr:
+                    logger.info(
+                        f"Target socket {target_socket_addr} already has an incoming edge "
+                        f"{existing_edge_key}. Removing it to allow new connection."
+                    )
+                    self.request_remove_edge(existing_edge_key)
 
-        self.request_add_edge(source_ui_socket, target_ui_socket)
+        # Proceed to request adding the new edge.
+        self.request_add_edge(edge_key_to_attempt)
 
     def handle_ui_node_creation_request(self, node_type_hint: str, scene_pos: QPointF):
         """
