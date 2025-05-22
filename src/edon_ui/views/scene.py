@@ -359,14 +359,20 @@ class GraphicsScene(QGraphicsScene):
     def is_dragging_edge(self) -> bool:
         return self.temp_edge is not None
 
-    def start_edge_drag(self, clicked_socket_item: SocketCircleItem, drag_start_scene_pos: QPointF):
+    def start_edge_drag(self, clicked_socket_address: SocketAddress, drag_start_scene_pos: QPointF):
         """Initiates a new edge drag. If an existing edge starts from the
         clicked_socket_item (and it's an output), that edge is lifted and becomes
         the temporary edge. Otherwise, a new temporary edge is created.
         """
+        socket_row = self.controller.socket_row_map.get(clicked_socket_address)
+        if not socket_row or not hasattr(socket_row, "circle") or socket_row.circle is None:
+            logger.error(f"Could not find UI socket circle for address {clicked_socket_address} to start edge drag.")
+            return
+        clicked_socket_item = socket_row.circle
+
         connected_edges: set[EdgeItem] = clicked_socket_item.connected_edges
         if clicked_socket_item.is_input and connected_edges:
-            # If this is an input we can assumem that it should only have one connection
+            # If this is an input we can assume that it should only have one connection
             # our internal logic will prevent more than one connection to an input.
             self.temp_edge = next(iter(connected_edges))
 
@@ -378,6 +384,7 @@ class GraphicsScene(QGraphicsScene):
             # The GraphController handles this, which in turn updates the EntityGraph.
             # The visual EdgeItem is kept (as self.temp_edge) and removed from the scene's
             # persistent edge_items list.
+            # Note: handle_ui_edge_deletion_request expects a sequence of EdgeItem.
             self.controller.handle_ui_edge_deletion_request([self.temp_edge])
             logger.debug("Requested deletion of logical connection for this edge.")
 
@@ -453,7 +460,13 @@ class GraphicsScene(QGraphicsScene):
             source_socket_item, target_socket_item = target_socket_item, source_socket_item
 
         if source_socket_item and target_socket_item:
-            self.controller.handle_ui_edge_connection_attempt(source_socket_item, target_socket_item)
+            # Retrieve SocketAddress instances for the controller method
+            source_addr = source_socket_item.parentItem().socket_address
+            target_addr = target_socket_item.parentItem().socket_address
+            if source_addr and target_addr:
+                self.controller.handle_ui_edge_connection_attempt(source_addr, target_addr)
+            else:
+                logger.error("Could not retrieve socket addresses to finalize edge drag.")
 
         # Reset the currently highlighted target socket.
         if self._currently_highlighted_target_socket:

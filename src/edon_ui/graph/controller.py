@@ -31,19 +31,8 @@ if TYPE_CHECKING:
     from edon_ui.items.socket import SocketCircleItem
 
 
-@dataclass(frozen=True)
-class SocketRowAddress(SocketAddress):
-    """Uniquely identifies a UI SocketRowItem, extending SocketAddress with direction.
-
-    A SocketRowItem is a UI representation that groups sockets (often a single socket).
-    This address helps locate that specific UI row.
-    """
-
-    is_target: bool
-
-
 NodeItemMap: TypeAlias = MutableMapping[str, NodeItem]
-SocketItemMap: TypeAlias = MutableMapping[SocketRowAddress, SocketRowItem]
+SocketItemMap: TypeAlias = MutableMapping[SocketAddress, SocketRowItem]
 EdgeItemMap: TypeAlias = MutableMapping[EdgeKey, EdgeItem]
 
 

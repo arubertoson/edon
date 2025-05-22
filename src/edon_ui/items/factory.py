@@ -155,7 +155,9 @@ def create_node_item(
             entity_socket, _get_socketdef(target_defs, entity_socket.name), entity_node.id, True, controller=controller
         )
         if socket_row_map is not None:
-            socket_row_map[(entity_node.id, entity_socket.name, True)] = row
+            # Use SocketAddress as key
+            socket_addr = SocketAddress(node_id=entity_node.id, socket_name=entity_socket.name)
+            socket_row_map[socket_addr] = row
         target_sockets_ui.append(row)
 
     source_sockets_ui: list[SocketRowItem] = []
@@ -168,7 +170,9 @@ def create_node_item(
             controller=controller,
         )
         if socket_row_map is not None:
-            socket_row_map[(entity_node.id, entity_socket.name, False)] = row
+            # Use SocketAddress as key
+            socket_addr = SocketAddress(node_id=entity_node.id, socket_name=entity_socket.name)
+            socket_row_map[socket_addr] = row
         source_sockets_ui.append(row)
 
     return NodeItem(
