@@ -24,7 +24,7 @@ from edon_ui import theme
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.factory import create_edge_item, create_node_item
 from edon_ui.items.node import NodeItem
-from edon_ui.items.socket import SocketRowItem
+from edon_ui.items.socket import SocketItem
 
 if TYPE_CHECKING:
     from edon_ui.views.scene import GraphicsScene
@@ -32,8 +32,9 @@ if TYPE_CHECKING:
 
 
 NodeItemMap: TypeAlias = MutableMapping[str, NodeItem]
-SocketItemMap: TypeAlias = MutableMapping[SocketAddress, SocketRowItem]
 EdgeItemMap: TypeAlias = MutableMapping[EdgeKey, EdgeItem]
+SocketItemMap: TypeAlias = MutableMapping[SocketAddress, SocketItem]
+SocketEdgeKeyMap: TypeAlias = MutableMapping[SocketAddress, set[EdgeKey]]
 
 
 class GraphController:
@@ -67,10 +68,11 @@ class GraphController:
         )
 
         # Maps for entity graph to UI items
+        # How do I init these maps properly so they are ready for use the class AI!
         self.node_map: NodeItemMap = {}
         self.edge_map: EdgeItemMap = {}
-        self.socket_edge_map: dict[SocketAddress, set[EdgeKey]] = {}
-        self.socket_row_map: SocketItemMap = {}
+        self.socket_addr_edge_key_map: SocketEdgeKeyMap = {}
+        self.socket_addr_row_item_map: SocketItemMap = {}
 
         logger.info(
             f"GraphController initialized with entity graph: {self.entity_graph} "
@@ -111,13 +113,16 @@ class GraphController:
 
         try:
             new_entity_node = node_entity_class(**node_specific_kwargs)
-            # XXX: Review if create_node_item factory truly needs the controller's entire socket_row_map.
-            # This argument was intentionally kept as per user's previous edit.
-            # Typically, a factory creates internal components, and the controller would register them later.
             new_ui_node = create_node_item(
-                new_entity_node, scene_position.x(), scene_position.y(), self.socket_row_map, self
+                new_entity_node,
+                scene_position.x(),
+                scene_position.y(),
+                self.socket_addr_row_map,
             )
-            self._register_new_node(new_entity_node, new_ui_node)
+
+            # Populate the map using the sockets from the resulting NodeItem
+            for socket_rows in new_ui_node.source_sockets + new_ui_node.target_sockets:
+                self.socket_addr_row_map[socket_rows.socket_address]
 
             logger.info(
                 f"Successfully created and added node: {new_entity_node.name} (Entity ID: {new_entity_node.id}, UI: {new_ui_node})"
@@ -144,8 +149,8 @@ class GraphController:
         target_socket_addr = edge_key.target
 
         # Look up SocketRowItems using SocketAddress keys directly
-        source_row_item = self.socket_row_map.get(source_socket_addr)
-        target_row_item = self.socket_row_map.get(target_socket_addr)
+        source_row_item = self.socket_addr_row_map.get(source_socket_addr)
+        target_row_item = self.socket_addr_row_map.get(target_socket_addr)
 
         if not source_row_item or not hasattr(source_row_item, "circle") or source_row_item.circle is None:
             logger.error(f"Could not find UI source socket circle for {source_socket_addr} from edge key {edge_key}")
@@ -157,14 +162,10 @@ class GraphController:
         source_ui_socket = source_row_item.circle
         target_ui_socket = target_row_item.circle
 
-        logger.info(
-            f"GraphController: Requesting to create edge: {edge_key}"
-        )
+        logger.info(f"GraphController: Requesting to create edge: {edge_key}")
 
-        if edge_key in self.edge_map: # Check if this exact edge already exists
-            logger.debug(
-                f"  Connection {edge_key} already exists. No new connection created."
-            )
+        if edge_key in self.edge_map:  # Check if this exact edge already exists
+            logger.debug(f"  Connection {edge_key} already exists. No new connection created.")
             return None
 
         connection_success, reason = self.entity_graph.link_sockets(source_socket_addr, target_socket_addr)
@@ -185,10 +186,8 @@ class GraphController:
             logger.debug(f"  UI EdgeItem created and added to scene/map for edge: {edge_key}")
             return new_edge_item
         else:
-            logger.warning(
-                f"  Entity connection FAILED for {edge_key}. Reason: {reason}. No UI edge created."
-            )
-            return None # Explicitly return None on failure
+            logger.warning(f"  Entity connection FAILED for {edge_key}. Reason: {reason}. No UI edge created.")
+            return None  # Explicitly return None on failure
 
     def request_remove_node(self, entity_node_id: str) -> bool:
         """
@@ -321,17 +320,11 @@ class GraphController:
         logger.debug(f"Valid targets: {valid_targets}")
         return valid_targets
 
-    def handle_ui_edge_connection_attempt(
-        self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
-    ):
+    def handle_ui_edge_link_request(self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress):
         """
         Handles a UI request to connect two sockets identified by their SocketAddress.
         Ensures that a target socket has only one incoming edge by removing any
         existing ones. Then, attempts to add the new edge.
-
-        Args:
-            source_socket_addr: The SocketAddress of the source socket.
-            target_socket_addr: The SocketAddress of the target socket.
         """
         logger.debug(
             f"GraphController: Received handle_ui_edge_connection_attempt from "
@@ -344,6 +337,7 @@ class GraphController:
             logger.warning(f"Edge {edge_key_to_attempt} already exists. Ignoring connection attempt.")
             return
 
+        if target_socket_addr in self.socket_addr_row_map
         # Ensure target socket has only one incoming edge.
         # If target_socket_addr has entries in socket_edge_map, iterate them.
         if target_socket_addr in self.socket_edge_map:
