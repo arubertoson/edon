@@ -11,6 +11,7 @@ TODO:
  - Ensure signatures are not widgets or scene items, they need to be the datatype representations
 """
 
+from collections import defaultdict
 from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Type, TypeAlias
@@ -35,6 +36,7 @@ NodeItemMap: TypeAlias = MutableMapping[str, NodeItem]
 EdgeItemMap: TypeAlias = MutableMapping[EdgeKey, EdgeItem]
 SocketItemMap: TypeAlias = MutableMapping[SocketAddress, SocketItem]
 SocketEdgeKeyMap: TypeAlias = MutableMapping[SocketAddress, set[EdgeKey]]
+NodeRegistryMap: TypeAlias = MutableMapping[str, Type[EntityNode]]
 
 
 class GraphController:
@@ -49,7 +51,7 @@ class GraphController:
     def __init__(
         self,
         entity_graph: EntityGraph,
-        graphics_scene: "GraphicsScene",
+        ui_scene: "GraphicsScene",
         node_type_registry: Mapping[str, Type[EntityNode]] | None = None,
     ):
         """
@@ -62,23 +64,20 @@ class GraphController:
             node_type_registry: Optional dictionary mapping node type hints to node classes.
         """
         self.entity_graph: EntityGraph = entity_graph
-        self.graphics_scene: "GraphicsScene" = graphics_scene
-        self._node_type_registry: dict[str, Type[EntityNode]] = (
-            node_type_registry if node_type_registry is not None else {}
-        )
+        self.ui_scene: "GraphicsScene" = ui_scene
 
         # Maps for entity graph to UI items
-        # I want to init these maps properly so the yare ready for use in the class, the `SocketEdgeKeyMap` has a set that we need to create AI!
-        self.node_map: NodeItemMap = {}
         self.edge_map: EdgeItemMap = {}
-        self.socket_addr_edge_key_map: SocketEdgeKeyMap = {}
+        self.node_map: NodeItemMap = {}
+        self.node_registry: NodeRegistryMap = node_type_registry or {}
         self.socket_addr_row_item_map: SocketItemMap = {}
+        self.socket_addr_edge_key_map: SocketEdgeKeyMap = defaultdict(set)
 
         logger.info(
             f"GraphController initialized with entity graph: {self.entity_graph} "
-            f"and graphics scene: {self.graphics_scene}"
+            f"and graphics scene: {self.ui_scene}"
         )
-        logger.debug(f"Node type registry: {self._node_type_registry}")
+        logger.debug(f"Node type registry: {self.node_registry}")
 
     def request_add_node(
         self,
@@ -86,6 +85,7 @@ class GraphController:
         scene_position: QPointF,
         **node_specific_kwargs,
     ) -> NodeItem | None:
+        # Clean up this docstring to only explain why this function exists, don't document Args Returns AI!
         """Processes a request to add a new node to both the data model and the UI.
 
         This method orchestrates the creation of a new node by:
@@ -117,7 +117,6 @@ class GraphController:
                 new_entity_node,
                 scene_position.x(),
                 scene_position.y(),
-                self.socket_addr_row_map,
             )
 
             # Populate the map using the sockets from the resulting NodeItem
@@ -178,7 +177,7 @@ class GraphController:
             new_edge_item.set_target_socket(target_ui_socket)
             new_edge_item.settle_z_value()  # Set to normal Z value for finalized edges
 
-            self.graphics_scene.add_edge(new_edge_item)
+            self.ui_scene.add_edge(new_edge_item)
 
             self.edge_map[edge_key] = new_edge_item
             self.socket_edge_map.setdefault(source_socket_addr, set()).add(edge_key)
@@ -211,7 +210,7 @@ class GraphController:
         # 2. Remove the UI NodeItem from the scene and our map
         ui_node_to_remove = self.node_map.pop(entity_node_id, None)
         if ui_node_to_remove:
-            self.graphics_scene.remove_node(ui_node_to_remove)
+            self.ui_scene.remove_node(ui_node_to_remove)
             logger.debug(f"UI NodeItem for {entity_node_id} removed from graphics scene and node_map.")
         else:
             logger.warning(f"No UI NodeItem found in node_map for ID {entity_node_id}.")
@@ -227,7 +226,7 @@ class GraphController:
         for edge_key_to_remove in edges_to_remove_keys:
             removed_edge_item = self.edge_map.pop(edge_key_to_remove, None)
             if removed_edge_item:
-                self.graphics_scene.remove_edge(removed_edge_item)
+                self.ui_scene.remove_edge(removed_edge_item)
                 logger.debug(f"  Edge {edge_key_to_remove} and its UI item removed from edge_map and scene.")
             else:
                 logger.warning(
@@ -256,7 +255,7 @@ class GraphController:
 
         ui_edge_item = self.edge_map.pop(edge_key, None)
         if ui_edge_item:
-            self.graphics_scene.remove_edge(ui_edge_item)
+            self.ui_scene.remove_edge(ui_edge_item)
             if edge_key.source in self.socket_edge_map:
                 self.socket_edge_map[edge_key.source].discard(edge_key)
             if edge_key.target in self.socket_edge_map:
@@ -365,7 +364,7 @@ class GraphController:
             f"GraphController: Received handle_ui_node_creation_request for type '{node_type_hint}' at {scene_pos}"
         )
 
-        node_class_to_create = self._node_type_registry.get(node_type_hint)
+        node_class_to_create = self.node_registry.get(node_type_hint)
 
         if not node_class_to_create:
             logger.error(f"ERROR: Node type hint '{node_type_hint}' not found in registry. Cannot create node.")
