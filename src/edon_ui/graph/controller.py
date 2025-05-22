@@ -139,7 +139,7 @@ class GraphController:
 
     def request_add_edge(
         self, source_ui_socket: "SocketCircleItem", target_ui_socket: "SocketCircleItem"
-    ) -> bool:
+    ) -> EdgeItem | None:
         """
         Handles a request to create a new edge, typically from a UI interaction.
         Attempts to connect the entity sockets first. If successful, creates and
@@ -182,12 +182,11 @@ class GraphController:
 
             self.edge_map[edge_key] = new_edge_item
             logger.debug(f"  UI EdgeItem created and added to scene/map for edge: {edge_key}")
-            return True
+            return new_edge_item
         else:
             logger.warning(
                 f"  Entity connection FAILED between {source_socket_addr} and {target_socket_addr}. Reason: {reason}. No UI edge created."
             )
-            return False
 
     def request_remove_node(self, entity_node_id: str) -> bool:
         """
