@@ -90,43 +90,14 @@ class SocketCircleItem(QGraphicsEllipseItem):
         self._is_hovered: bool = False
         self._is_drop_target: bool = False
         self._is_disabled: bool = False
-        self._connected_edges: Set["EdgeItem"] = set()
 
         pen = QPen(theme.SOCKET_BORDER_COLOR)
         pen.setWidthF(1.0)
         self.setPen(pen)
         self.setBrush(QBrush(self._original_fill_color))
 
-    def add_edge(self, edge_item: "EdgeItem") -> None:
-        """Adds an edge to this socket's set of connected edges.
 
-        Notifies the parent item (SocketRowItem) about the connection change.
 
-        Args:
-            edge_item: The EdgeItem instance to add.
-        """
-        self._connected_edges.add(edge_item)
-        parent_row = self.parentItem()
-        if parent_row and hasattr(parent_row, "set_connected_state"):
-            parent_row.set_connected_state(True)
-
-    def remove_edge(self, edge_item: "EdgeItem") -> None:
-        """Removes an edge from this socket's set of connected edges.
-
-        Notifies the parent item (SocketRowItem) if no edges remain connected.
-
-        Args:
-            edge_item: The EdgeItem instance to remove.
-        """
-        self._connected_edges.discard(edge_item)
-        parent_row = self.parentItem()
-        if parent_row and hasattr(parent_row, "set_connected_state"):
-            if not self._connected_edges:
-                parent_row.set_connected_state(False)
-
-    @property
-    def connected_edges(self) -> set["EdgeItem"]:
-        return self._connected_edges
 
     @property
     def is_input(self) -> bool:
@@ -203,11 +174,11 @@ class SocketCircleItem(QGraphicsEllipseItem):
             event: The QGraphicsSceneMouseEvent.
         """
         if event.button() == Qt.MouseButton.LeftButton:
+            parent_row = self.parentItem()
             logger.debug(
-                f"SocketCircleItem '{self.node_entity_id}::{self.socket_entity_name}' pressed at {event.scenePos()}"
+                f"SocketCircleItem in {parent_row.socket_address} pressed at {event.scenePos()}"
             )
-
-            self.scene().start_edge_drag(self, event.scenePos())
+            self.scene().start_edge_drag(parent_row.socket_address, event.scenePos())
             event.accept()
         else:
             super().mousePressEvent(event)
@@ -442,3 +413,9 @@ class SocketRowItem(QGraphicsObject):
 
         self._update_bounding_rect()
         self.layoutChanged.emit()
+    @property
+    def socket_address(self) -> SocketAddress:
+        from edon.graph import SocketAddress
+        if self.socket_entity_name is None or self.parent_entity_node_id is None:
+            raise ValueError("SocketRowItem missing logical identifiers")
+        return SocketAddress(self.parent_entity_node_id, self.socket_entity_name)

@@ -80,6 +80,7 @@ class GraphController:
         # Maps for entity graph to UI items
         self.node_map: NodeItemMap = {}
         self.edge_map: EdgeItemMap = {}
+        self.socket_edge_map: dict[SocketAddress, set[EdgeKey]] = {}
         self.socket_row_map: SocketItemMap = {}
 
         logger.info(
@@ -181,6 +182,8 @@ class GraphController:
             self.graphics_scene.add_edge(new_edge_item)
 
             self.edge_map[edge_key] = new_edge_item
+            self.socket_edge_map.setdefault(source_socket_addr, set()).add(edge_key)
+            self.socket_edge_map.setdefault(target_socket_addr, set()).add(edge_key)
             logger.debug(f"  UI EdgeItem created and added to scene/map for edge: {edge_key}")
             return new_edge_item
         else:
@@ -256,6 +259,10 @@ class GraphController:
         ui_edge_item = self.edge_map.pop(edge_key, None)
         if ui_edge_item:
             self.graphics_scene.remove_edge(ui_edge_item)
+            if edge_key.source in self.socket_edge_map:
+                self.socket_edge_map[edge_key.source].discard(edge_key)
+            if edge_key.target in self.socket_edge_map:
+                self.socket_edge_map[edge_key.target].discard(edge_key)
             logger.debug(f"  UI EdgeItem for {edge_key} removed from graphics scene.")
             logger.info(f"GraphController: Edge removal process for {edge_key} complete.")
             return True
@@ -318,8 +325,8 @@ class GraphController:
     def handle_ui_edge_connection_attempt(
         self, source_ui_socket: "SocketCircleItem", target_ui_socket: "SocketCircleItem"
     ):
-        source_socket_addr = SocketAddress(source_ui_socket.node_entity_id, source_ui_socket.socket_entity_name)
-        target_socket_addr = SocketAddress(target_ui_socket.node_entity_id, target_ui_socket.socket_entity_name)
+        source_socket_addr = source_ui_socket.parentItem().socket_address
+        target_socket_addr = target_ui_socket.parentItem().socket_address
 
         logger.debug(
             f"GraphController: Received handle_ui_edge_connection_attempt from "
@@ -335,12 +342,12 @@ class GraphController:
 
         # If the target socket already has an edge, we remove it, tartet nodes can only have one edge
         # and we decided on behavior that the new edge will replace the old one.
-        if target_ui_socket.connected_edges:
+        if target_socket_addr in self.socket_edge_map and self.socket_edge_map[target_socket_addr]:
             logger.warning(
-                f"Target socket {target_ui_socket.socket_entity_name} already has edges. Ignoring connection attempt."
+                f"Target socket {target_socket_addr} already has edges. Ignoring connection attempt."
             )
-            edge_to_remove = next(iter(target_ui_socket.connected_edges))
-            self.request_remove_edge(edge_to_remove.edge_key)
+            edge_key_to_remove = next(iter(self.socket_edge_map[target_socket_addr]))
+            self.request_remove_edge(edge_key_to_remove)
 
         self.request_add_edge(source_ui_socket, target_ui_socket)
 
