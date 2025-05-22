@@ -75,8 +75,14 @@ class EdgeItem(QGraphicsPathItem):
         self.setZValue(self._settled_z_value)
 
     @property
-    def edge_key(self):
-        return 
+    def edge_key(self) -> EdgeKey:
+        source_socket_addr = SocketAddress(
+            self.source_socket_item.node_entity_id, self.source_socket_item.socket_entity_name
+        )
+        target_socket_addr = SocketAddress(
+            self.target_socket_item.node_entity_id, self.target_socket_item.socket_entity_name
+        )
+        return EdgeKey(source_socket_addr, target_socket_addr)
 
     @property
     def source_socket_item(self) -> SocketCircleItem:

@@ -236,69 +236,33 @@ class GraphController:
 
         logger.info(f"GraphController: Node removal process for {entity_node_id} complete.")
 
-    def request_remove_edge(self, ui_edge_item: EdgeItem):
+    def request_remove_edge(self, edge_key: EdgeKey):
         """
         Handles a request to remove a single edge (entity and UI).
 
         Args:
-            ui_edge_item: The EdgeItem instance to remove.
+            edge_key: The EdgeKey instance representing the edge to remove.
         """
-        # XXX: We need to think about what this function should take, remove_edge will most likely come from the
-        # scene, but teh scene should be aware of socket addresses and should be able to send a EdgeKey and
-        # let the controller manage from there.
-        if not ui_edge_item or not ui_edge_item.source_socket_item or not ui_edge_item.target_socket_item:
-            logger.warning("GraphController: Invalid EdgeItem provided to request_remove_edge. Cannot proceed.")
-            return
-
-        source_socket_addr = SocketAddress(
-            ui_edge_item.source_socket_item.node_entity_id, ui_edge_item.source_socket_item.socket_entity_name
-        )
-        target_socket_addr = SocketAddress(
-            ui_edge_item.target_socket_item.node_entity_id, ui_edge_item.target_socket_item.socket_entity_name
-        )
-
-        edge_repr = f"({source_socket_addr}) -> ({target_socket_addr})"
-        logger.info(f"GraphController: Requesting to remove edge: {edge_repr}")
+        logger.info(f"GraphController: Requesting to remove edge: {edge_key}")
 
         # 1. Disconnect in the entity graph
-        disconnection_success, reason = self.entity_graph.unlink_sockets(source_socket_addr, target_socket_addr)
+        disconnection_success, reason = self.entity_graph.unlink_sockets(edge_key.source, edge_key.target)
         if disconnection_success:
-            logger.debug(f"  Entity disconnection successful for {edge_repr}.")
+            logger.debug(f"  Entity disconnection successful for {edge_key}.")
         else:
-            # Log failure but proceed to remove UI element as user requested its deletion directly.
             logger.warning(
-                f"  Entity disconnection FAILED for {edge_repr}. Reason: {reason}. Proceeding with UI removal."
+                f"  Entity disconnection FAILED for {edge_key}. Reason: {reason}. Proceeding with UI removal."
             )
 
         # 2. Remove the UI EdgeItem from the scene
-        self.graphics_scene.remove_edge(ui_edge_item)
-        logger.debug(f"  UI EdgeItem for {edge_repr} removed from graphics scene.")
-
-        # 3. Remove the edge from our edge_map
-        edge_key_to_remove: EdgeKey | None = None
-        prospective_key = EdgeKey(source_socket_addr, target_socket_addr)
-
-        if prospective_key in self.edge_map and self.edge_map[prospective_key] == ui_edge_item:
-            edge_key_to_remove = prospective_key
+        ui_edge_item = self.edge_map.pop(edge_key, None)
+        if ui_edge_item:
+            self.graphics_scene.remove_edge(ui_edge_item)
+            logger.debug(f"  UI EdgeItem for {edge_key} removed from graphics scene.")
         else:
-            # Fallback: Iterate if direct key lookup fails. This can happen if the
-            # ui_edge_item instance was somehow replaced or if the edge_map uses a different instance.
-            for key, val in self.edge_map.items():
-                if val == ui_edge_item:
-                    edge_key_to_remove = key
-                    break
+            logger.warning(f"  Could not find edge {edge_key} in edge_map to remove.")
 
-        if edge_key_to_remove:
-            removed_item = self.edge_map.pop(edge_key_to_remove, None)
-            if removed_item:
-                self.graphics_scene.remove_edge(removed_item)  # Explicitly remove from scene
-                logger.debug(f"  Edge {edge_key_to_remove} and its UI item removed from edge_map and scene.")
-            else:
-                logger.warning(f"  Edge key {edge_key_to_remove} found but pop failed from edge_map.")
-        else:
-            logger.warning(f"  Could not find edge {edge_repr} (instance: {ui_edge_item}) in edge_map to remove.")
-
-        logger.info(f"GraphController: Edge removal process for {edge_repr} complete.")
+        logger.info(f"GraphController: Edge removal process for {edge_key} complete.")
 
     def request_edge_drop_targets(self, source_socket_ui_item: "SocketCircleItem") -> set[SocketAddress]:
         """
