@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from edon.socket import EntitySocket
 
 
-# Rewrite the docstring for `create_socket_widget_component` AI!
 def create_socket_widget_component(
     entity_socket: "EntitySocket",
     node_id: str,
@@ -33,10 +32,11 @@ def create_socket_widget_component(
     initial_value: Any | None = None,
 ) -> SocketComponent | None:
     """
-    Creates the appropriate socket widget component for the given entity socket.
-    Uses the SOCKET_WIDGET_COMPONENT_FACTORIES to get a factory function,
-    which returns a SocketWidgetAdaptor and the underlying QWidget.
-    Handles connecting the QWidget's value changed signal to the controller.
+    Constructs a socket widget component for a specified entity socket.
+    
+    This function utilizes the SOCKET_WIDGET_COMPONENT_FACTORIES to retrieve a factory function
+    that generates a SocketWidgetAdaptor along with its associated QWidget. It also manages
+    the connection of the QWidget's value change signal to the controller for further processing.
     """
     type_info = getattr(entity_socket, "type_info", None)
     socket_name = getattr(entity_socket, "name", "")
