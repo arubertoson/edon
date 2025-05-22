@@ -68,7 +68,7 @@ class GraphController:
         )
 
         # Maps for entity graph to UI items
-        # How do I init these maps properly so they are ready for use the class AI!
+        # I want to init these maps properly so the yare ready for use in the class, the `SocketEdgeKeyMap` has a set that we need to create AI!
         self.node_map: NodeItemMap = {}
         self.edge_map: EdgeItemMap = {}
         self.socket_addr_edge_key_map: SocketEdgeKeyMap = {}
