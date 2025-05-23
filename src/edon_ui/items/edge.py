@@ -13,7 +13,6 @@ from edon.socket import SocketRole
 from edon.graph import EdgeKey, SocketAddress
 from edon_ui import theme
 from edon_ui.items.socket import SocketLinkItem
-from qtpy.QtGui import QRhiGraphicsPipeline
 
 PathCalculatorType = Callable[[QPointF, QPointF], QPainterPath]
 
@@ -21,14 +20,38 @@ PathCalculatorType = Callable[[QPointF, QPointF], QPainterPath]
 def straight_line_path_calculator(
     p1: QPointF, p2: QPointF, active: bool, starting_socket_role: SocketRole
 ) -> QPainterPath:
+    """
+    Calculate a straight-line path between two points.
+
+    Args:
+        p1 (QPointF): The starting point.
+        p2 (QPointF): The ending point.
+        active (bool): Indicates if the edge is active.
+        starting_socket_role (SocketRole): The role of the starting socket.
+
+    Returns:
+        QPainterPath: The computed straight-line path.
+    """
     path = QPainterPath()
     path.moveTo(p1)
     path.lineTo(p2)
-
+ 
     return path
 
 
 def bezier_path_calculator(p1: QPointF, p2: QPointF, active: bool, starting_socket_role: SocketRole) -> QPainterPath:
+    """
+    Calculate a cubic Bezier curve path between two points.
+
+    Args:
+        p1 (QPointF): The starting point.
+        p2 (QPointF): The ending point.
+        active (bool): Indicates if the edge is active.
+        starting_socket_role (SocketRole): The role of the starting socket affecting control points.
+
+    Returns:
+        QPainterPath: The computed Bezier curve path.
+    """
     path = QPainterPath()
     path.moveTo(p1)
 
@@ -132,7 +155,7 @@ class DraggingEdgeItem(QGraphicsPathItem):
         painter.setPen(self._pen)
         painter.drawPath(self.path())
 
-    def type(self):
+    def type(self) -> int:
         return self.__class__.Type
 
 
@@ -174,7 +197,7 @@ class EdgeItem(QGraphicsPathItem):
         self._pen_selected = QPen(theme.EDGE_COLOR_SELECTED, theme.EDGE_THICKNESS)
         self._pen_selected.setCapStyle(Qt.PenCapStyle.RoundCap)
 
-        self._edge_key: EdgeKey
+        self._edge_key: EdgeKey | None = None
 
         self._update_internal_path()
 
@@ -223,5 +246,5 @@ class EdgeItem(QGraphicsPathItem):
         painter.setPen(pen)
         painter.drawPath(self.path())
 
-    def type(self):
+    def type(self) -> int:
         return self.__class__.Type
