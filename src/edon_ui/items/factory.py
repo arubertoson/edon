@@ -143,10 +143,3 @@ def create_node_item(
         target_sockets=target_sockets_ui,
         source_sockets=source_sockets_ui,
     )
-
-
-def create_edge_item(source_socket_circle: "SocketLinkItem", target_socket_circle: "SocketLinkItem") -> EdgeItem:
-    edge = EdgeItem(source_socket_circle, target_socket_circle.scenePos())
-    edge.set_target_socket(target_socket_circle)
-    edge.settle_z_value()
-    return edge

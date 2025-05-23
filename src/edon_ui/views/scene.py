@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from edon.graph import SocketAddress
 from edon_ui import theme
-from edon_ui.items.edge import EdgeItem
+from edon_ui.items.edge import DraggingEdgeItem, EdgeItem
 from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketLinkItem
 
@@ -150,9 +150,10 @@ class GraphicsScene(QGraphicsScene):
         super().addItem(self.empty_scene_text)
         self.empty_scene_text.setVisible(False)
 
-        self.node_items: list[NodeItem] = []
-        self.edge_items: list[EdgeItem] = []
-        self.temp_edge: EdgeItem | None = None
+        # self.node_items: list[NodeItem] = []
+        # self.edge_items: list[EdgeItem] = []
+
+        self._temp_edge: DraggingEdgeItem | None = None
         self._currently_highlighted_target_socket: SocketLinkItem | None = None
         self._cached_drag_valid_targets: set[SocketAddress] | None = None  # Cache for valid drop targets during drag
 
@@ -335,8 +336,8 @@ class GraphicsScene(QGraphicsScene):
         #         edge_item.update_path()
         # ---
         # Right now we have a brute force solution that will work, but this needs work :)
-        if self.temp_edge:
-            self.temp_edge.update_path()
+        if self._temp_edge:
+            self._temp_edge.update_path()
         else:
             for edge_item in self.edge_items:
                 edge_item.update_path()
@@ -357,7 +358,7 @@ class GraphicsScene(QGraphicsScene):
     # XXX: Should the below really be managed by the scene?
 
     def is_dragging_edge(self) -> bool:
-        return self.temp_edge is not None
+        return self._temp_edge is not None
 
     def start_edge_drag(self, clicked_socket_address: SocketAddress, drag_start_scene_pos: QPointF):
         """Initiates a new edge drag. If an existing edge starts from the
@@ -374,7 +375,7 @@ class GraphicsScene(QGraphicsScene):
         if clicked_socket_item.is_input and connected_edges:
             # If this is an input we can assume that it should only have one connection
             # our internal logic will prevent more than one connection to an input.
-            self.temp_edge = next(iter(connected_edges))
+            self._temp_edge = next(iter(connected_edges))
 
             logger.debug(
                 f"Scene: Lifting existing edge from {clicked_socket_item.node_entity_id}::{clicked_socket_item.socket_entity_name}"
@@ -385,32 +386,32 @@ class GraphicsScene(QGraphicsScene):
             # The visual EdgeItem is kept (as self.temp_edge) and removed from the scene's
             # persistent edge_items list.
             # Note: handle_ui_edge_deletion_request expects a sequence of EdgeItem.
-            self.controller.handle_ui_edge_deletion_request([self.temp_edge])
+            self.controller.handle_ui_edge_deletion_request([self._temp_edge])
             logger.debug("Requested deletion of logical connection for this edge.")
 
             # Make the end of the edge float and ensure the lifted edge's source snaps to the
             # socket, and target is the mouse.
-            self.temp_edge.clear_target_socket()
-            self.temp_edge.set_target_pos(drag_start_scene_pos)
-            self.temp_edge.setZValue(theme.EDGE_Z_VALUE_DRAGGING)
+            self._temp_edge.clear_target_socket()
+            self._temp_edge.set_target_pos(drag_start_scene_pos)
+            self._temp_edge.setZValue(theme.EDGE_Z_VALUE_DRAGGING)
         else:
             # If an output socket was clicked, or an input socket with no existing connections,
             # create a new temporary edge from the socket to the mouse cursor.
-            self.temp_edge = EdgeItem(clicked_socket_item, drag_start_scene_pos)
+            self._temp_edge = EdgeItem(clicked_socket_item, drag_start_scene_pos)
 
-        super().addItem(self.temp_edge)  # New temp_edge always needs to be added.
+        super().addItem(self._temp_edge)  # New temp_edge always needs to be added.
 
         # The cache is calculated when we start the drag, and we don't need to recalculate it
         # during the drag.
-        self._cached_drag_valid_targets = self.controller.request_edge_drop_targets(self.temp_edge.source_socket_item)
+        self._cached_drag_valid_targets = self.controller.request_edge_drop_targets(self._temp_edge.source_socket_item)
         logger.debug(f"Cached valid drop targets: {self._cached_drag_valid_targets}")
-        self.update_socket_drop_targets(self.temp_edge.source_socket_item)
+        self.update_socket_drop_targets(self._temp_edge.source_socket_item)
 
     def update_dragged_edge(self, current_scene_pos: QPointF):
         """Updates the end point of the temporary edge being dragged."""
-        assert self.temp_edge is not None
+        assert self._temp_edge is not None
 
-        self.temp_edge.set_target_pos(current_scene_pos)
+        self._temp_edge.set_target_pos(current_scene_pos)
         potential_target_socket = self._get_socket_at_pos(current_scene_pos)
 
         hl_socket = self._currently_highlighted_target_socket
@@ -455,7 +456,7 @@ class GraphicsScene(QGraphicsScene):
         # This is a bit of a hack to make the logic of the edge connection work in both
         # directions. We do a swap to make the logic of the edge connection consistent.
         target_socket_item = self._get_socket_at_pos(event_scene_pos)
-        source_socket_item = self.temp_edge.source_socket_item
+        source_socket_item = self._temp_edge.source_socket_item
         if source_socket_item.is_input:
             source_socket_item, target_socket_item = target_socket_item, source_socket_item
 
@@ -474,15 +475,15 @@ class GraphicsScene(QGraphicsScene):
             self._currently_highlighted_target_socket = None
 
         # Remove the temporary edge.
-        if self.temp_edge:
-            source_socket = self.temp_edge.source_socket_item
+        if self._temp_edge:
+            source_socket = self._temp_edge.source_socket_item
             logger.debug(
                 f"Scene: Removing temporary edge from '{source_socket.node_entity_id}::{source_socket.socket_entity_name}'"
             )
             # The edge is not part of the entity graph at this point so we avoid calling
             # the controller.
-            super().removeItem(self.temp_edge)
-            self.temp_edge = None
+            super().removeItem(self._temp_edge)
+            self._temp_edge = None
 
         # Reset the cached valid targets and their visual state.
         self._cached_drag_valid_targets = set()
