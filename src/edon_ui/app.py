@@ -63,16 +63,6 @@ class EdonApplication:
     """
 
     def __init__(self, log_level: str = "DEBUG", node_registry: dict[str, type[EntityNode]] | None = None) -> None:
-        """Initializes the Edon application.
-
-        Sets up logging, Qt application, UI components (main window, graphics scene/view),
-        command system, and the graph controller.
-
-        Args:
-            log_level: The logging level to use for the application.
-            node_registry: A mapping from node type string identifiers to their
-                corresponding `EntityNode` subclasses. If `None`, an empty registry is used.
-        """
         # Initialize logging as the first step to capture all subsequent initialization messages.
         self._setup_logging(log_level)
 
@@ -171,10 +161,7 @@ class EdonApplication:
         logger.debug("Logging system initialized")
 
     def _create_qt_application(self) -> QApplication:
-        """Creates or retrieves the global `QApplication` instance.
-
-        Ensures a single `QApplication` instance exists, creating one if necessary.
-        """
+        """Creates or retrieves the global `QApplication` instance."""
         app = QApplication.instance()
         if not app:
             app = QApplication(sys.argv)
