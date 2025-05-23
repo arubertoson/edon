@@ -68,6 +68,7 @@ class GraphController:
         self.node_map: NodeItemMap = {}
         self.node_registry: NodeRegistryMap = node_type_registry or {}
         self.socket_addr_row_item_map: SocketItemMap = {}
+        # Consistent naming: socket_addr_edge_key_map
         self.socket_addr_edge_key_map: SocketEdgeKeyMap = defaultdict(set)
 
         logger.info(
@@ -96,15 +97,24 @@ class GraphController:
             )
 
             # Populate the map using the sockets from the resulting NodeItem
-            for socket_rows in new_ui_node.source_sockets + new_ui_node.target_sockets:
-                self.socket_addr_row_item_map[socket_rows.socket_address]
+            for socket_row_item in new_ui_node.source_sockets + new_ui_node.target_sockets: # Iterate over SocketItem instances
+                # Ensure socket_row_item is a SocketItem and has socket_address
+                if hasattr(socket_row_item, 'socket_address'):
+                    self.socket_addr_row_item_map[socket_row_item.socket_address] = socket_row_item # Fix: Assign to map
+                else:
+                    logger.warning(f"Socket row item {socket_row_item} lacks 'socket_address', cannot map.")
+
 
             logger.info(
                 f"Successfully created and added node: {new_entity_node.name} (Entity ID: {new_entity_node.id}, UI: {new_ui_node})"
             )
+            # Add node to scene and maps AFTER successful creation and mapping
+            self.ui_scene.add_node(new_ui_node)
+            self.node_map[new_entity_node.id] = new_ui_node
+
             return new_ui_node
         except Exception as e:
-            logger.error(f"Error creating or adding node '{node_type}': {e}")
+            logger.error(f"Error creating or adding node of type '{node_entity_class.__name__}': {e}")
             return None
 
     def request_add_edge(self, edge_key: EdgeKey) -> EdgeItem | None:
@@ -113,12 +123,6 @@ class GraphController:
         """
         source_socket_addr = edge_key.source
         target_socket_addr = edge_key.target
-
-        source_socket_item = self.socket_addr_row_item_map.get(source_socket_addr)
-        target_socket_item = self.socket_addr_row_item_map.get(target_socket_addr)
-
-        source_ui_socket = source_socket_item.link_item
-        target_ui_socket = target_socket_item.link_item
 
         logger.info(f"GraphController: Requesting to create edge: {edge_key}")
         if edge_key in self.edge_map:
@@ -133,12 +137,27 @@ class GraphController:
         if link_success:
             logger.debug(f"Entity connection successful for {edge_key}. Creating UI EdgeItem.")
 
-            new_edge_item = EdgeItem(source_ui_socket, target_ui_socket)
+            # Ensure source_socket_item and target_socket_item are SocketLinkItems
+            source_socket_row = self.socket_addr_row_item_map.get(source_socket_addr)
+            target_socket_row = self.socket_addr_row_item_map.get(target_socket_addr)
+
+            if not (source_socket_row and source_socket_row.link_item and \
+                    target_socket_row and target_socket_row.link_item):
+                logger.error(f"Could not find UI socket link items for edge {edge_key}. Aborting UI edge creation.")
+                # Optionally, unlink the logical sockets if UI part fails critically
+                self.entity_graph.unlink_sockets(source_socket_addr, target_socket_addr)
+                return None
+
+            source_ui_socket_link = source_socket_row.link_item
+            target_ui_socket_link = target_socket_row.link_item
+
+            new_edge_item = EdgeItem(source_ui_socket_link, target_ui_socket_link)
             self.ui_scene.add_edge(new_edge_item)
 
             self.edge_map[edge_key] = new_edge_item
-            self.socket_edge_map[source_socket_addr].add(edge_key)
-            self.socket_edge_map[target_socket_addr].add(edge_key)
+            # Fix: Use self.socket_addr_edge_key_map
+            self.socket_addr_edge_key_map[source_socket_addr].add(edge_key)
+            self.socket_addr_edge_key_map[target_socket_addr].add(edge_key)
             logger.debug(f"  UI EdgeItem created and added to scene/map for edge: {edge_key}")
             return new_edge_item
         else:
@@ -213,10 +232,11 @@ class GraphController:
         ui_edge_item = self.edge_map.pop(edge_key, None)
         if ui_edge_item:
             self.ui_scene.remove_edge(ui_edge_item)
-            if edge_key.source in self.socket_edge_map:
-                self.socket_edge_map[edge_key.source].discard(edge_key)
-            if edge_key.target in self.socket_edge_map:
-                self.socket_edge_map[edge_key.target].discard(edge_key)
+            # Fix: Use self.socket_addr_edge_key_map
+            if edge_key.source in self.socket_addr_edge_key_map:
+                self.socket_addr_edge_key_map[edge_key.source].discard(edge_key)
+            if edge_key.target in self.socket_addr_edge_key_map:
+                self.socket_addr_edge_key_map[edge_key.target].discard(edge_key)
             logger.debug(f"  UI EdgeItem for {edge_key} removed from graphics scene.")
             logger.info(f"GraphController: Edge removal process for {edge_key} complete.")
             return True
@@ -292,10 +312,10 @@ class GraphController:
         # if target_socket_addr in self.socket_addr_row_item_map
 
         # Ensure target socket has only one incoming edge.
-        # If target_socket_addr has entries in socket_edge_map, iterate them.
-        if target_socket_addr in self.socket_edge_map:
+        # If target_socket_addr has entries in socket_addr_edge_key_map, iterate them.
+        if target_socket_addr in self.socket_addr_edge_key_map:
             # Make a copy for safe iteration while modifying the set.
-            edges_connected_to_target_socket = list(self.socket_edge_map[target_socket_addr])
+            edges_connected_to_target_socket = list(self.socket_addr_edge_key_map[target_socket_addr])
             for existing_edge_key in edges_connected_to_target_socket:
                 # Only remove if this existing edge is an *incoming* edge to target_socket_addr.
                 if existing_edge_key.target == target_socket_addr:
@@ -344,3 +364,13 @@ class GraphController:
         logger.info(f"GraphController: Received handle_ui_edge_deletion_request for {len(edge_items)} edge(s).")
         for edge_item in edge_items:
             self.request_remove_edge(edge_item.edge_key)
+
+    def get_edge_items_for_socket_address(self, socket_addr: SocketAddress) -> set[EdgeItem]:
+        """Retrieves all UI EdgeItems connected to the given socket address."""
+        edge_keys = self.socket_addr_edge_key_map.get(socket_addr, set())
+        edge_items: set[EdgeItem] = set()
+        for key in edge_keys:
+            item = self.edge_map.get(key)
+            if item:
+                edge_items.add(item)
+        return edge_items

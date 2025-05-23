@@ -361,55 +361,54 @@ class GraphicsScene(QGraphicsScene):
         return self._temp_edge is not None
 
     def start_edge_drag(self, clicked_socket_address: SocketAddress, drag_start_scene_pos: QPointF):
-        """Initiates a new edge drag. If an existing edge starts from the
-        clicked_socket_item (and it's an output), that edge is lifted and becomes
-        the temporary edge. Otherwise, a new temporary edge is created.
+        """Initiates a new edge drag.
+        If an existing edge is connected to a clicked input socket, that edge is "lifted"
+        by creating a new temporary drag from its original source.
+        Otherwise, a new temporary edge is created from the clicked socket.
         """
-        socket_row = self.controller.socket_addr_row_map.get(clicked_socket_address)
-        if not socket_row or not hasattr(socket_row, "circle") or socket_row.circle is None:
-            logger.error(f"Could not find UI socket circle for address {clicked_socket_address} to start edge drag.")
+        socket_row_item = self.controller.socket_addr_row_item_map.get(clicked_socket_address)
+
+        if not socket_row_item or not socket_row_item.link_item:
+            logger.error(f"Could not find UI socket item or link_item for address {clicked_socket_address} to start edge drag.")
             return
-        clicked_socket_item = socket_row.circle
+        
+        clicked_socket_link_item = socket_row_item.link_item # This is a SocketLinkItem
 
-        # XXX: Needs an update, we need the edge, and when we have the edge we can figure out 
-        # the edge positions from the socket link items.
-        connected_edges: set[EdgeItem] = clicked_socket_item.connected_edges
+        # Determine if the clicked socket is an input (target role)
+        is_input_socket = socket_row_item.role == SocketRole.TARGET
+        
+        connected_edges = self.controller.get_edge_items_for_socket_address(clicked_socket_address)
 
-        self.controller.get_edge_item_from_socket_addr(clicked_socket_address)
-
-        if clicked_socket_item.is_input and connected_edges:
-            # If this is an input we can assume that it should only have one connection
-            # our internal logic will prevent more than one connection to an input.
-            self._temp_edge = next(iter(connected_edges))
+        if is_input_socket and connected_edges:
+            # Lifting an existing edge from an input socket.
+            # An input socket should only have one edge due to controller logic.
+            lifted_edge_item = next(iter(connected_edges))
+            source_link_item_of_lifted_edge = lifted_edge_item.source_socket_item
 
             logger.debug(
-                f"Scene: Lifting existing edge from {clicked_socket_item.node_entity_id}::{clicked_socket_item.socket_entity_name}"
+                f"Scene: Lifting existing edge from input {clicked_socket_address}. "
+                f"Original source: {source_link_item_of_lifted_edge.socket_address}"
             )
 
-            # When an edge is lifted, its logical connection needs to be severed in the model.
-            # The GraphController handles this, which in turn updates the EntityGraph.
-            # The visual EdgeItem is kept (as self.temp_edge) and removed from the scene's
-            # persistent edge_items list.
-            # Note: handle_ui_edge_deletion_request expects a sequence of EdgeItem.
-            self.controller.handle_ui_edge_deletion_request([self._temp_edge])
-            logger.debug("Requested deletion of logical connection for this edge.")
+            # Remove the old EdgeItem logically and from UI
+            self.controller.handle_ui_edge_deletion_request([lifted_edge_item])
 
-            # Make the end of the edge float and ensure the lifted edge's source snaps to the
-            # socket, and target is the mouse.
-            self._temp_edge.clear_target_socket()
-            self._temp_edge.set_target_pos(drag_start_scene_pos)
-            self._temp_edge.setZValue(theme.EDGE_Z_VALUE_DRAGGING)
+            # Create a new DraggingEdgeItem starting from the *other* end of the lifted edge
+            self._temp_edge = DraggingEdgeItem(source_link_item_of_lifted_edge, drag_start_scene_pos)
         else:
-            # If an output socket was clicked, or an input socket with no existing connections,
-            # create a new temporary edge from the socket to the mouse cursor.
-            self._temp_edge = DraggingEdgeItem(clicked_socket_item, drag_start_scene_pos)
+            # Standard drag from an output, or an input socket with no existing connections.
+            logger.debug(f"Scene: Starting new drag from socket: {clicked_socket_address}")
+            self._temp_edge = DraggingEdgeItem(clicked_socket_link_item, drag_start_scene_pos)
 
-        super().addItem(self._temp_edge)  # New temp_edge always needs to be added.
+        super().addItem(self._temp_edge) # Add the new/repurposed temp_edge to the scene.
+        self._temp_edge.setZValue(theme.EDGE_Z_VALUE_DRAGGING) # Ensure it's on top
 
-        # The cache is calculated when we start the drag, and we don't need to recalculate it
-        # during the drag.
-        self._cached_drag_valid_targets = self.controller.request_edge_drop_targets(self._temp_edge.source_socket_item)
-        logger.debug(f"Cached valid drop targets: {self._cached_drag_valid_targets}")
+        # Cache valid drop targets based on the actual source of the drag
+        # This requires SocketLinkItem to have a 'socket_address' property.
+        actual_drag_source_address = self._temp_edge.source_socket_item.socket_address
+        self._cached_drag_valid_targets = self.controller.request_edge_drop_targets(actual_drag_source_address)
+        logger.debug(f"Cached valid drop targets for {actual_drag_source_address}: {self._cached_drag_valid_targets}")
+        
         self.update_socket_drop_targets(self._temp_edge.source_socket_item)
 
     def update_dragged_edge(self, current_scene_pos: QPointF):
