@@ -1,7 +1,7 @@
-"""Defines the EdgeItem class for representing connections between sockets in the UI.
+"""Graphical representation of socket connections.
 
-This module provides the visual representation of an edge (connection)
-within the graphics scene, linking two SocketCircleItem instances.
+Provides classes and utility functions to compute and render visual edges that
+connect socket items in the scene.
 """
 
 from collections.abc import Callable
@@ -14,48 +14,34 @@ from edon.graph import EdgeKey, SocketAddress
 from edon_ui import theme
 from edon_ui.items.socket import SocketLinkItem
 
-PathCalculatorType = Callable[[QPointF, QPointF], QPainterPath]
+PathCalculatorType = Callable[[QPointF, QPointF, bool, SocketRole], QPainterPath]
 
 
 def straight_line_path_calculator(
     p1: QPointF, p2: QPointF, active: bool, starting_socket_role: SocketRole
 ) -> QPainterPath:
     """
-    Calculate a straight-line path between two points.
+    Calculates a straight-line QPainterPath between two points.
 
-    Args:
-        p1 (QPointF): The starting point.
-        p2 (QPointF): The ending point.
-        active (bool): Indicates if the edge is active.
-        starting_socket_role (SocketRole): The role of the starting socket.
-
-    Returns:
-        QPainterPath: The computed straight-line path.
+    Returns a direct line connecting the start and end positions.
     """
     path = QPainterPath()
     path.moveTo(p1)
     path.lineTo(p2)
- 
+
     return path
 
 
 def bezier_path_calculator(p1: QPointF, p2: QPointF, active: bool, starting_socket_role: SocketRole) -> QPainterPath:
     """
-    Calculate a cubic Bezier curve path between two points.
+    Calculates a cubic Bezier curve QPainterPath between two points.
 
-    Args:
-        p1 (QPointF): The starting point.
-        p2 (QPointF): The ending point.
-        active (bool): Indicates if the edge is active.
-        starting_socket_role (SocketRole): The role of the starting socket affecting control points.
-
-    Returns:
-        QPainterPath: The computed Bezier curve path.
+    Returns a smooth curve computed using horizontal offsets from the endpoints.
     """
     path = QPainterPath()
     path.moveTo(p1)
 
-    # --- Cubic Bezier Curve Calculation ---
+    # Calculate horizontal offset between start and end
     dx = p2.x() - p1.x()
     # dy = p2.y() - p1.y() # Vertical distance, not directly used for this curve style
 
@@ -69,8 +55,8 @@ def bezier_path_calculator(p1: QPointF, p2: QPointF, active: bool, starting_sock
     offset_magnitude_abs = max(min_horizontal_offset, offset_magnitude_abs)
     offset_magnitude_abs = min(max_horizontal_offset, offset_magnitude_abs)
 
-    # Determine orientation for ctrl1 based on source socket type
-    # If source is an input, control point extends to its left, else to its right.
+    # Determine control point offset for the starting socket:
+    # For TARGET role, control point extends to the left; otherwise, to the right.
     ctrl1_x_offset: float
     ctrl2_x_offset: float
     if starting_socket_role == SocketRole.TARGET:
@@ -78,20 +64,15 @@ def bezier_path_calculator(p1: QPointF, p2: QPointF, active: bool, starting_sock
     else:
         ctrl1_x_offset = offset_magnitude_abs
 
-    # Determine orientation for ctrl2 based on target socket type or drag direction
+    # Determine control point offset for the target:
+    # For an active (dragging) edge, the offset opposes the drag direction.
+    # For a fixed target, the offset depends on the target socket's role.
     if active:
-        # Target is the mouse cursor (p2), edge is being dragged
-        # ctrl2's offset should be opposite to ctrl1's effective direction relative to p2.
-        # If dragging generally rightwards (dx >= 0), ctrl2 pulls left from p2.
-        # If dragging generally leftwards (dx < 0), ctrl2 pulls right from p2.
         if dx >= 0:
             ctrl2_x_offset = -offset_magnitude_abs
         else:
             ctrl2_x_offset = offset_magnitude_abs
     else:
-        # Target is a fixed socket
-        # If target is an input, control point extends to its left (relative to p2).
-        # If target is an output, control point extends to its right (relative to p2).
         if starting_socket_role == SocketRole.TARGET:
             ctrl2_x_offset = offset_magnitude_abs
         else:
@@ -107,7 +88,9 @@ def bezier_path_calculator(p1: QPointF, p2: QPointF, active: bool, starting_sock
 
 class DraggingEdgeItem(QGraphicsPathItem):
     """
-    Represents a temporary visual edge being dragged from a source socket.
+    Temporary visual edge used during socket connection dragging.
+
+    Provides real-time feedback by updating its path as the mouse moves.
     """
 
     Type = QGraphicsItem.UserType + 2  # type: ignore[attr-defined]
@@ -140,7 +123,7 @@ class DraggingEdgeItem(QGraphicsPathItem):
 
     def _update_internal_path(self) -> None:
         self._source_pos = self._source_socket_item.scenePos()
-        path = self._path_calculator(self._source_pos, self._current_target_pos)
+        path = self._path_calculator(self._source_pos, self._current_target_pos, True, SocketLinkItem.role)
         self.setPath(path)
 
     def update_target_position(self, new_mouse_scene_pos: QPointF) -> None:
@@ -161,14 +144,10 @@ class DraggingEdgeItem(QGraphicsPathItem):
 
 class EdgeItem(QGraphicsPathItem):
     """
-    Represents a visual edge (typically a line or curve) in the graphics scene,
-    connecting two `SocketCircleItem` instances.
+    Visual edge connecting two socket items.
 
-    This item is responsible for:
-    - Storing references to its source and (optional) target sockets.
-    - Maintaining and updating its visual path based on socket positions.
-    - Drawing itself with appropriate styling (e.g., color, thickness).
-    - Managing its Z-value for correct stacking order during dragging and when finalized.
+    Dynamically updates its path based on socket movements and renders with styling
+    that reflects its interaction state.
     """
 
     Type = QGraphicsItem.UserType + 1  # type: ignore[attr-defined]
@@ -228,7 +207,9 @@ class EdgeItem(QGraphicsPathItem):
         self._source_pos = self.source_socket_item.scenePos()
         self._target_pos = self.target_socket_item.scenePos()
 
-        path = self._path_calculator(self._source_pos, self._target_pos)
+        # An EdgeItem is always static when it simply "exists", meaning, it's inactive and it starts
+        # from it's source role.
+        path = self._path_calculator(self._source_pos, self._target_pos, False, SocketRole.SOURCE)
         self.setPath(path)
 
     def socket_moved(self, moved_socket: SocketLinkItem) -> None:
