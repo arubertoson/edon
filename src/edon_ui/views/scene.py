@@ -371,7 +371,12 @@ class GraphicsScene(QGraphicsScene):
             return
         clicked_socket_item = socket_row.circle
 
+        # XXX: Needs an update, we need the edge, and when we have the edge we can figure out 
+        # the edge positions from the socket link items.
         connected_edges: set[EdgeItem] = clicked_socket_item.connected_edges
+
+        self.controller.get_edge_item_from_socket_addr(clicked_socket_address)
+
         if clicked_socket_item.is_input and connected_edges:
             # If this is an input we can assume that it should only have one connection
             # our internal logic will prevent more than one connection to an input.
@@ -397,7 +402,7 @@ class GraphicsScene(QGraphicsScene):
         else:
             # If an output socket was clicked, or an input socket with no existing connections,
             # create a new temporary edge from the socket to the mouse cursor.
-            self._temp_edge = EdgeItem(clicked_socket_item, drag_start_scene_pos)
+            self._temp_edge = DraggingEdgeItem(clicked_socket_item, drag_start_scene_pos)
 
         super().addItem(self._temp_edge)  # New temp_edge always needs to be added.
 
@@ -411,7 +416,7 @@ class GraphicsScene(QGraphicsScene):
         """Updates the end point of the temporary edge being dragged."""
         assert self._temp_edge is not None
 
-        self._temp_edge.set_target_pos(current_scene_pos)
+        self._temp_edge.update_target_position(current_scene_pos)
         potential_target_socket = self._get_socket_at_pos(current_scene_pos)
 
         hl_socket = self._currently_highlighted_target_socket
