@@ -331,7 +331,7 @@ class GraphController:
         for edge_item in edge_items:
             self.request_remove_edge(edge_item.edge_key)
 
-    def get_edge_items_for_socket_address(self, socket_addr: SocketAddress) -> set[EdgeItem]:
+    def find_edge_items_at_socket(self, socket_addr: SocketAddress) -> set[EdgeItem]:
         """Retrieves all UI EdgeItems connected to the given socket address."""
         edge_keys = self.socket_addr_edge_key_map.get(socket_addr, set())
         edge_items: set[EdgeItem] = set()

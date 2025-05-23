@@ -378,7 +378,7 @@ class GraphicsScene(QGraphicsScene):
         # Determine if the clicked socket is an input (target role)
         is_input_socket = socket_row_item.role == SocketRole.TARGET
         
-        connected_edges = self.controller.get_edge_items_for_socket_address(clicked_socket_address)
+        connected_edges = self.controller.find_edge_items_at_socket(clicked_socket_address)
 
         if is_input_socket and connected_edges:
             # Lifting an existing edge from an input socket.
