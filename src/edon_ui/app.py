@@ -156,7 +156,6 @@ class EdonApplication:
         logger.debug("Logging system initialized")
 
     def _create_qt_application(self) -> QApplication:
-        """Creates or retrieves the global `QApplication` instance."""
         app = QApplication.instance()
         if not app:
             app = QApplication(sys.argv)
