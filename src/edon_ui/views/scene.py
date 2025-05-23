@@ -150,9 +150,6 @@ class GraphicsScene(QGraphicsScene):
         super().addItem(self.empty_scene_text)
         self.empty_scene_text.setVisible(False)
 
-        # self.node_items: list[NodeItem] = []
-        # self.edge_items: list[EdgeItem] = []
-
         self._temp_edge: DraggingEdgeItem | None = None
         self._currently_highlighted_target_socket: SocketLinkItem | None = None
         self._cached_drag_valid_targets: set[SocketAddress] | None = None  # Cache for valid drop targets during drag
