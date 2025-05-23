@@ -43,17 +43,24 @@ Comprehensive type hinting is mandatory to improve code clarity and enable stati
 
 ## 5. Docstrings
 
-All public modules, functions, classes, and methods MUST have a docstring. Docstrings MUST follow the Google Python Style Guide format.
+All public modules, functions, classes, and methods MUST have a docstring.
 
 -   **Module Docstrings**: Each module MUST have a module docstring describing its purpose and contents.
 -   **Structure**:
     -   A concise summary line (one line only), followed by a blank line, then a more detailed explanation if needed.
     -   The summary line should not merely repeat the function/method signature.
+    -   Do not include Args/Returns/Raises information, that should be clear from the typing and code.
 -   **Function/Method Docstrings**:
     -   **Summary**: Brief overview of behavior.
 -   **Class Docstrings**:
     -   **Summary**: Brief overview of the class's purpose.
     -   If the class is intended to be subclassed and has an additional interface for subclasses, this interface should be listed separately.
+
+- Where docstring is NOT necessary:
+    -   class __init__
+    -   @property or other short functions where the purpose is clear from the name.
+    -   private methods/functions do not require docstrings, focus on inline comments if elaboration is necessary.
+    -   Try to reduce direct references to classes and functions in docstrings, only include them where necessary. 
 
 ## 6. Comments (Inline)
 
