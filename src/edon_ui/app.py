@@ -30,9 +30,9 @@ def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, messag
     """Redirects Qt log messages to the loguru-based application logger.
 
     Args:
-        msg_type: Type of the Qt message (e.g., debug, warning, critical).
-        context: Context information of the message (file, line, function, category).
-        message: Actual log message content.
+        msg_type: The type of the Qt message.
+        context: The context information of the message.
+        message: The actual log message content.
     """
     level = {
         QtMsgType.QtDebugMsg: "DEBUG",
@@ -69,9 +69,9 @@ class EdonApplication:
         command system, and the graph controller.
 
         Args:
-            log_level: The logging level (e.g., "DEBUG", "INFO").
-            node_registry: A dictionary mapping node type string identifiers to their
-                corresponding `EntityNode` subclasses. If None, an empty registry is used.
+            log_level: The logging level to use for the application.
+            node_registry: A mapping from node type string identifiers to their
+                corresponding `EntityNode` subclasses. If `None`, an empty registry is used.
         """
         # Initialize logging as the first step to capture all subsequent initialization messages.
         self._setup_logging(log_level)
@@ -103,38 +103,33 @@ class EdonApplication:
 
     @property
     def entity_graph(self) -> EntityGraph:
-        """The core data model representing nodes and links.
-        
-        When set, the graph controller is updated to reflect the new graph in the UI.
-        """
+        """The core data model representing nodes and links."""
         return self._entity_graph
 
     @entity_graph.setter
     def entity_graph(self, value: EntityGraph) -> None:
         """Sets the core data model for the graph.
 
-        Also triggers an update of the graph controller and associated UI components.
+        Setting this property re-initializes the graph controller to reflect
+        the new graph in the UI.
         """
         self._entity_graph = value
         self._update_graph_system()
 
     @property
     def node_registry(self) -> dict[str, type[EntityNode]]:
-        """Registry mapping node type string identifiers to `EntityNode` subclasses.
-        
-        When set, the graph controller is updated to use the new node registry.
-        """
+        """Registry mapping node type string identifiers to `EntityNode` subclasses."""
         return self._node_registry
 
     def _update_graph_system(self) -> GraphController:
         """Initializes or re-initializes the graph controller.
 
         Creates a new `GraphController`, linking the application's entity graph
-        and node registry to the UI's graphics scene. This is called during setup
-        or when the graph/registry changes.
+        and node registry to the UI's graphics scene. This is typically called
+        during application setup or when the entity graph or node registry is replaced.
 
         Returns:
-            The configured `GraphController` instance.
+            The newly created and configured `GraphController` instance.
         """
         # Create graph controller and connect it to the scene, the GraphController serves as
         # the bridge between the entity graph model and the UI. It handles synchronization
@@ -156,7 +151,8 @@ class EdonApplication:
     def node_registry(self, value: dict[str, type[EntityNode]]) -> None:
         """Sets the registry for mapping node type identifiers to their classes.
 
-        Also triggers an update of the graph controller and associated UI components.
+        Setting this property re-initializes the graph controller to use the
+        new node registry.
         """
         self._node_registry = value
         self._update_graph_system()
@@ -210,7 +206,7 @@ class EdonApplication:
         """Shows the main window and starts the Qt application event loop.
 
         Returns:
-            Exit code from the application.
+            The exit code from the application's event loop.
         """
         logger.info("Running EdonApplication...")
         # Populate the graphics scene from the entity graph. This is done here to ensure
