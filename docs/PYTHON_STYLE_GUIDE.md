@@ -50,17 +50,20 @@ All public modules, functions, classes, and methods MUST have a docstring.
     -   A concise summary line (one line only), followed by a blank line, then a more detailed explanation if needed.
     -   The summary line should not merely repeat the function/method signature.
     -   DO NOT include Args/Returns/Raises or other direct attributes. Focus on why the function exists and what it tries to accomplish.
+    -   **Content Adherence**: All present docstrings will be evaluated to ensure their content aligns with these guidelines, focusing on clarity, purpose, and avoidance of redundancy, not just their existence.
 -   **Function/Method Docstrings**:
-    -   **Summary**: Brief overview of behavior.
-    -   do *not* repeat type information within the docstring.
-    -   **Conciseness:**: For simple functions or methods (e.g., getters) where the return value and its type are obvious from the signature and the summary line, docstring may be omitted if it would only reiterate this information.
+    -   **Purpose and Behavior**: The docstring MUST clearly explain the function/method's purpose (the "why") and its high-level behavior (the "what"). It should not merely rephrase the function name or its parameters.
+    -   **Avoid Redundancy**: Do *not* repeat type information from the signature. The summary line should not be a simple restatement of the signature.
+    -   **Content-Based Necessity (Conciseness)**: A docstring MAY be omitted *only if* its content would solely reiterate information already obvious from a well-chosen name and a clear type signature (e.g., simple getters like `def get_foo(self) -> Foo: return self._foo`). If a docstring is present, its content will be evaluated for adherence to these guidelines; a redundant docstring should be removed.
 -   **Class Docstrings**:
     -   **Summary**: The summary should provide a clear, high-level understanding of the class's role and responsibilities. Avoid including extensive lists of public attributes or methods if these are self-documenting through their own names and docstrings. Detailed examples of usage are often better placed in module-level docstrings or separate usage documentation unless they are very concise and critical to understanding the class's primary purpose.
     -   If the class is intended to be subclassed and has an additional interface for subclasses, this interface should be listed separately.
 -   **`__init__` Methods should not have docstring**
 - Where docstring is NOT necessary:
-    -   @property or other short functions where the purpose is clear from the name *and the getter docstring guideline above is met*.
-        - if a property is already documented, remove the documentation unless the logic is complex.
+    -   `@property` accessors (getter, setter, deleter):
+        -   A docstring for a property accessor (e.g., the getter) MAY be omitted if its logic is trivial (e.g., direct attribute return `return self._foo`) AND its purpose is clear from the property's name and type hint.
+        -   If an accessor's logic is non-trivial (e.g., involves computation, side effects, lazy initialization), it MUST have a docstring explaining this logic and its purpose.
+        -   If a docstring is present for a simple accessor, it will be evaluated for redundancy; if it only reiterates the obvious, it should be removed.
     -   private methods/functions do not require docstrings, focus on inline comments if elaboration is necessary. *However, if a private method is complex or its purpose is not immediately obvious from its name and context, a docstring is encouraged.*
     -   Try to reduce direct references to classes and functions in docstrings, only include them where necessary.
 
