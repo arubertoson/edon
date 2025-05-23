@@ -43,10 +43,10 @@ def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, messag
     }.get(msg_type, "INFO")
 
     def _populate_context() -> str:
-        file_info = context.file() or "unknown_file"
-        line_info = context.line() if context.line() is not None else 0
-        func_info = context.function() or "unknown_function"
-        category_info = context.category() or "unknown_category"
+        file_info = context.file() or "unknown_file"  # type: ignore
+        line_info = context.line() if context.line() is not None else 0  # type: ignore
+        func_info = context.function() or "unknown_function"  # type: ignore
+        category_info = context.category() or "unknown_category"  # type: ignore
 
         return f"[{category_info}] ({file_info}:{line_info}, {func_info})"
 

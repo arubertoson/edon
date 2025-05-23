@@ -60,6 +60,7 @@ All public modules, functions, classes, and methods MUST have a docstring.
 -   **`__init__` Methods should not have docstring**
 - Where docstring is NOT necessary:
     -   @property or other short functions where the purpose is clear from the name *and the getter docstring guideline above is met*.
+        - if a property is already documented, remove the documentation unless the logic is complex.
     -   private methods/functions do not require docstrings, focus on inline comments if elaboration is necessary. *However, if a private method is complex or its purpose is not immediately obvious from its name and context, a docstring is encouraged.*
     -   Try to reduce direct references to classes and functions in docstrings, only include them where necessary.
 
