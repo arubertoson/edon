@@ -27,12 +27,12 @@ from edon_ui import theme
 
 
 def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, message: str) -> None:
-    """Redirects Qt log messages to the loguru-based application logger, including context.
+    """Redirects Qt log messages to the loguru-based application logger.
 
     Args:
-        msg_type: The type of the Qt message (e.g., debug, warning, critical).
-        context: The context information of the message (file, line, function, category).
-        message: The actual log message content.
+        msg_type: Type of the Qt message (e.g., debug, warning, critical).
+        context: Context information of the message (file, line, function, category).
+        message: Actual log message content.
     """
     level = {
         QtMsgType.QtDebugMsg: "DEBUG",
@@ -57,34 +57,21 @@ def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, messag
 class EdonApplication:
     """Main application class for the Edon Node Editor UI.
 
-    This class provides a complete application environment for the Edon Node Editor,
-    including command system, UI components, and graph management.
-
-    Public API:
-        - main_window: The main application window (QMainWindow)
-        - command_registry: Registry for all commands (CommandRegistry)
-        - key_mapping: Mapping between key sequences and commands (KeyMapping)
-        - entity_graph: The underlying graph data model (EntityGraph)
-        - node_registry: Registry mapping node type hints to node classes
-        - run(): Start the application event loop
-
-    Example:
-        app = EdonApplication()
-        # Register custom commands
-        app.command_registry.register(my_custom_command)
-        # Set up a custom graph
-        app.entity_graph = my_graph # Assign to property
-        app.node_registry = my_node_registry # Assign to property
-        # Start the application
-        app.run()
+    This class encapsulates the Qt application, main window, command system,
+    and graph management, providing a primary entry point for the Edon UI.
+    It orchestrates the core components and manages their lifecycle.
     """
 
     def __init__(self, log_level: str = "DEBUG", node_registry: dict[str, type[EntityNode]] | None = None) -> None:
-        """Initialize the Edon application with all required components.
+        """Initializes the Edon application.
+
+        Sets up logging, Qt application, UI components (main window, graphics scene/view),
+        command system, and the graph controller.
 
         Args:
-            log_level: The log level to use for logging.
-            node_registry: Optional dictionary mapping node type hints to node classes.
+            log_level: The logging level (e.g., "DEBUG", "INFO").
+            node_registry: A dictionary mapping node type string identifiers to their
+                corresponding `EntityNode` subclasses. If None, an empty registry is used.
         """
         # Initialize logging as the first step to capture all subsequent initialization messages.
         self._setup_logging(log_level)
@@ -116,38 +103,38 @@ class EdonApplication:
 
     @property
     def entity_graph(self) -> EntityGraph:
-        """EntityGraph: The underlying graph data model.
+        """The core data model representing nodes and links.
         
-        Setting this property also re-initializes the graph controller
-        to reflect the new graph in the UI.
+        When set, the graph controller is updated to reflect the new graph in the UI.
         """
         return self._entity_graph
 
     @entity_graph.setter
     def entity_graph(self, value: EntityGraph) -> None:
-        """Sets the entity graph and updates dependent UI components."""
+        """Sets the core data model for the graph.
+
+        Also triggers an update of the graph controller and associated UI components.
+        """
         self._entity_graph = value
         self._update_graph_system()
 
     @property
     def node_registry(self) -> dict[str, type[EntityNode]]:
-        """dict[str, type[EntityNode]]: Registry mapping node type hints to node classes.
+        """Registry mapping node type string identifiers to `EntityNode` subclasses.
         
-        Setting this property also re-initializes the graph controller
-        to use the new node registry.
+        When set, the graph controller is updated to use the new node registry.
         """
         return self._node_registry
 
     def _update_graph_system(self) -> GraphController:
         """Initializes or re-initializes the graph controller.
 
-        This method creates a new GraphController instance, connecting the
-        application's entity graph and node registry to the graphics scene.
-        It's typically called during application setup or when the entity graph
-        or node registry is replaced.
+        Creates a new `GraphController`, linking the application's entity graph
+        and node registry to the UI's graphics scene. This is called during setup
+        or when the graph/registry changes.
 
         Returns:
-            The newly created and configured GraphController instance.
+            The configured `GraphController` instance.
         """
         # Create graph controller and connect it to the scene, the GraphController serves as
         # the bridge between the entity graph model and the UI. It handles synchronization
@@ -167,7 +154,10 @@ class EdonApplication:
 
     @node_registry.setter
     def node_registry(self, value: dict[str, type[EntityNode]]) -> None:
-        """Sets the node registry and updates dependent UI components."""
+        """Sets the registry for mapping node type identifiers to their classes.
+
+        Also triggers an update of the graph controller and associated UI components.
+        """
         self._node_registry = value
         self._update_graph_system()
 
@@ -185,13 +175,9 @@ class EdonApplication:
         logger.debug("Logging system initialized")
 
     def _create_qt_application(self) -> QApplication:
-        """Creates or retrieves the global QApplication instance.
+        """Creates or retrieves the global `QApplication` instance.
 
-        Ensures that there is a single QApplication instance for the application.
-        If one does not exist, it creates it using sys.argv.
-
-        Returns:
-            The QApplication instance.
+        Ensures a single `QApplication` instance exists, creating one if necessary.
         """
         app = QApplication.instance()
         if not app:
@@ -221,10 +207,10 @@ class EdonApplication:
         self._graphics_view.key_processor = self._key_processor
 
     def run(self) -> int:
-        """Show the main window and start the application event loop.
+        """Shows the main window and starts the Qt application event loop.
 
         Returns:
-            The exit code from the application.
+            Exit code from the application.
         """
         logger.info("Running EdonApplication...")
         # Populate the graphics scene from the entity graph. This is done here to ensure
