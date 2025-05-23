@@ -20,9 +20,8 @@ from edon.socket import EntitySocket, SocketRole
 class SocketAddress:
     """Represents a unique socket endpoint within the graph, identifying an entity socket.
 
-    Attributes:
-        node_id: The unique identifier of the parent node.
-        socket_name: The name of the socket on the node (entity socket name).
+    It is defined by `node_id`, the unique identifier of its parent node, and
+    `socket_name`, the name of the socket on that node.
     """
 
     node_id: str
@@ -33,9 +32,8 @@ class SocketAddress:
 class EdgeKey:
     """Uniquely identifies an edge by its source and target socket addresses.
 
-    Attributes:
-        source: The SocketAddress of the source socket.
-        target: The SocketAddress of the target socket.
+    It is defined by its `source` and `target` `SocketAddress` instances,
+    representing the two endpoints of the connection.
     """
 
     source: SocketAddress
@@ -52,34 +50,26 @@ class EntityGraph:
     managing their links and providing operations for graph manipulation and
     inspection.
 
-    Attributes:
-        nodes: A dictionary mapping node IDs (str) to EntityNode instances.
+    It primarily consists of `nodes`, a mapping from node IDs to `EntityNode`
+    instances, which forms the core storage of the graph's structure.
     """
 
     nodes: NodeMap = field(default_factory=dict)
 
     def add_node(self, node: EntityNode):
-        """Adds a node to the graph.
+        """Adds a given `EntityNode` instance to the graph.
 
-        Args:
-            node: The EntityNode instance to add.
-
-        Raises:
-            TypeError: If the provided object is not an instance of EntityNode.
-            ValueError: If a node with the same ID already exists in the graph.
+        If a node with the same ID already exists, a `ValueError` is raised.
         """
         if node.id in self.nodes:
             raise ValueError(f"Node with ID '{node.id}' already exists in the graph.")
         self.nodes[node.id] = node
 
     def remove_node(self, node_id: str):
-        """
-        Removes a node from the graph and unlink all its sockets.
+        """Removes a node, identified by `node_id`, from the graph.
 
-        If the node_id is not found, the method returns silently.
-
-        Args:
-            node_id: The unique identifier of the node to remove.
+        All links connected to the sockets of the removed node are also unlinked.
+        If the `node_id` is not found, the method completes silently.
         """
         node_to_remove = self.nodes.pop(node_id, None)
         if not node_to_remove:
@@ -95,30 +85,23 @@ class EntityGraph:
                 sock_to_unlink.unlink_from(other_sock)
 
     def get_node(self, node_id: str) -> EntityNode | None:
-        """Retrieves a node by its ID.
+        """Retrieves an `EntityNode` from the graph by its `node_id`.
 
-        Args:
-            node_id: The unique identifier of the node to retrieve.
-
-        Returns:
-            The EntityNode instance if found, otherwise None.
+        Returns the `EntityNode` instance if found, otherwise `None`.
         """
         return self.nodes.get(node_id)
 
     def _has_path(self, start_node_id: str, end_node_id: str) -> bool:
-        """
-        Checks if a path exists from a start node to an end node.
+        """Determines if a directed path exists from a start node to an end node.
 
-        This method uses a depth-first search (DFS) algorithm to traverse the graph
-        by following source socket links. It's primarily used for cycle
-        detection before creating new links.
+        This check is crucial for cycle detection before establishing new links
+        between nodes. It employs a depth-first search (DFS) algorithm, traversing
+        the graph by following established links from source sockets to target sockets.
+        The search proceeds from the node specified by `start_node_id` towards
+        the node specified by `end_node_id`.
 
-        Args:
-            start_node_id: The ID of the node to start the path search from.
-            end_node_id: The ID of the target node.
-
-        Returns:
-            True if `end_node_id` is reachable from `start_node_id`, False otherwise.
+        Returns `True` if `end_node_id` is reachable from `start_node_id` following
+        the directed edges of the graph, and `False` otherwise.
         """
         visited = set()
         stack = [start_node_id]
@@ -143,22 +126,25 @@ class EntityGraph:
     def link_sockets(
         self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
     ) -> tuple[bool, SocketLinkErrorReason | GraphObjectErrorReason | None]:
-        """
-        Links an source socket of one node to an target socket of another node.
+        """Establishes a directed link from a source socket to a target socket.
 
-        Before attempting the link, this method validates the existence of nodes
-        and sockets, checks their directions, and performs cycle detection to prevent
-        circular dependencies in the graph.
+        The connection is made between the socket identified by `source_socket_addr`
+        (which must be a source/output socket) and the socket identified by
+        `target_socket_addr` (which must be a target/input socket).
 
-        Args:
-            source_socket_addr: The SocketAddress for the source socket.
-            target_socket_addr: The SocketAddress for the target socket.
+        Before linking, this method performs several validations:
+        -   Ensures both specified nodes and their respective sockets exist.
+        -   Verifies that the socket directions are compatible (source to target).
+        -   Checks for type compatibility between the sockets via `EntitySocket.link_to`.
+        -   Performs cycle detection to prevent circular dependencies within the graph.
+            A link is disallowed if it would create a path from `target_socket_addr.node_id`
+            back to `source_socket_addr.node_id`.
 
-        Returns:
-            A tuple: (success: bool, reason: Enum | None).
-            If successful, `success` is True and `reason` is None.
-            If unsuccessful, `success` is False and `reason` is an enum value from
-            SocketLinkErrorReason or GraphObjectErrorReason indicating the failure.
+        Returns a tuple `(success, reason)`. If `success` is `True`, the link
+        was successfully created, and `reason` is `None`. If `success` is `False`,
+        the link was not created, and `reason` will be an enum value from
+        `SocketLinkErrorReason` or `GraphObjectErrorReason` detailing the cause
+        of failure.
         """
         source_node_id = source_socket_addr.node_id
         source_socket_name = source_socket_addr.socket_name
@@ -193,21 +179,18 @@ class EntityGraph:
     def unlink_sockets(
         self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
     ) -> tuple[bool, SocketUnlinkErrorReason | GraphObjectErrorReason | None]:
-        """
-        Unlinks a specific link between an output socket and an input socket.
+        """Removes a specific link between a source socket and a target socket.
 
-        This method validates the existence of the specified nodes and sockets before
-        attempting the unlinking.
+        The link to be removed is identified by the `source_socket_addr` (the source/output
+        end of the link) and `target_socket_addr` (the target/input end of the link).
+        This method validates the existence of the specified nodes and sockets
+        before attempting to remove the link.
 
-        Args:
-            source_socket_addr: The SocketAddress for the source socket.
-            target_socket_addr: The SocketAddress for the target socket.
-
-        Returns:
-            A tuple: (success: bool, reason: Enum | None).
-            If successful, `success` is True and `reason` is None.
-            If unsuccessful, `success` is False and `reason` is an enum value from
-            SocketUnlinkErrorReason or GraphObjectErrorReason indicating the failure.
+        Returns a tuple `(success, reason)`. If `success` is `True`, the link
+        was successfully removed, and `reason` is `None`. If `success` is `False`,
+        the link was not removed (e.g., if it didn't exist or nodes/sockets
+        were not found), and `reason` will be an enum value from
+        `SocketUnlinkErrorReason` or `GraphObjectErrorReason` detailing the cause.
         """
         source_node_id = source_socket_addr.node_id
         source_socket_name = source_socket_addr.socket_name
@@ -235,23 +218,26 @@ class EntityGraph:
     def can_form_edge(
         self, prospective_source_addr: SocketAddress, prospective_target_addr: SocketAddress
     ) -> tuple[bool, SocketLinkErrorReason | GraphObjectErrorReason | None]:
-        """
-        Checks if a new edge can be formed between a prospective source and target socket.
+        """Determines if a new directed edge can be validly formed.
 
-        This method validates:
-        1. Existence of nodes and sockets.
-        2. Correct socket directions (source must be OUTPUT, target must be INPUT).
-        3. Compatibility between sockets (delegated to `EntitySocket.can_link_to`).
-        4. Prevention of cycles in the graph.
+        This check is performed between a `prospective_source_addr` (an output socket)
+        and a `prospective_target_addr` (an input socket).
 
-        Args:
-            prospective_source_addr: The SocketAddress for the prospective source (output) socket.
-            prospective_target_addr: The SocketAddress for the prospective target (input) socket.
+        The validation process includes:
+        -   Ensuring the existence of both nodes and their respective sockets.
+        -   Verifying that the `prospective_source_addr` indeed refers to a source/output
+            socket and `prospective_target_addr` to a target/input socket.
+        -   Assessing fundamental compatibility between the two sockets (e.g., data type,
+            role, preventing self-connection), typically delegated to the target socket's
+            `can_link_to` method.
+        -   Preventing the formation of cycles: an edge from the source node to the
+            target node is disallowed if a path already exists from the target node
+            back to the source node.
 
-        Returns:
-            A tuple: (can_form: bool, reason: Enum | None).
-            If `can_form` is True, the edge is valid and `reason` is None.
-            If `can_form` is False, `reason` indicates why (from SocketLinkErrorReason or GraphObjectErrorReason).
+        Returns a tuple `(can_form, reason)`. If `can_form` is `True`, a valid
+        edge can be created, and `reason` is `None`. If `can_form` is `False`,
+        `reason` will be an enum value from `SocketLinkErrorReason` or
+        `GraphObjectErrorReason` explaining why the edge cannot be formed.
         """
         source_node = self.get_node(prospective_source_addr.node_id)
         if not source_node:
