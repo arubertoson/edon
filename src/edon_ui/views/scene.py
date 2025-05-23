@@ -362,6 +362,7 @@ class GraphicsScene(QGraphicsScene):
 
     def start_edge_drag(self, clicked_socket_address: SocketAddress, drag_start_scene_pos: QPointF):
         """Initiates a new edge drag.
+
         If an existing edge is connected to a clicked input socket, that edge is "lifted"
         by creating a new temporary drag from its original source.
         Otherwise, a new temporary edge is created from the clicked socket.
