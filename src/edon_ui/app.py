@@ -29,10 +29,10 @@ from edon_ui import theme
 def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, message: str) -> None:
     """Redirects Qt log messages to the loguru-based application logger.
 
-    Args:
-        msg_type: The type of the Qt message.
-        context: The context information of the message.
-        message: The actual log message content.
+    This function processes log messages originating from the Qt framework,
+    mapping them to appropriate severity levels and forwarding them to the
+    application's central loguru logger. It includes context like source file,
+    line number, and function from the Qt message.
     """
     level = {
         QtMsgType.QtDebugMsg: "DEBUG",
@@ -114,12 +114,11 @@ class EdonApplication:
     def _update_graph_system(self) -> GraphController:
         """Initializes or re-initializes the graph controller.
 
-        Creates a new `GraphController`, linking the application's entity graph
-        and node registry to the UI's graphics scene. This is typically called
-        during application setup or when the entity graph or node registry is replaced.
-
-        Returns:
-            The newly created and configured `GraphController` instance.
+        This method ensures the UI's graph representation is synchronized with the
+        application's core data. It creates and configures a `GraphController`
+        instance, connecting the current `entity_graph` and `node_registry`
+        to the `GraphicsScene`. This is typically invoked during application
+        setup or when the underlying graph data or node types change.
         """
         # Create graph controller and connect it to the scene, the GraphController serves as
         # the bridge between the entity graph model and the UI. It handles synchronization
@@ -170,11 +169,11 @@ class EdonApplication:
     def _setup_command_system(self) -> None:
         """Initializes the application's command system.
 
-        This involves:
-        - Registering all built-in command definitions.
-        - Creating key mappings from the default shortcuts of these commands.
-        - Instantiating the KeyProcessor and linking it to the graphics view
-          to handle user input and trigger commands.
+        This method configures the infrastructure for handling user commands.
+        It populates the `CommandRegistry` with all available command definitions,
+        establishes default `KeyMapping` based on these commands, and sets up
+        the `KeyProcessor` to interpret input from the `GraphicsView` and
+        dispatch corresponding actions.
         """
         logger.debug("Setting up command system... CommandRegistry, KeyMapping and KeyProcessor")
 
@@ -192,8 +191,10 @@ class EdonApplication:
     def run(self) -> int:
         """Shows the main window and starts the Qt application event loop.
 
-        Returns:
-            The exit code from the application's event loop.
+        This method is the primary entry point to launch and operate the Edon UI.
+        It first ensures the visual graph is synchronized with the underlying data,
+        then displays the `main_window`, and finally initiates the Qt application's
+        event processing. The application's exit code is returned upon termination.
         """
         logger.info("Running EdonApplication...")
         # Populate the graphics scene from the entity graph. This is done here to ensure
