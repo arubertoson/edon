@@ -49,9 +49,10 @@ All public modules, functions, classes, and methods MUST have a docstring.
 -   **Structure**:
     -   A concise summary line (one line only), followed by a blank line, then a more detailed explanation if needed.
     -   The summary line should not merely repeat the function/method signature.
+    -   DO NOT include Args/Returns/Raises or other direct attributes. Focus on why the function exists and what it tries to accomplish.
 -   **Function/Method Docstrings**:
     -   **Summary**: Brief overview of behavior.
-    -   **Interaction with Type Hints**: When type hints are present in the function/method signature, do *not* repeat type information within the docstring.
+    -   do *not* repeat type information within the docstring.
     -   **Conciseness:**: For simple functions or methods (e.g., getters) where the return value and its type are obvious from the signature and the summary line, docstring may be omitted if it would only reiterate this information.
 -   **Class Docstrings**:
     -   **Summary**: The summary should provide a clear, high-level understanding of the class's role and responsibilities. Avoid including extensive lists of public attributes or methods if these are self-documenting through their own names and docstrings. Detailed examples of usage are often better placed in module-level docstrings or separate usage documentation unless they are very concise and critical to understanding the class's primary purpose.
