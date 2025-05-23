@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from edon.socket import EntitySocket, SocketDirection, SocketType
+from edon.socket import EntitySocket, SocketRole, SocketType
 
 
 @dataclass
@@ -161,14 +161,14 @@ class EntityNode:
         # --- Create Sockets ---
         # Iterate using the final resolved definitions determined above.
         for sock_def in target_defs:
-            self._add_socket_internal(sock_def, SocketDirection.TARGET)
+            self._add_socket_internal(sock_def, SocketRole.TARGET)
         for sock_def in source_defs:
-            self._add_socket_internal(sock_def, SocketDirection.SOURCE)
+            self._add_socket_internal(sock_def, SocketRole.SOURCE)
 
     def _add_socket_internal(
         self,
         socket_def: SocketDef,
-        direction: SocketDirection,
+        direction: SocketRole,
     ) -> EntitySocket:
         """
         Internal method to create and add a socket to the node.
@@ -195,7 +195,7 @@ class EntityNode:
             type_info=socket_def.socket_type,
             value=socket_def.default,
         )
-        if direction == SocketDirection.SOURCE:
+        if direction == SocketRole.SOURCE:
             self.source_sockets[socket_def.name] = socket_instance
         else:
             self.target_sockets[socket_def.name] = socket_instance

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from .errors import SocketLinkErrorReason, SocketUnlinkErrorReason
 
 
-class SocketDirection(Enum):
+class SocketRole(Enum):
     """Defines the direction of a socket, either Input or Output."""
 
     SOURCE = 1
@@ -68,7 +68,7 @@ class EntitySocket:
     """
 
     name: str
-    direction: SocketDirection
+    direction: SocketRole
     node: "EntityNode"
     type_info: SocketType
     links: list["EntitySocket"] = field(default_factory=list)
@@ -85,7 +85,7 @@ class EntitySocket:
         if not isinstance(self.name, str) or not self.name.strip():
             logger.error("Socket __post_init__: Socket name must be a non-empty string.")
             raise ValueError("Socket name must be a non-empty string.")
-        if not isinstance(self.direction, SocketDirection):
+        if not isinstance(self.direction, SocketRole):
             logger.error("Socket __post_init__: Socket direction must be a SocketDirection enum member.")
             raise ValueError("Socket direction must be a SocketDirection enum member.")
         if not isinstance(self.type_info, SocketType):
@@ -136,8 +136,8 @@ class EntitySocket:
             return False, SocketLinkErrorReason.SAME_PARENT_NODE
 
         # Determine which socket is output and which is input for type checking
-        source = self if self.direction == SocketDirection.TARGET else target
-        target = target if self.direction == SocketDirection.TARGET else self
+        source = self if self.direction == SocketRole.TARGET else target
+        target = target if self.direction == SocketRole.TARGET else self
 
         source_py_type = source.data_type
         target_py_type = target.data_type

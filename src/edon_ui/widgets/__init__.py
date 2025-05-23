@@ -5,10 +5,10 @@ of node sockets, including graphical items, adaptors for Qt widgets, specialized
 editor widgets, and factories to create these components.
 """
 
-from edon_ui.items.socket_components.gfx import SocketLabel, fit_font_to_height
-from edon_ui.items.socket_components.adaptors import SocketTextAdaptor, SocketWidgetAdaptor
-from edon_ui.items.socket_components.editors import FocusSelectLineEdit, ExpandLineEdit
-from edon_ui.items.socket_components.factories import (
+from edon_ui.widgets.gfx import SocketLabel, fit_font_to_height
+from edon_ui.widgets.adaptors import SocketTextAdaptor, SocketWidgetAdaptor
+from edon_ui.widgets.editors import FocusSelectLineEdit, ExpandLineEdit
+from edon_ui.widgets.factories import (
     SOCKET_WIDGET_COMPONENT_FACTORIES,
     SocketWidgetComponentFactory,
     create_integer_socket_component,

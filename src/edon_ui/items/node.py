@@ -57,11 +57,11 @@ class NodeItem(QGraphicsObject):
         self.title_text_item.setDefaultTextColor(theme.NODE_TITLE_TEXT)
         self.title_text_item.setFont(theme.FONT_NODE_TITLE)
 
-        self._target_sockets = target_sockets or []
-        self._source_sockets = source_sockets or []
-        for row in self._target_sockets + self._source_sockets:
+        self.target_sockets = target_sockets or []
+        self.source_sockets = source_sockets or []
+        for row in self.target_sockets + self.source_sockets:
             row.setParentItem(self)
-            row.layoutChanged.connect(self._on_socket_row_layout_changed, Qt.QueuedConnection)
+            row.layoutChanged.connect(self._on_socket_row_layout_changed)
 
         self._width: float = 0
         self._height: float = 0
@@ -71,9 +71,9 @@ class NodeItem(QGraphicsObject):
     def _calculate_dynamic_height(self) -> float:
         total_socket_rows_height = theme.NODE_TITLE_HEIGHT + theme.SOCKET_VERTICAL_CONTENT_MARGIN
 
-        for idx, row in enumerate(self._target_sockets + self._source_sockets):
+        for idx, row in enumerate(self.target_sockets + self.source_sockets):
             total_socket_rows_height += row.boundingRect().height()
-            if idx < len(self._target_sockets + self._source_sockets) - 1:
+            if idx < len(self.target_sockets + self.source_sockets) - 1:
                 total_socket_rows_height += theme.SOCKET_VERTICAL_ITEM_PADDING
 
         total_socket_rows_height += theme.SOCKET_VERTICAL_CONTENT_MARGIN
@@ -83,7 +83,7 @@ class NodeItem(QGraphicsObject):
 
     def _calculate_dynamic_width(self) -> float:
         max_row_w = 0
-        all_rows = self._target_sockets + self._source_sockets
+        all_rows = self.target_sockets + self.source_sockets
         if all_rows:
             max_row_w = max(row.boundingRect().width() for row in all_rows)
 
@@ -107,19 +107,19 @@ class NodeItem(QGraphicsObject):
         content_area_width_for_rows = self._width
 
         # Source sockets
-        for row_item in self._source_sockets:
+        for row_item in self.source_sockets:
             row_item.update_layout(content_area_width_for_rows)
             # Position the row considering the node's left padding
             row_item.setPos(0, current_row_top_y)
             current_row_top_y += row_item.boundingRect().height() + theme.SOCKET_VERTICAL_ITEM_PADDING
 
         # Target sockets
-        for idx, row_item in enumerate(self._target_sockets):
+        for idx, row_item in enumerate(self.target_sockets):
             row_item.update_layout(content_area_width_for_rows)  # Pass the available width
             # Position the row considering the node's left padding
             row_item.setPos(0, current_row_top_y)
             current_row_top_y += row_item.boundingRect().height()
-            if idx < len(self._target_sockets) - 1:
+            if idx < len(self.target_sockets) - 1:
                 current_row_top_y += theme.SOCKET_VERTICAL_ITEM_PADDING
 
     def _on_socket_row_layout_changed(self) -> None:

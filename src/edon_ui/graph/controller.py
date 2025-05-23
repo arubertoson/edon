@@ -13,23 +13,20 @@ TODO:
 
 from collections import defaultdict
 from collections.abc import Mapping, MutableMapping, Sequence
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Type, TypeAlias
 
 from loguru import logger
 from PySide6.QtCore import QPointF
 
-from edon.graph import EdgeKey, EntityGraph, SocketAddress
+from edon.graph import EdgeKey, EntityGraph, SocketAddress, SocketRole
 from edon.node import EntityNode
-from edon_ui import theme
 from edon_ui.items.edge import EdgeItem
-from edon_ui.items.factory import create_edge_item, create_node_item
+from edon_ui.items.factory import create_node_item
 from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketItem
 
 if TYPE_CHECKING:
     from edon_ui.views.scene import GraphicsScene
-    from edon_ui.items.socket import SocketCircleItem
 
 
 NodeItemMap: TypeAlias = MutableMapping[str, NodeItem]
@@ -74,8 +71,7 @@ class GraphController:
         self.socket_addr_edge_key_map: SocketEdgeKeyMap = defaultdict(set)
 
         logger.info(
-            f"GraphController initialized with entity graph: {self.entity_graph} "
-            f"and graphics scene: {self.ui_scene}"
+            f"GraphController initialized with entity graph: {self.entity_graph} and graphics scene: {self.ui_scene}"
         )
         logger.debug(f"Node type registry: {self.node_registry}")
 
@@ -85,7 +81,9 @@ class GraphController:
         scene_position: QPointF,
         **node_specific_kwargs,
     ) -> NodeItem | None:
-        """Create a new entity node and its corresponding UI node, registering both with the controller."""
+        """
+        Create a new entity node and its corresponding UI node, registering both with the controller.
+        """
         node_type = node_entity_class.__name__
         logger.info(f"request_add_node of type {node_type} at {scene_position}")
 
@@ -99,7 +97,7 @@ class GraphController:
 
             # Populate the map using the sockets from the resulting NodeItem
             for socket_rows in new_ui_node.source_sockets + new_ui_node.target_sockets:
-                self.socket_addr_row_map[socket_rows.socket_address]
+                self.socket_addr_row_item_map[socket_rows.socket_address]
 
             logger.info(
                 f"Successfully created and added node: {new_entity_node.name} (Entity ID: {new_entity_node.id}, UI: {new_ui_node})"
@@ -111,55 +109,36 @@ class GraphController:
 
     def request_add_edge(self, edge_key: EdgeKey) -> EdgeItem | None:
         """
-        Handles a request to create a new edge using an EdgeKey.
-        Attempts to connect the entity sockets first. If successful, finds the
-        corresponding UI SocketCircleItems, creates and adds the UI EdgeItem
-        to the scene and internal tracking.
-
-        Args:
-            edge_key: The EdgeKey identifying the source and target logical sockets.
-
-        Returns:
-            The created EdgeItem if successful, otherwise None.
+        Create a new entity edge and its corresponding UI edge, registering both with the controller.
         """
         source_socket_addr = edge_key.source
         target_socket_addr = edge_key.target
 
-        # Look up SocketRowItems using SocketAddress keys directly
-        source_row_item = self.socket_addr_row_map.get(source_socket_addr)
-        target_row_item = self.socket_addr_row_map.get(target_socket_addr)
+        source_socket_item = self.socket_addr_row_item_map.get(source_socket_addr)
+        target_socket_item = self.socket_addr_row_item_map.get(target_socket_addr)
 
-        if not source_row_item or not hasattr(source_row_item, "circle") or source_row_item.circle is None:
-            logger.error(f"Could not find UI source socket circle for {source_socket_addr} from edge key {edge_key}")
-            return None
-        if not target_row_item or not hasattr(target_row_item, "circle") or target_row_item.circle is None:
-            logger.error(f"Could not find UI target socket circle for {target_socket_addr} from edge key {edge_key}")
-            return None
-
-        source_ui_socket = source_row_item.circle
-        target_ui_socket = target_row_item.circle
+        source_ui_socket = source_socket_item.link_item
+        target_ui_socket = target_socket_item.link_item
 
         logger.info(f"GraphController: Requesting to create edge: {edge_key}")
-
-        if edge_key in self.edge_map:  # Check if this exact edge already exists
-            logger.debug(f"  Connection {edge_key} already exists. No new connection created.")
+        if edge_key in self.edge_map:
+            logger.debug(f"Connection {edge_key} already exists. No new connection created.")
             return None
 
-        connection_success, reason = self.entity_graph.link_sockets(source_socket_addr, target_socket_addr)
+        link_success, reason = self.entity_graph.link_sockets(
+            source_socket_addr,
+            target_socket_addr,
+        )
 
-        if connection_success:
-            logger.debug(f"  Entity connection successful for {edge_key}. Creating UI EdgeItem.")
+        if link_success:
+            logger.debug(f"Entity connection successful for {edge_key}. Creating UI EdgeItem.")
 
-            # Pass edge_key to EdgeItem constructor
-            new_edge_item = EdgeItem(source_ui_socket, target_ui_socket.scenePos(), edge_key=edge_key)
-            new_edge_item.set_target_socket(target_ui_socket)
-            new_edge_item.settle_z_value()  # Set to normal Z value for finalized edges
-
+            new_edge_item = EdgeItem(source_ui_socket, target_ui_socket)
             self.ui_scene.add_edge(new_edge_item)
 
             self.edge_map[edge_key] = new_edge_item
-            self.socket_edge_map.setdefault(source_socket_addr, set()).add(edge_key)
-            self.socket_edge_map.setdefault(target_socket_addr, set()).add(edge_key)
+            self.socket_edge_map[source_socket_addr].add(edge_key)
+            self.socket_edge_map[target_socket_addr].add(edge_key)
             logger.debug(f"  UI EdgeItem created and added to scene/map for edge: {edge_key}")
             return new_edge_item
         else:
@@ -246,7 +225,7 @@ class GraphController:
             logger.info(f"GraphController: Edge removal process for {edge_key} complete.")
             return False
 
-    def request_edge_drop_targets(self, source_socket_ui_item: "SocketCircleItem") -> set[SocketAddress]:
+    def request_edge_drop_targets(self, socket_addr: SocketAddress) -> set[SocketAddress]:
         """
         Return a set of SocketAddress objects that are valid drop targets for the given source_socket_ui_item.
         The source_socket_ui_item is the UI representation of the socket being dragged.
@@ -255,29 +234,25 @@ class GraphController:
         """
         valid_targets: set[SocketAddress] = set()
 
-        source_node_id = source_socket_ui_item.node_entity_id
-        source_entity_node = self.entity_graph.get_node(source_node_id)
+        node_id = socket_addr.node_id
+        entity_node = self.entity_graph.get_node(node_id)
 
         # This should never happen, there should always be a source.
-        assert source_entity_node is not None, f"Source node not found for {source_node_id}"
+        assert entity_node is not None, f"Source node not found for {node_id}"
 
-        logger.debug(source_entity_node)
-        logger.debug(source_socket_ui_item.socket_entity_name)
-
-        # Determine if the source_socket_ui_item represents a target or source for entity lookup
-        if source_socket_ui_item.is_input:  # This implies a reverse drag scenario for the source
-            entity_source_socket = source_entity_node.target_sockets.get(source_socket_ui_item.socket_entity_name)
+        socket_item = self.socket_addr_row_item_map[socket_addr]
+        if socket_item.role == SocketRole.TARGET:  # This implies a reverse drag scenario for the source
+            entity_source_socket = entity_node.target_sockets.get(socket_addr.socket_name)
             socket_iter = "source_sockets"
-            logger.debug(f"Source socket is reversed: {source_entity_node.target_sockets}")
+            logger.debug(f"Source socket is reversed: {entity_node.target_sockets}")
+
         else:  # Standard drag: source_socket_ui_item is an output
-            entity_source_socket = source_entity_node.source_sockets.get(source_socket_ui_item.socket_entity_name)
+            entity_source_socket = entity_node.source_sockets.get(socket_addr.socket_name)
             socket_iter = "target_sockets"
-            logger.debug(f"Source socket is normal: {source_entity_node.source_sockets}")
+            logger.debug(f"Source socket is normal: {entity_node.source_sockets}")
 
         # This should never happen, there should always be a source.
-        assert entity_source_socket is not None, (
-            f"Source socket not found for {source_socket_ui_item.socket_entity_name}"
-        )
+        assert entity_source_socket is not None, f"Source socket not found for {socket_item.socket_entity_name}"
 
         # Iterate over all potential entity target sockets (which must be source for a standard drag)
         for target_node in self.entity_graph.nodes.values():
@@ -314,7 +289,8 @@ class GraphController:
             logger.warning(f"Edge {edge_key_to_attempt} already exists. Ignoring connection attempt.")
             return
 
-        if target_socket_addr in self.socket_addr_row_map
+        # if target_socket_addr in self.socket_addr_row_item_map
+
         # Ensure target socket has only one incoming edge.
         # If target_socket_addr has entries in socket_edge_map, iterate them.
         if target_socket_addr in self.socket_edge_map:

@@ -13,7 +13,7 @@ from edon.graph import SocketAddress, SocketRole
 from edon_ui import theme
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.node import NodeItem
-from edon_ui.items.socket import SocketCircleItem, SocketComponent, SocketRowItem
+from edon_ui.items.socket import SocketLinkItem, SocketComponent, SocketItem
 from edon_ui.widgets import (
     SOCKET_WIDGET_COMPONENT_FACTORIES,
     SocketLabel,
@@ -33,10 +33,9 @@ def create_socket_widget_component(
 ) -> SocketComponent | None:
     """
     Constructs a socket widget component for a specified entity socket.
-    
+
     This function utilizes the SOCKET_WIDGET_COMPONENT_FACTORIES to retrieve a factory function
-    that generates a SocketWidgetAdaptor along with its associated QWidget. It also manages
-    the connection of the QWidget's value change signal to the controller for further processing.
+    that generates a SocketWidgetAdaptor along with its associated QWidget.
     """
     type_info = getattr(entity_socket, "type_info", None)
     socket_name = getattr(entity_socket, "name", "")
@@ -57,8 +56,7 @@ def create_socket_widget_component(
 
         return component_adaptor
     else:
-        print(f"Warning: No widget factory found for data_type {type_info} of socket {socket_name}")
-        return None
+        logger.warning(f"Warning: No widget factory found for data_type {type_info} of socket {socket_name}")
 
 
 def create_socket_row(
@@ -66,7 +64,7 @@ def create_socket_row(
     socket_def: "SocketDef",
     node_id: str,
     socket_role: SocketRole,
-) -> SocketRowItem:
+) -> SocketItem:
     """Factory for creating a socket row with the correct composition."""
     linkable: bool = socket_def.linkable
     socket_type: SocketType = socket_def.socket_type.python_type.__name__
@@ -78,7 +76,7 @@ def create_socket_row(
             target_layout_height=theme.SOCKET_ROW_HEIGHT,
         )
     )
-    socket_component = SocketCircleItem(None)
+    socket_component = SocketLinkItem(None)
     widget_component: SocketComponent | None = None
 
     # If not socket role we simply have a label and socket
@@ -92,7 +90,7 @@ def create_socket_row(
                 entity_socket, node_id, None, initial_value=initial_socket_value
             )
 
-    return SocketRowItem(
+    return SocketItem(
         label=label_component,
         socket=socket_component,
         widget=widget_component,
@@ -113,16 +111,11 @@ def create_node_item(
     entity_node: "EntityNode",
     x: float,
     y: float,
-    socket_row_map: dict[SocketAddress, SocketRowItem] | None = None,
 ) -> NodeItem:
-    """
-    Create a NodeItem (UI) from an entity node (data model), including all socket rows.
-    Optionally registers each SocketRowItem in the provided socket_row_map for fast lookup.
-    """
     source_defs = getattr(type(entity_node), "source_socket_definitions", [])
     target_defs = getattr(type(entity_node), "target_socket_definitions", [])
 
-    target_sockets_ui: list[SocketRowItem] = []
+    target_sockets_ui: list[SocketItem] = []
     for entity_socket in entity_node.target_sockets.values():
         row = create_socket_row(
             entity_socket,
@@ -130,13 +123,9 @@ def create_node_item(
             entity_node.id,
             SocketRole.TARGET,
         )
-        # XXX: What is up with the socket_row_map
-        if socket_row_map is not None:
-            socket_addr = SocketAddress(node_id=entity_node.id, socket_name=entity_socket.name)
-            socket_row_map[socket_addr] = row
         target_sockets_ui.append(row)
 
-    source_sockets_ui: list[SocketRowItem] = []
+    source_sockets_ui: list[SocketItem] = []
     for entity_socket in entity_node.source_sockets.values():
         row = create_socket_row(
             entity_socket,
@@ -144,9 +133,6 @@ def create_node_item(
             entity_node.id,
             SocketRole.SOURCE,
         )
-        if socket_row_map is not None:
-            socket_addr = SocketAddress(node_id=entity_node.id, socket_name=entity_socket.name)
-            socket_row_map[socket_addr] = row
         source_sockets_ui.append(row)
 
     return NodeItem(
@@ -159,10 +145,7 @@ def create_node_item(
     )
 
 
-def create_edge_item(source_socket_circle: "SocketCircleItem", target_socket_circle: "SocketCircleItem") -> EdgeItem:
-    """
-    Create an EdgeItem connecting two SocketCircleItems.
-    """
+def create_edge_item(source_socket_circle: "SocketLinkItem", target_socket_circle: "SocketLinkItem") -> EdgeItem:
     edge = EdgeItem(source_socket_circle, target_socket_circle.scenePos())
     edge.set_target_socket(target_socket_circle)
     edge.settle_z_value()

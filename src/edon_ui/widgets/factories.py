@@ -1,7 +1,7 @@
 """Factory functions for creating socket editor components."""
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from loguru import logger
 from PySide6.QtCore import Qt
@@ -9,21 +9,16 @@ from PySide6.QtGui import QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import QGraphicsItem, QLineEdit
 
 from edon.socket import SocketType
-from edon_ui.items.socket_components.adaptors import SocketWidgetAdaptor
-from edon_ui.items.socket_components.editors import ExpandLineEdit, FocusSelectLineEdit, ValueTextEdit
+from edon_ui.widgets.adaptors import SocketWidgetAdaptor
+from edon_ui.widgets.editors import ExpandLineEdit, FocusSelectLineEdit, ValueTextEdit
 
-if TYPE_CHECKING:
-    from edon_ui.graph_controller import GraphController
 
 # Type alias for socket widget component factory functions
-SocketWidgetComponentFactory = Callable[
-    [Any, "GraphController | None", str, str, QGraphicsItem | None], tuple[SocketWidgetAdaptor, QLineEdit]
-]
+SocketWidgetComponentFactory = Callable[[Any, str, str, QGraphicsItem | None], tuple[SocketWidgetAdaptor, QLineEdit]]
 
 
 def create_integer_socket_component(
     initial_value: int | None = 0,
-    controller: "GraphController | None" = None,
     node_id: str = "",
     socket_name: str = "",
     parent_gfx_item: QGraphicsItem | None = None,
@@ -41,17 +36,12 @@ def create_integer_socket_component(
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     line_edit.setText(str(initial_value if initial_value is not None else 0))
 
-    if controller and node_id and socket_name:
-        # Connection logic for controller (e.g., on editingFinished or textChanged)
-        # This is handled by the GraphController when it uses these factories.
-        pass
     adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
     return adaptor, line_edit
 
 
 def create_float_socket_component(
     initial_value: float | None = 0.0,
-    controller: "GraphController | None" = None,
     node_id: str = "",
     socket_name: str = "",
     parent_gfx_item: QGraphicsItem | None = None,
@@ -71,16 +61,12 @@ def create_float_socket_component(
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     line_edit.setText(str(initial_value if initial_value is not None else 0.0))
 
-    if controller and node_id and socket_name:
-        pass  # Connection logic handled by GraphController
-
     adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
     return adaptor, line_edit
 
 
 def create_string_socket_component(
     initial_value: str | None = "",
-    controller: "GraphController | None" = None,
     node_id: str = "",
     socket_name: str = "",
     parent_gfx_item: QGraphicsItem | None = None,
@@ -100,16 +86,12 @@ def create_string_socket_component(
         f"  String QLineEdit '{line_edit.objectName()}': text='{line_edit.text()}', calculated fontMetrics text_width_pixels={text_width_pixels}"
     )
 
-    if controller and node_id and socket_name:
-        pass  # Connection logic handled by GraphController
-
     adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
     return adaptor, line_edit
 
 
 def create_large_string_socket_component(
     initial_value: str | None = "",
-    controller: "GraphController | None" = None,
     node_id: str = "",
     socket_name: str = "",
     parent_gfx_item: QGraphicsItem | None = None,
@@ -122,11 +104,9 @@ def create_large_string_socket_component(
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     line_edit.setText(str(initial_value if initial_value is not None else ""))
 
-    # Connection logic for controller (if any) is handled by GraphController or direct access
-    if controller and node_id and socket_name:
-        pass
-
-    adaptor = SocketWidgetAdaptor(widget=line_edit, parent=controller.graphics_scene.views()[0])
+    # We have weird parenting logic here. Ensure that this is not the end result required.
+    # adaptor = SocketWidgetAdaptor(widget=line_edit, parent=controller.graphics_scene.views()[0])
+    adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
     return adaptor, line_edit
 
 

@@ -13,7 +13,7 @@ from typing import TypeAlias
 
 from edon.errors import GraphObjectErrorReason, SocketLinkErrorReason, SocketUnlinkErrorReason
 from edon.node import EntityNode
-from edon.socket import EntitySocket, SocketDirection
+from edon.socket import EntitySocket, SocketRole
 
 
 @dataclass(frozen=True)
@@ -179,13 +179,13 @@ class EntityGraph:
         source_socket = source_node.source_sockets.get(source_socket_name)
         if not source_socket:
             return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
-        if source_socket.direction != SocketDirection.SOURCE:
+        if source_socket.direction != SocketRole.SOURCE:
             return False, GraphObjectErrorReason.SOCKET_DIRECTION_INVALID
 
         target_socket = target_node.target_sockets.get(target_socket_name)
         if not target_socket:
             return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
-        if target_socket.direction != SocketDirection.TARGET:
+        if target_socket.direction != SocketRole.TARGET:
             return False, GraphObjectErrorReason.SOCKET_DIRECTION_INVALID
 
         return target_socket.link_to(source_socket)

@@ -144,7 +144,7 @@ class EdonApplication:
         # of nodes/edges and translates UI actions to model operations.
         self._graph_controller = GraphController(
             entity_graph=self.entity_graph,
-            graphics_scene=self._graphics_scene,
+            ui_scene=self._graphics_scene,
             node_type_registry=self.node_registry,
         )
 
