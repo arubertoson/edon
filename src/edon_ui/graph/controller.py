@@ -11,7 +11,7 @@ This module provides the GraphController class, which is responsible for:
 
 from collections import defaultdict
 from collections.abc import Mapping, MutableMapping, Sequence
-from typing import TYPE_CHECKING, Type, TypeAlias
+from typing import TYPE_CHECKING, Type
 
 from loguru import logger
 from PySide6.QtCore import QPointF
@@ -24,15 +24,15 @@ from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketItem
 
 if TYPE_CHECKING:
-    from edon_ui.views.scene import GraphicsScene
     from edon.socket import EntitySocket
+    from edon_ui.views.scene import GraphicsScene
 
 
-NodeItemMap: TypeAlias = MutableMapping[str, NodeItem]
-EdgeItemMap: TypeAlias = MutableMapping[EdgeKey, EdgeItem]
-SocketItemMap: TypeAlias = MutableMapping[SocketAddress, SocketItem]
-SocketEdgeKeyMap: TypeAlias = MutableMapping[SocketAddress, set[EdgeKey]]
-NodeRegistryMap: TypeAlias = MutableMapping[str, Type[EntityNode]]
+type NodeItemMap = MutableMapping[str, NodeItem]
+type EdgeItemMap = MutableMapping[EdgeKey, EdgeItem]
+type SocketItemMap = MutableMapping[SocketAddress, SocketItem]
+type SocketEdgeKeyMap = MutableMapping[SocketAddress, set[EdgeKey]]
+type NodeRegistryMap = MutableMapping[str, Type[EntityNode]]
 
 
 class GraphController:
@@ -41,7 +41,9 @@ class GraphController:
     and the UI representation (edon_ui.graphics_scene.GraphicsScene).
 
     It acts as the intermediary, translating UI actions into model operations
-    and reflecting model changes in the UI.
+    and reflecting model changes in the UI. It can be initialized with an
+    optional `node_type_registry` to map node type string identifiers to their
+    respective `EntityNode` classes, facilitating node creation from type hints.
     """
 
     def __init__(
@@ -50,15 +52,6 @@ class GraphController:
         ui_scene: "GraphicsScene",
         node_type_registry: Mapping[str, Type[EntityNode]] | None = None,
     ):
-        """
-        Initializes the GraphController.
-
-        Args:
-            entity_graph: The instance of the entity graph (edon.graph.EntityGraph)
-                           that this controller will oversee.
-            graphics_scene: The QGraphicsScene instance where UI elements will be displayed.
-            node_type_registry: Optional dictionary mapping node type hints to node classes.
-        """
         self.entity_graph: EntityGraph = entity_graph
         self.ui_scene: "GraphicsScene" = ui_scene
 
@@ -73,6 +66,64 @@ class GraphController:
         logger.info(
             f"GraphController initialized with entity graph: {self.entity_graph} and graphics scene: {self.ui_scene}"
         )
+
+    def handle_ui_node_creation_request(self, node_type_hint: str, scene_pos: QPointF) -> None:
+        """
+        Slot to handle the new_node_requested_at_scene_pos signal from the UI (e.g., GraphicsView).
+        It determines the entity node class to create based on the hint and then
+        calls the main request_add_node method.
+        """
+        logger.info(
+            f"GraphController: Received handle_ui_node_creation_request for type '{node_type_hint}' at {scene_pos}"
+        )
+
+        node_class_to_create = self.node_registry.get(node_type_hint)
+        if not node_class_to_create:
+            logger.error(f"ERROR: Node type hint '{node_type_hint}' not found in registry. Cannot create node.")
+            return
+
+        # XXX: This might be unnecessary
+        # Node names are auto-generated based on type and a running count to ensure uniqueness.
+        type_count = sum(1 for node in self.entity_graph.nodes.values() if isinstance(node, node_class_to_create))
+        node_name = f"{node_class_to_create.__name__} {type_count + 1}"
+
+        self.request_add_node(
+            node_entity_class=node_class_to_create,
+            name=node_name,
+            scene_position=scene_pos,
+        )
+
+    def handle_ui_edge_link_request(
+        self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
+    ) -> None:
+        """
+        Handles a UI request to connect two sockets identified by their SocketAddress.
+
+        Attempts to add the new edge if it doesn't already exist.
+        """
+        logger.debug(
+            f"GraphController: Received handle_ui_edge_connection_attempt from "
+            f"source {source_socket_addr} to target {target_socket_addr}"
+        )
+
+        edge_key = EdgeKey(source_socket_addr, target_socket_addr)
+        if edge_key in self.edge_map:
+            logger.warning(f"Edge {edge_key} already exists. Ignoring connection attempt.")
+            return
+
+        self.request_add_edge(edge_key)
+
+    def handle_ui_node_deletion_request(self, entity_node_ids: Sequence[str]) -> None:
+        """Processes a UI request to delete one or more specified nodes."""
+        logger.info(f"GraphController: Received handle_ui_node_deletion_request for IDs: {entity_node_ids}")
+        for node_id in entity_node_ids:
+            self.request_remove_node(node_id)
+
+    def handle_ui_edge_deletion_request(self, edge_items: Sequence[EdgeItem]) -> None:
+        """Processes a UI request to delete one or more specified edges."""
+        logger.info(f"GraphController: Received handle_ui_edge_deletion_request for {len(edge_items)} edge(s).")
+        for edge_item in edge_items:
+            self.request_remove_edge(edge_item.edge_key)
 
     def request_add_node(
         self,
@@ -191,9 +242,6 @@ class GraphController:
     def request_remove_edge(self, edge_key: EdgeKey) -> bool:
         """
         Handles a request to remove a single edge (entity and UI).
-
-        Args:
-            edge_key: The EdgeKey instance representing the edge to remove.
         """
         logger.info(f"GraphController: Requesting to remove edge: {edge_key}")
 
@@ -221,12 +269,6 @@ class GraphController:
     def find_valid_socket_drop_targets(self, drag_origin_socket_addr: SocketAddress) -> set[SocketAddress]:
         """
         Determines valid drop target sockets for an edge drag operation using EntityGraph validation.
-
-        Args:
-            drag_origin_socket_addr: The SocketAddress of the socket where the drag started.
-
-        Returns:
-            A set of SocketAddress objects representing sockets that are valid drop targets.
         """
         valid_targets: set[SocketAddress] = set()
 
@@ -273,60 +315,6 @@ class GraphController:
             f"Found {len(valid_targets)} valid drop targets for {drag_origin_socket_addr} via EntityGraph: {valid_targets}"
         )
         return valid_targets
-
-    def handle_ui_edge_link_request(self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress):
-        """
-        Handles a UI request to connect two sockets identified by their SocketAddress.
-        Ensures that a target socket has only one incoming edge by removing any
-        existing ones. Then, attempts to add the new edge.
-        """
-        logger.debug(
-            f"GraphController: Received handle_ui_edge_connection_attempt from "
-            f"source {source_socket_addr} to target {target_socket_addr}"
-        )
-
-        edge_key = EdgeKey(source_socket_addr, target_socket_addr)
-        if edge_key in self.edge_map:
-            logger.warning(f"Edge {edge_key} already exists. Ignoring connection attempt.")
-            return
-
-        self.request_add_edge(edge_key)
-
-    def handle_ui_node_creation_request(self, node_type_hint: str, scene_pos: QPointF):
-        """
-        Slot to handle the new_node_requested_at_scene_pos signal from the UI (e.g., GraphicsView).
-        It determines the entity node class to create based on the hint and then
-        calls the main request_add_node method.
-        """
-        logger.info(
-            f"GraphController: Received handle_ui_node_creation_request for type '{node_type_hint}' at {scene_pos}"
-        )
-
-        node_class_to_create = self.node_registry.get(node_type_hint)
-        if not node_class_to_create:
-            logger.error(f"ERROR: Node type hint '{node_type_hint}' not found in registry. Cannot create node.")
-            return
-
-        # XXX: This might be unnecessary
-        # Node names are auto-generated based on type and a running count to ensure uniqueness.
-        type_count = sum(1 for node in self.entity_graph.nodes.values() if isinstance(node, node_class_to_create))
-        node_name = f"{node_class_to_create.__name__} {type_count + 1}"
-
-        self.request_add_node(
-            node_entity_class=node_class_to_create,
-            name=node_name,
-            scene_position=scene_pos,
-        )
-
-    def handle_ui_node_deletion_request(self, entity_node_ids: Sequence[str]):
-        logger.info(f"GraphController: Received handle_ui_node_deletion_request for IDs: {entity_node_ids}")
-        for node_id in entity_node_ids:
-            self.request_remove_node(node_id)
-
-    def handle_ui_edge_deletion_request(self, edge_items: Sequence[EdgeItem]):
-        logger.info(f"GraphController: Received handle_ui_edge_deletion_request for {len(edge_items)} edge(s).")
-        for edge_item in edge_items:
-            self.request_remove_edge(edge_item.edge_key)
 
     def find_edge_items_at_socket(self, socket_addr: SocketAddress) -> set[EdgeItem]:
         """Retrieves all UI EdgeItems connected to the given socket address."""
