@@ -157,6 +157,31 @@ class GraphicsScene(QGraphicsScene):
 
         self.selectionChanged.connect(self._handle_selection_changed)
 
+    def clear_graph_elements(self) -> None:
+        logger.debug("GraphicsScene: Clearing all graph elements (nodes and edges).")
+
+        # We should block new draws to the viewport while we are deleting all objects like this.
+
+        items_to_remove = [item for item in self.items() if isinstance(NodeItem, EdgeItem)]
+
+        for item in items_to_remove:
+            # For NodeItem, ensure signals it might have connected to the scene are disconnected
+            # or that its removal from scene handles this.
+            if isinstance(item, NodeItem):
+                try:
+                    # Assuming NodeItem might connect these, attempt disconnection
+                    item.node_position_update_signal.disconnect(self._refresh_scene_edge_paths)
+                except (RuntimeError, TypeError):  # TypeError if signal was never connected
+                    pass
+                try:
+                    item.node_redraw_signal.disconnect(self._refresh_scene_node_size)
+                except (RuntimeError, TypeError):
+                    pass
+
+            super().removeItem(item)
+
+        self._refresh_scene_interaction_state()
+
     def _handle_selection_changed(self):
         # XXX: We should keep an eye on this function as it could potentially be recursed and cause a crash/lock.
         # If that happens we need to look into temporarily disconnecting the signal and reconnecting it.
@@ -291,28 +316,12 @@ class GraphicsScene(QGraphicsScene):
     def _refresh_scene_edge_paths(self, updated_node_id: str):
         logger.trace(f"Scene: refresh scene edge paths for {updated_node_id}")
 
-        # XXX: We need to have a better management of the cached items in the scene
-        # we don't have a good way of reaching the different relating elements.
-        # We either need a good way to get to the items, or direct references
-        # to our scene items from our targets, so we can write something like this:
-        # node_item = self.node_items[updated_node_id]
-        # ---
-        # for socket in node_item.source_socket_item + node_item.target_socket_item:
-        #     for edge_item in socket.links:
-        #         edge_item.update_path()
-        # ---
-        # Right now we have a brute force solution that will work, but this needs work :)
         if self._temp_edge:
             self._temp_edge.update_path()
         else:
-            for edge_item in self.edge_items:
-                edge_item.update_path()
-
-        # XXX: This is only relevant if we need to update the interaction, this signal needs a better name
-        # needs a better name! Do we need to update anything else after path redraws?
-        # self.scene_changed.emit()
-
-    # --- Connection Management Methods ---
+            # We might change this call in the future, but the logic is pretty much handled
+            # in _refresh_scene_node_size, if we need something else we can update then.
+            self._refresh_scene_node_size(updated_node_id)
 
     def _get_socket_at_pos(self, scene_pos: QPointF) -> SocketLinkItem | None:
         items_at_pos = self.items(scene_pos)

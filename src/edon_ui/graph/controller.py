@@ -20,6 +20,7 @@ from edon.graph import EdgeKey, EntityGraph, SocketAddress, SocketRole
 from edon.node import EntityNode
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.factory import create_node_item
+from edon_ui.graph.builder import create_scene_items_from_graph, SceneItems
 from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketItem
 
@@ -66,6 +67,61 @@ class GraphController:
         logger.info(
             f"GraphController initialized with entity graph: {self.entity_graph} and graphics scene: {self.ui_scene}"
         )
+
+    def populate_scene_from_graph_data(self) -> None:
+        """
+        Populates the GraphicsScene with NodeItems and EdgeItems based on the
+        current EntityGraph.
+
+        This method uses the `create_scene_items_from_graph` builder to generate
+        the UI items and then adds them to the scene and updates internal mappings.
+        It assumes the scene and controller's maps are in a clean state for population
+        (e.g., scene cleared, controller newly initialized).
+        """
+        logger.info("GraphController: Populating UI scene from entity graph data.")
+        assert self.entity_graph and self.ui_scene
+
+        scene_items_representation: SceneItems = create_scene_items_from_graph(self.entity_graph)
+
+        for entity_node_id, node_item in scene_items_representation.nodes.items():
+            self.ui_scene.add_node(node_item)
+            self.node_map[entity_node_id] = node_item
+
+            entity_node = self.entity_graph.get_node(entity_node_id)
+            if entity_node:
+                all_entity_sockets: list["EntitySocket"] = list(entity_node.source_sockets.values()) + list(
+                    entity_node.target_sockets.values()
+                )
+                for entity_socket in all_entity_sockets:
+                    socket_addr = SocketAddress(node_id=entity_node_id, socket_name=entity_socket.name)
+                    is_target_socket_role = entity_socket.role == SocketRole.TARGET
+                    socket_link_item = node_item.get_socket_circle_item_by_name(
+                        entity_socket.name, is_target=is_target_socket_role
+                    )
+                    if socket_link_item:
+                        socket_row_item = socket_link_item.parentItem()
+                        if isinstance(socket_row_item, SocketItem):
+                            self.socket_addr_socket_item_map[socket_addr] = socket_row_item
+                        else:
+                            logger.warning(f"Could not find SocketItem for {socket_addr} during scene population.")
+                    else:
+                        logger.warning(
+                            f"Could not find SocketLinkItem for {socket_addr} on node {node_item.name} during scene population."
+                        )
+            else:
+                logger.warning(f"EntityNode {entity_node_id} not found in graph while populating socket map.")
+        logger.debug(f"GraphController: Added {len(self.node_map)} nodes to the scene.")
+
+        # Add EdgeItems to the scene and update mappings
+        for edge_key, edge_item in scene_items_representation.edges.items():
+            self.ui_scene.add_edge(edge_item)
+            self.edge_map[edge_key] = edge_item
+            self.socket_addr_edge_key_map[edge_key.source].add(edge_key)
+            self.socket_addr_edge_key_map[edge_key.target].add(edge_key)
+        logger.debug(f"GraphController: Added {len(self.edge_map)} edges to the scene.")
+
+        self.ui_scene._refresh_scene_interaction_state()
+        logger.info("GraphController: UI scene population complete.")
 
     def handle_ui_node_creation_request(self, node_type_hint: str, scene_pos: QPointF) -> None:
         """

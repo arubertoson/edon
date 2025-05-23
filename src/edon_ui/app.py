@@ -118,6 +118,10 @@ class EdonApplication:
         to the `GraphicsScene`. This is typically invoked during application
         setup or when the underlying graph data or node types change.
         """
+        # Before creating a new controller, ensure the scene is cleared of old elements.
+        if self._graphics_scene:
+            self._graphics_scene.clear_graph_elements()
+
         # Create graph controller and connect it to the scene, the GraphController serves as
         # the bridge between the entity graph model and the UI. It handles synchronization
         # of nodes/edges and translates UI actions to model operations.
@@ -190,9 +194,12 @@ class EdonApplication:
         event processing. The application's exit code is returned upon termination.
         """
         logger.info("Running EdonApplication...")
-        # Populate the graphics scene from the entity graph. This is done here to ensure
-        # the graph is visually represented before the main window is shown.
-        self._graph_controller.sync_scene_from_graph()
+        # Populate the graphics scene from the entity graph using the new controller method.
+        # This is done here to ensure the graph is visually represented before the main window is shown.
+        if self._graph_controller:
+            self._graph_controller.populate_scene_from_graph_data()
+        else:
+            logger.error("GraphController not initialized before run. Cannot populate scene.")
 
         logger.debug("About to call self.main_window.show()")
         try:
