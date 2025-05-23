@@ -189,7 +189,7 @@ class GraphicsScene(QGraphicsScene):
             node.node_redraw_signal.disconnect(self._refresh_scene_node_size)
         except RuntimeError:  # Signal was not connected or already disconnected
             pass
-        
+
         super().removeItem(node)
         self._refresh_scene_interaction_state()
 

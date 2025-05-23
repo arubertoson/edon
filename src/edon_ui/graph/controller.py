@@ -7,8 +7,6 @@ This module provides the GraphController class, which is responsible for:
 - Keeping the UI representation synchronized with the state of the entity graph.
 - Responding to signals from UI elements for graph-related actions.
 
-TODO:
- - Ensure signatures are not widgets or scene items, they need to be the datatype representations
 """
 
 from collections import defaultdict
@@ -66,14 +64,14 @@ class GraphController:
         # Maps for entity graph to UI items
         self.edge_map: EdgeItemMap = {}
         self.node_map: NodeItemMap = {}
-        self.node_registry: NodeRegistryMap = node_type_registry or {}
         self.socket_addr_socket_item_map: SocketItemMap = {}
         self.socket_addr_edge_key_map: SocketEdgeKeyMap = defaultdict(set)
+
+        self.node_registry: NodeRegistryMap = node_type_registry or {}
 
         logger.info(
             f"GraphController initialized with entity graph: {self.entity_graph} and graphics scene: {self.ui_scene}"
         )
-        logger.debug(f"Node type registry: {self.node_registry}")
 
     def request_add_node(
         self,
@@ -96,8 +94,8 @@ class GraphController:
             )
 
             # Populate the map using the sockets from the resulting NodeItem
-            for socket_row_item in new_node_item.source_sockets + new_node_item.target_sockets:
-                self.socket_addr_socket_item_map[socket_row_item.socket_address] = socket_row_item
+            for socket_item in new_node_item.source_sockets + new_node_item.target_sockets:
+                self.socket_addr_socket_item_map[socket_item.socket_address] = socket_item
 
             logger.info(
                 f"Successfully created and added node: {new_entity_node.name} (Entity ID: {new_entity_node.id}, UI: {new_node_item})"
@@ -153,62 +151,40 @@ class GraphController:
 
     def request_remove_node(self, entity_node_id: str) -> bool:
         """
-        Handles a request to remove a node (entity and UI) and its connected edges.
+        Handles a request to remove a node and its connected edges from both the
+        entity graph and the UI scene.
 
-        The process involves:
-        1. Identifying all edges connected to the node.
-        2. Removing each of these edges from both the entity graph and the UI.
-        3. Removing the node from the entity graph.
-        4. Removing the node's UI representation from the scene.
-        5. Cleaning up internal controller mappings.
+        The removal process first identifies the UI node and the corresponding entity node.
+        It then collects all edges connected to this node's UI sockets. Each of these
+        edges is removed by invoking `request_remove_edge`, which handles both the
+        entity graph and UI cleanup for the edge. After all associated edges are
+        removed, the node itself is removed from the entity graph. Subsequently,
+        the controller's internal mapping for the node's sockets is cleared.
+        Finally, the node's UI representation is removed from the graphics scene,
+        and the node is removed from the controller's main node map.
         """
         logger.info(f"GraphController: Requesting to remove node with ID: {entity_node_id}")
 
-        ui_node_to_remove = self.node_map.get(entity_node_id)
-        if not ui_node_to_remove:
-            logger.warning(f"Node with ID {entity_node_id} not found in UI map. Cannot remove.")
-            return False
+        node_item_to_remove = self.node_map.get(entity_node_id)
 
-        entity_node = self.entity_graph.get_node(entity_node_id)
-        if not entity_node:
-            logger.warning(
-                f"Node with ID {entity_node_id} not found in entity graph. "
-                "Proceeding with UI removal if UI node exists."
-            )
+        # Collect all EdgeKeys for edges connected to the UI sockets of the node being removed.
+        # This information is retrieved from the controller's mapping of socket addresses to edge keys.
+        for socket_item in node_item_to_remove.source_sockets + node_item_to_remove.target_sockets:
+            for edge_key in self.socket_addr_edge_key_map.get(socket_item.socket_address):
+                self.request_remove_edge(edge_key)
 
-        # 1. Collect all EdgeKeys connected to this node's UI sockets.
-        edge_keys_to_remove: set[EdgeKey] = set()
-        for socket_row_item in ui_node_to_remove.source_sockets + ui_node_to_remove.target_sockets:
-            socket_addr = socket_row_item.socket_address
-            if socket_addr in self.socket_addr_edge_key_map:
-                edge_keys_to_remove.update(self.socket_addr_edge_key_map[socket_addr])
-        
-        logger.debug(f"Found {len(edge_keys_to_remove)} edge(s) connected to node {entity_node_id}: {edge_keys_to_remove}")
+            logger.debug(f"Removing `SocketAddress` {socket_item.socket_address} mapping")
+            # Clean up the controller's mapping from socket addresses to socket UI items
+            # for all sockets belonging to the removed node.
+            del self.socket_addr_socket_item_map[socket_item.socket_address]
 
-        # 2. Remove these edges (entity and UI) by calling request_remove_edge.
-        for edge_key in list(edge_keys_to_remove): # Iterate over a copy
-            self.request_remove_edge(edge_key)
-        logger.debug(f"Successfully processed removal of associated edges for node {entity_node_id}.")
-
-        # 3. Remove node from the entity graph (if it existed).
-        if entity_node:
-            self.entity_graph.remove_node(entity_node_id)
-            logger.debug(f"Node {entity_node_id} removed from entity graph.")
-
-        # 4. Clean up socket_addr_socket_item_map for the removed node's sockets.
-        for socket_row_item in ui_node_to_remove.source_sockets + ui_node_to_remove.target_sockets:
-            socket_addr = socket_row_item.socket_address
-            if socket_addr in self.socket_addr_socket_item_map:
-                del self.socket_addr_socket_item_map[socket_addr]
-        logger.debug(f"Cleaned up controller's socket item mappings for node {entity_node_id}.")
-
-        # 5. Remove the UI NodeItem from the scene and controller's node_map.
-        self.ui_scene.remove_node(ui_node_to_remove)
-        if entity_node_id in self.node_map:
-            del self.node_map[entity_node_id]
-        logger.debug(f"UI NodeItem for {entity_node_id} removed from graphics scene and controller's node_map.")
+        # Remove the node from the controller's primary mapping of entity IDs to UI node items.
+        del self.node_map[entity_node_id]
+        self.entity_graph.remove_node(entity_node_id)
+        self.ui_scene.remove_node(node_item_to_remove)
 
         logger.info(f"GraphController: Node removal process for {entity_node_id} complete.")
+
         return True
 
     def request_remove_edge(self, edge_key: EdgeKey) -> bool:
@@ -241,7 +217,7 @@ class GraphController:
             logger.warning(f"  Could not find edge {edge_key} in edge_map to remove.")
             return False
 
-    def request_edge_drop_targets(self, socket_addr: SocketAddress) -> set[SocketAddress]:
+    def find_valid_socket_drop_targets(self, socket_addr: SocketAddress) -> set[SocketAddress]:
         """
         Return a set of SocketAddress objects that are valid drop targets for the given source_socket_ui_item.
         The source_socket_ui_item is the UI representation of the socket being dragged.
@@ -317,7 +293,6 @@ class GraphController:
         )
 
         node_class_to_create = self.node_registry.get(node_type_hint)
-
         if not node_class_to_create:
             logger.error(f"ERROR: Node type hint '{node_type_hint}' not found in registry. Cannot create node.")
             return
