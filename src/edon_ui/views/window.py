@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from edon_ui.views.viewer import GraphicsView
 
 
+# XXX: Look into resizing logic, this is a weak point that doesn't not work properly yet.
+# XXX: We should also look up where the window is created when we are starting the application.
 class MainWindow(QMainWindow):
     """
     Main application window for Edon.
