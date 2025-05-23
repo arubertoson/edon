@@ -181,23 +181,17 @@ class GraphicsScene(QGraphicsScene):
         # self._refresh_scene_edge_paths()
 
     def remove_node(self, node: NodeItem):
+        try:
+            node.node_position_update_signal.disconnect(self._refresh_scene_edge_paths)
+        except RuntimeError:  # Signal was not connected or already disconnected
+            pass
+        try:
+            node.node_redraw_signal.disconnect(self._refresh_scene_node_size)
+        except RuntimeError:  # Signal was not connected or already disconnected
+            pass
+        
         super().removeItem(node)
-        # XXX: most liekly unnecessary
-        # self._refresh_scene_edge_paths()
-        # if node not in self.node_items:
-        #     return
-
-        # Also remove connections associated with this node
-        # edges_to_remove = [
-        #     edge
-        #     for edge in self.edge_items
-        #     if edge.source_socket_item.node_entity_id == node.node_entity_id
-        #     or (edge.target_socket_item and edge.target_socket_item.node_entity_id == node.node_entity_id)
-        # ]
-        # for edge in edges_to_remove:
-        #     self.remove_edge(edge)
-
-        # self.node_items.remove(node)
+        self._refresh_scene_interaction_state()
 
     def add_edge(self, edge: EdgeItem):
         super().addItem(edge)
@@ -207,8 +201,6 @@ class GraphicsScene(QGraphicsScene):
 
     def remove_edge(self, edge: EdgeItem):
         super().removeItem(edge)
-        # XXX: necessayr?
-        # self._refresh_scene_edge_paths()
 
     @Slot()
     def _refresh_scene_active_area_rect(self):

@@ -154,50 +154,62 @@ class GraphController:
     def request_remove_node(self, entity_node_id: str) -> bool:
         """
         Handles a request to remove a node (entity and UI) and its connected edges.
+
+        The process involves:
+        1. Identifying all edges connected to the node.
+        2. Removing each of these edges from both the entity graph and the UI.
+        3. Removing the node from the entity graph.
+        4. Removing the node's UI representation from the scene.
+        5. Cleaning up internal controller mappings.
         """
         logger.info(f"GraphController: Requesting to remove node with ID: {entity_node_id}")
 
-        # XXX: This is bad, the order should be reversed and we should use existing functionality
-        # for removing things:
-        # 1. Remove edges relating to the node first to avoid dangling references
-        # 2. Remove nodes from the graph and scene
-        #
-        # directives: use existing functions to handle deletion. e.g. remove_edge, remove_node
-        # looks like the request_add/remove_node is the lowest level function call.
+        ui_node_to_remove = self.node_map.get(entity_node_id)
+        if not ui_node_to_remove:
+            logger.warning(f"Node with ID {entity_node_id} not found in UI map. Cannot remove.")
+            return False
 
-        # 1. Remove node from the entity graph
-        # This should also handle disconnecting its entity sockets.
-        self.entity_graph.remove_node(entity_node_id)
-        logger.debug(f"Node {entity_node_id} removed from entity graph.")
+        entity_node = self.entity_graph.get_node(entity_node_id)
+        if not entity_node:
+            logger.warning(
+                f"Node with ID {entity_node_id} not found in entity graph. "
+                "Proceeding with UI removal if UI node exists."
+            )
 
-        # 2. Remove the UI NodeItem from the scene and our map
-        ui_node_to_remove = self.node_map.pop(entity_node_id, None)
-        if ui_node_to_remove:
-            self.ui_scene.remove_node(ui_node_to_remove)
-            logger.debug(f"UI NodeItem for {entity_node_id} removed from graphics scene and node_map.")
-        else:
-            logger.warning(f"No UI NodeItem found in node_map for ID {entity_node_id}.")
+        # 1. Collect all EdgeKeys connected to this node's UI sockets.
+        edge_keys_to_remove: set[EdgeKey] = set()
+        for socket_row_item in ui_node_to_remove.source_sockets + ui_node_to_remove.target_sockets:
+            socket_addr = socket_row_item.socket_address
+            if socket_addr in self.socket_addr_edge_key_map:
+                edge_keys_to_remove.update(self.socket_addr_edge_key_map[socket_addr])
+        
+        logger.debug(f"Found {len(edge_keys_to_remove)} edge(s) connected to node {entity_node_id}: {edge_keys_to_remove}")
 
-        # XXX: We need to refactor to have edge key be a dataclass or something. This is scary weak.
-        # This has been addressed by introducing the EdgeKey dataclass.
-        # 3. Clean up EdgeItems from the edge_map and scene connected to this node
-        edges_to_remove_keys: list[EdgeKey] = []
-        for edge_key_iter in self.edge_map:  # Iterate over keys
-            if edge_key_iter.source.node_id == entity_node_id or edge_key_iter.target.node_id == entity_node_id:
-                edges_to_remove_keys.append(edge_key_iter)
+        # 2. Remove these edges (entity and UI) by calling request_remove_edge.
+        for edge_key in list(edge_keys_to_remove): # Iterate over a copy
+            self.request_remove_edge(edge_key)
+        logger.debug(f"Successfully processed removal of associated edges for node {entity_node_id}.")
 
-        for edge_key_to_remove in edges_to_remove_keys:
-            removed_edge_item = self.edge_map.pop(edge_key_to_remove, None)
-            if removed_edge_item:
-                self.ui_scene.remove_edge(removed_edge_item)
-                logger.debug(f"  Edge {edge_key_to_remove} and its UI item removed from edge_map and scene.")
-            else:
-                logger.warning(
-                    f"  Edge key {edge_key_to_remove} was marked for removal but not found in edge_map during pop."
-                )
+        # 3. Remove node from the entity graph (if it existed).
+        if entity_node:
+            self.entity_graph.remove_node(entity_node_id)
+            logger.debug(f"Node {entity_node_id} removed from entity graph.")
+
+        # 4. Clean up socket_addr_socket_item_map for the removed node's sockets.
+        for socket_row_item in ui_node_to_remove.source_sockets + ui_node_to_remove.target_sockets:
+            socket_addr = socket_row_item.socket_address
+            if socket_addr in self.socket_addr_socket_item_map:
+                del self.socket_addr_socket_item_map[socket_addr]
+        logger.debug(f"Cleaned up controller's socket item mappings for node {entity_node_id}.")
+
+        # 5. Remove the UI NodeItem from the scene and controller's node_map.
+        self.ui_scene.remove_node(ui_node_to_remove)
+        if entity_node_id in self.node_map:
+            del self.node_map[entity_node_id]
+        logger.debug(f"UI NodeItem for {entity_node_id} removed from graphics scene and controller's node_map.")
 
         logger.info(f"GraphController: Node removal process for {entity_node_id} complete.")
-        return ui_node_to_remove is not None
+        return True
 
     def request_remove_edge(self, edge_key: EdgeKey) -> bool:
         """
