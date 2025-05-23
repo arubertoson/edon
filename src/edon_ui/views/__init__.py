@@ -4,7 +4,7 @@ This package implements a comprehensive graphics system.
 """
 
 from edon_ui.views.scene import GraphicsScene
-from edon_ui.views.view import GraphicsView
+from edon_ui.views.viewer import GraphicsView
 from edon_ui.views.window import MainWindow
 
 __all__ = [

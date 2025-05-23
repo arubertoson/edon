@@ -15,7 +15,7 @@ from edon.graph import SocketAddress
 from edon_ui import theme
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.node import NodeItem
-from edon_ui.items.socket import SocketCircleItem
+from edon_ui.items.socket import SocketLinkItem
 
 if TYPE_CHECKING:
     from PySide6.QtCore import QObject
@@ -153,7 +153,7 @@ class GraphicsScene(QGraphicsScene):
         self.node_items: list[NodeItem] = []
         self.edge_items: list[EdgeItem] = []
         self.temp_edge: EdgeItem | None = None
-        self._currently_highlighted_target_socket: SocketCircleItem | None = None
+        self._currently_highlighted_target_socket: SocketLinkItem | None = None
         self._cached_drag_valid_targets: set[SocketAddress] | None = None  # Cache for valid drop targets during drag
 
         self.selectionChanged.connect(self._handle_selection_changed)
@@ -347,10 +347,10 @@ class GraphicsScene(QGraphicsScene):
 
     # --- Connection Management Methods ---
 
-    def _get_socket_at_pos(self, scene_pos: QPointF) -> SocketCircleItem | None:
+    def _get_socket_at_pos(self, scene_pos: QPointF) -> SocketLinkItem | None:
         items_at_pos = self.items(scene_pos)
         for item in items_at_pos:
-            if isinstance(item, SocketCircleItem):
+            if isinstance(item, SocketLinkItem):
                 return item
         return None
 
@@ -364,7 +364,7 @@ class GraphicsScene(QGraphicsScene):
         clicked_socket_item (and it's an output), that edge is lifted and becomes
         the temporary edge. Otherwise, a new temporary edge is created.
         """
-        socket_row = self.controller.socket_row_map.get(clicked_socket_address)
+        socket_row = self.controller.socket_addr_row_map.get(clicked_socket_address)
         if not socket_row or not hasattr(socket_row, "circle") or socket_row.circle is None:
             logger.error(f"Could not find UI socket circle for address {clicked_socket_address} to start edge drag.")
             return
@@ -464,7 +464,7 @@ class GraphicsScene(QGraphicsScene):
             source_addr = source_socket_item.parentItem().socket_address
             target_addr = target_socket_item.parentItem().socket_address
             if source_addr and target_addr:
-                self.controller.handle_ui_edge_connection_attempt(source_addr, target_addr)
+                self.controller.handle_ui_edge_link_request(source_addr, target_addr)
             else:
                 logger.error("Could not retrieve socket addresses to finalize edge drag.")
 
@@ -487,10 +487,10 @@ class GraphicsScene(QGraphicsScene):
         # Reset the cached valid targets and their visual state.
         self._cached_drag_valid_targets = set()
         for item in self.items():
-            if isinstance(item, SocketCircleItem):
-                item.set_disabled_visual(False)
+            if isinstance(item, SocketLinkItem):
+                item.set_not_valid_drop_target(False)
 
-    def update_socket_drop_targets(self, source_socket: SocketCircleItem):
+    def update_socket_drop_targets(self, source_socket: SocketLinkItem):
         """
         Grays out all sockets that cannot be connected to from the given source_socket,
         including those that would create a cycle. Uses GraphController for validation.
@@ -500,16 +500,16 @@ class GraphicsScene(QGraphicsScene):
         logger.debug("Using cached valid drop targets for global socket update.")
 
         for item in self.items():
-            if not isinstance(item, SocketCircleItem):
+            if not isinstance(item, SocketLinkItem):
                 continue
 
             socket_circle = item
             if socket_circle == source_socket:
-                socket_circle.set_disabled_visual(False)
+                socket_circle.set_not_valid_drop_target(False)
                 continue
 
             current_socket_addr = SocketAddress(socket_circle.node_entity_id, socket_circle.socket_entity_name)
             if current_socket_addr in self._cached_drag_valid_targets:
-                socket_circle.set_disabled_visual(False)
+                socket_circle.set_not_valid_drop_target(False)
             else:
-                socket_circle.set_disabled_visual(True)
+                socket_circle.set_not_valid_drop_target(True)
