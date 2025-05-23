@@ -47,45 +47,16 @@ All public modules, functions, classes, and methods MUST have a docstring.
 
 -   **Module Docstrings**: Each module MUST have a module docstring describing its purpose and contents.
 -   **Structure**:
-    -   Docstrings should adhere to the [Google Python Style Guide format](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings), including the use of `Args:`, `Returns:`, and `Raises:` sections where appropriate.
     -   A concise summary line (one line only), followed by a blank line, then a more detailed explanation if needed.
     -   The summary line should not merely repeat the function/method signature.
 -   **Function/Method Docstrings**:
     -   **Summary**: Brief overview of behavior.
-    -   **Interaction with Type Hints**: When type hints are present in the function/method signature, do *not* repeat type information within the `Args:` or `Returns:` sections of the docstring. The description should be the focus.
-        -   Example for `Args:`:
-            ```python
-            def my_function(param_name: str, count: int) -> None:
-                """Summary of what the function does.
-
-                Args:
-                    param_name: Description of this parameter.
-                    count: Description of the count.
-                """
-            ```
-        -   Example for `Returns:`:
-            ```python
-            def get_name(self) -> str:
-                """Returns the name of the object.""" # Simple, no separate Returns: needed
-            
-            def calculate_value(self, item_id: int) -> float | None:
-                """Calculates a complex value based on the item.
-
-                Returns:
-                    The calculated value, or None if not found.
-                """
-            ```
-    -   **Conciseness in `Returns:`**: For simple functions or methods (e.g., getters) where the return value and its type are obvious from the signature and the summary line, the `Returns:` section may be omitted if it would only reiterate this information.
+    -   **Interaction with Type Hints**: When type hints are present in the function/method signature, do *not* repeat type information within the docstring.
+    -   **Conciseness:**: For simple functions or methods (e.g., getters) where the return value and its type are obvious from the signature and the summary line, docstring may be omitted if it would only reiterate this information.
 -   **Class Docstrings**:
     -   **Summary**: The summary should provide a clear, high-level understanding of the class's role and responsibilities. Avoid including extensive lists of public attributes or methods if these are self-documenting through their own names and docstrings. Detailed examples of usage are often better placed in module-level docstrings or separate usage documentation unless they are very concise and critical to understanding the class's primary purpose.
     -   If the class is intended to be subclassed and has an additional interface for subclasses, this interface should be listed separately.
--   **`__init__` Methods**:
-    -   `__init__` methods MUST have a docstring. This docstring should summarize the class initialization and include an `Args:` section for its parameters, following the type hint interaction guidelines above.
--   **Properties**:
-    -   Public properties (getters, setters, deleters) MUST have docstrings.
-        -   The getter's docstring should concisely describe what the property represents or returns.
-        -   The setter's docstring should describe what is being set and clearly state any significant side effects (e.g., triggering updates, re-initialization of other components).
-
+-   **`__init__` Methods should not have docstring**
 - Where docstring is NOT necessary:
     -   @property or other short functions where the purpose is clear from the name *and the getter docstring guideline above is met*.
     -   private methods/functions do not require docstrings, focus on inline comments if elaboration is necessary. *However, if a private method is complex or its purpose is not immediately obvious from its name and context, a docstring is encouraged.*
