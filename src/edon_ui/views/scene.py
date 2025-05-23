@@ -212,8 +212,6 @@ class GraphicsScene(QGraphicsScene):
         edge.source_socket_item.add_edge(edge)
         edge.target_socket_item.add_edge(edge)
 
-
-
         super().addItem(edge)
         self._refresh_scene_edge_paths()
 
@@ -304,22 +302,11 @@ class GraphicsScene(QGraphicsScene):
         """
         logger.trace(f"Scene: handle redrawing of esdges for {updated_node_id}")
 
-        # XXX: I don't really like this api,we should look into it
-        node = self.controller.node_map[updated_node_id]
-        for socket_circle in node.so
-
-        for edge_item in self.edge_items:
-            is_source_node = edge_item.source_socket_item.node_entity_id == updated_node_id
-            is_target_node = (
-                edge_item.target_socket_item and edge_item.target_socket_item.node_entity_id == updated_node_id
-            )
-            if is_source_node or is_target_node:
-                logger.debug(f"Updating Edge: {edge_item.node_entity_id}")
-                edge_item.update_path()
-
-        # XXX: this is not necessary here, interactive viewport is only necessary if we don't have any nodes
-        # in the scene. Add/Remove node
-        # self.scene_changed.emit()
+        node = self.controller.node_map.get(updated_node_id)
+        for socket_item in node.source_sockets + node.target_sockets:
+            edges = self.controll.find_edge_items_at_socket(socket_item.socket_address)
+            for edge in edges:
+                edge.update_path()
 
     @Slot(str)
     def _refresh_scene_edge_paths(self, updated_node_id: str):
@@ -370,14 +357,16 @@ class GraphicsScene(QGraphicsScene):
         socket_row_item = self.controller.socket_addr_row_item_map.get(clicked_socket_address)
 
         if not socket_row_item or not socket_row_item.link_item:
-            logger.error(f"Could not find UI socket item or link_item for address {clicked_socket_address} to start edge drag.")
+            logger.error(
+                f"Could not find UI socket item or link_item for address {clicked_socket_address} to start edge drag."
+            )
             return
-        
-        clicked_socket_link_item = socket_row_item.link_item # This is a SocketLinkItem
+
+        clicked_socket_link_item = socket_row_item.link_item  # This is a SocketLinkItem
 
         # Determine if the clicked socket is an input (target role)
         is_input_socket = socket_row_item.role == SocketRole.TARGET
-        
+
         connected_edges = self.controller.find_edge_items_at_socket(clicked_socket_address)
 
         if is_input_socket and connected_edges:
@@ -401,15 +390,15 @@ class GraphicsScene(QGraphicsScene):
             logger.debug(f"Scene: Starting new drag from socket: {clicked_socket_address}")
             self._temp_edge = DraggingEdgeItem(clicked_socket_link_item, drag_start_scene_pos)
 
-        super().addItem(self._temp_edge) # Add the new/repurposed temp_edge to the scene.
-        self._temp_edge.setZValue(theme.EDGE_Z_VALUE_DRAGGING) # Ensure it's on top
+        super().addItem(self._temp_edge)  # Add the new/repurposed temp_edge to the scene.
+        self._temp_edge.setZValue(theme.EDGE_Z_VALUE_DRAGGING)  # Ensure it's on top
 
         # Cache valid drop targets based on the actual source of the drag
         # This requires SocketLinkItem to have a 'socket_address' property.
         actual_drag_source_address = self._temp_edge.source_socket_item.socket_address
         self._cached_drag_valid_targets = self.controller.request_edge_drop_targets(actual_drag_source_address)
         logger.debug(f"Cached valid drop targets for {actual_drag_source_address}: {self._cached_drag_valid_targets}")
-        
+
         self.update_socket_drop_targets(self._temp_edge.source_socket_item)
 
     def update_dragged_edge(self, current_scene_pos: QPointF):
@@ -502,20 +491,16 @@ class GraphicsScene(QGraphicsScene):
         including those that would create a cycle. Uses GraphController for validation.
         Uses cached targets if available during an active drag.
         """
-        assert self.controller is not None and self._cached_drag_valid_targets is not None
         logger.debug("Using cached valid drop targets for global socket update.")
+        assert self._cached_drag_valid_targets is not None
 
         for item in self.items():
-            if not isinstance(item, SocketLinkItem):
+            if item and not isinstance(item, SocketLinkItem):
                 continue
 
-            socket_circle = item
-            if socket_circle == source_socket:
-                socket_circle.set_not_valid_drop_target(False)
-                continue
-
-            current_socket_addr = SocketAddress(socket_circle.node_entity_id, socket_circle.socket_entity_name)
-            if current_socket_addr in self._cached_drag_valid_targets:
-                socket_circle.set_not_valid_drop_target(False)
+            socket_link = item
+            if socket_link == source_socket:
+                socket_link.set_not_valid_drop_target(False)
             else:
-                socket_circle.set_not_valid_drop_target(True)
+                is_valid = socket_link.parentItem().socket_address in self._cached_drag_valid_targets
+                socket_link.set_not_valid_drop_target(is_valid)

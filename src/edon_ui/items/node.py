@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from edon_ui import theme
 
 if TYPE_CHECKING:
-    from edon_ui.items.socket import SocketRowItem
+    from edon_ui.items.socket import SocketItem
 
 
 class NodeItem(QGraphicsObject):
@@ -35,8 +35,8 @@ class NodeItem(QGraphicsObject):
         x: float,
         y: float,
         node_entity_id: str,
-        target_sockets: list["SocketRowItem"] | None = None,
-        source_sockets: list["SocketRowItem"] | None = None,
+        target_sockets: list["SocketItem"] | None = None,
+        source_sockets: list["SocketItem"] | None = None,
         width: float = theme.NODE_MIN_WIDTH,
         height: float = theme.NODE_MIN_HEIGHT,
     ) -> None:

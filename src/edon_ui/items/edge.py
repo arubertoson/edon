@@ -203,7 +203,9 @@ class EdgeItem(QGraphicsPathItem):
         padding = self._pen.widthF() * 4
         return path_rect.adjusted(-padding, -padding, padding, padding)
 
-    def _update_internal_path(self) -> None:
+    def update_path(self) -> None:
+        self.prepareGeometryChange()
+
         self._source_pos = self.source_socket_item.scenePos()
         self._target_pos = self.target_socket_item.scenePos()
 
@@ -211,11 +213,6 @@ class EdgeItem(QGraphicsPathItem):
         # from it's source role.
         path = self._path_calculator(self._source_pos, self._target_pos, False, SocketRole.SOURCE)
         self.setPath(path)
-
-    def socket_moved(self, moved_socket: SocketLinkItem) -> None:
-        if moved_socket == self._source_socket_item or moved_socket == self._target_socket_item:
-            self.prepareGeometryChange()
-            self._update_internal_path()
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
         if self.isSelected():
