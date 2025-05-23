@@ -1,4 +1,3 @@
-# Look over this file as well to see if it follows the guidelines correctly AI!
 """Provides the main EdonApplication class for managing the Edon UI.
 
 This class encapsulates the setup of the Qt application, main window,
@@ -43,11 +42,11 @@ def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, messag
         QtMsgType.QtFatalMsg: "CRITICAL",
     }.get(msg_type, "INFO")
 
-    def _populate_context():
-        file_info = context.file() or "unknown_file"  # type: ignore
-        line_info = context.line() if context.line() is not None else 0  # type: ignore
-        func_info = context.function() or "unknown_function"  # type: ignore
-        category_info = context.category() or "unknown_category"  # type: ignore
+    def _populate_context() -> str:
+        file_info = context.file() or "unknown_file"
+        line_info = context.line() if context.line() is not None else 0
+        func_info = context.function() or "unknown_function"
+        category_info = context.category() or "unknown_category"
 
         return f"[{category_info}] ({file_info}:{line_info}, {func_info})"
 
@@ -67,8 +66,6 @@ class EdonApplication:
         - key_mapping: Mapping between key sequences and commands (KeyMapping)
         - entity_graph: The underlying graph data model (EntityGraph)
         - node_registry: Registry mapping node type hints to node classes
-        - graph_controller: Controller for graph operations (GraphController)
-        - set_entity_graph(): Replace the entity graph and update dependent components
         - run(): Start the application event loop
 
     Example:
@@ -76,7 +73,8 @@ class EdonApplication:
         # Register custom commands
         app.command_registry.register(my_custom_command)
         # Set up a custom graph
-        app.set_entity_graph(my_graph, my_node_registry)
+        app.entity_graph = my_graph # Assign to property
+        app.node_registry = my_node_registry # Assign to property
         # Start the application
         app.run()
     """
@@ -118,15 +116,26 @@ class EdonApplication:
 
     @property
     def entity_graph(self) -> EntityGraph:
+        """EntityGraph: The underlying graph data model.
+        
+        Setting this property also re-initializes the graph controller
+        to reflect the new graph in the UI.
+        """
         return self._entity_graph
 
     @entity_graph.setter
     def entity_graph(self, value: EntityGraph) -> None:
+        """Sets the entity graph and updates dependent UI components."""
         self._entity_graph = value
         self._update_graph_system()
 
     @property
     def node_registry(self) -> dict[str, type[EntityNode]]:
+        """dict[str, type[EntityNode]]: Registry mapping node type hints to node classes.
+        
+        Setting this property also re-initializes the graph controller
+        to use the new node registry.
+        """
         return self._node_registry
 
     def _update_graph_system(self) -> GraphController:
@@ -158,6 +167,7 @@ class EdonApplication:
 
     @node_registry.setter
     def node_registry(self, value: dict[str, type[EntityNode]]) -> None:
+        """Sets the node registry and updates dependent UI components."""
         self._node_registry = value
         self._update_graph_system()
 
@@ -207,7 +217,7 @@ class EdonApplication:
         self.key_mapping = KeyMapping.from_command_defaults(self.command_registry.get_all_commands())
 
         # Create key processor for handling input events
-        self._key_processor = KeyProcessor(self.command_registry, self.key_mapping)
+        self._key_processor: KeyProcessor = KeyProcessor(self.command_registry, self.key_mapping)
         self._graphics_view.key_processor = self._key_processor
 
     def run(self) -> int:
