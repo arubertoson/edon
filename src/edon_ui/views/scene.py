@@ -176,55 +176,42 @@ class GraphicsScene(QGraphicsScene):
                     item.setSelected(False)
 
     def add_node(self, node: NodeItem):
-        if node in self.node_items:
-            return
-
-        self.node_items.append(node)
         node.node_position_update_signal.connect(self._refresh_scene_edge_paths)
-        node.node_redraw_signal.connect(self._refresh_scene_node_size, Qt.ConnectionType.QueuedConnection)
+        node.node_redraw_signal.connect(self._refresh_scene_node_size)
 
         super().addItem(node)
-        self._refresh_scene_edge_paths()
+        # XXX: Keep an eye on, I don't think we need to update paths here, it's a new node, should have no connections.
+        # self._refresh_scene_edge_paths()
 
     def remove_node(self, node: NodeItem):
-        if node not in self.node_items:
-            return
+        super().removeItem(node)
+        # XXX: most liekly unnecessary
+        # self._refresh_scene_edge_paths()
+        # if node not in self.node_items:
+        #     return
 
         # Also remove connections associated with this node
-        edges_to_remove = [
-            edge
-            for edge in self.edge_items
-            if edge.source_socket_item.node_entity_id == node.node_entity_id
-            or (edge.target_socket_item and edge.target_socket_item.node_entity_id == node.node_entity_id)
-        ]
-        for edge in edges_to_remove:
-            self.remove_edge(edge)
+        # edges_to_remove = [
+        #     edge
+        #     for edge in self.edge_items
+        #     if edge.source_socket_item.node_entity_id == node.node_entity_id
+        #     or (edge.target_socket_item and edge.target_socket_item.node_entity_id == node.node_entity_id)
+        # ]
+        # for edge in edges_to_remove:
+        #     self.remove_edge(edge)
 
-        self.node_items.remove(node)
-        super().removeItem(node)
-        self._refresh_scene_edge_paths()
+        # self.node_items.remove(node)
 
     def add_edge(self, edge: EdgeItem):
-        if edge in self.edge_items:
-            return
-
-        self.edge_items.append(edge)
-        edge.source_socket_item.add_edge(edge)
-        edge.target_socket_item.add_edge(edge)
-
         super().addItem(edge)
+        # XXX: again unsure if this is necesasry here
+        # edge.update_path()
         self._refresh_scene_edge_paths()
 
     def remove_edge(self, edge: EdgeItem):
-        if edge not in self.edge_items:
-            return
-
-        self.edge_items.remove(edge)
-        edge.source_socket_item.remove_edge(edge)
-        edge.target_socket_item.remove_edge(edge)
-
         super().removeItem(edge)
-        self._refresh_scene_edge_paths()
+        # XXX: necessayr?
+        # self._refresh_scene_edge_paths()
 
     @Slot()
     def _refresh_scene_active_area_rect(self):
