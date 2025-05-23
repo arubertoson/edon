@@ -18,9 +18,9 @@ from PySide6.QtCore import QPointF
 
 from edon.graph import EdgeKey, EntityGraph, SocketAddress, SocketRole
 from edon.node import EntityNode
+from edon_ui import theme
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.factory import create_node_item
-from edon_ui.graph.builder import create_scene_items_from_graph, SceneItems
 from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketItem
 
@@ -50,11 +50,10 @@ class GraphController:
     def __init__(
         self,
         entity_graph: EntityGraph,
-        ui_scene: "GraphicsScene",
         node_type_registry: Mapping[str, Type[EntityNode]] | None = None,
     ):
         self.entity_graph: EntityGraph = entity_graph
-        self.ui_scene: "GraphicsScene" = ui_scene
+        self.ui_scene: "GraphicsScene" | None = None  # Will be set by set_scene
 
         # Maps for entity graph to UI items
         self.edge_map: EdgeItemMap = {}
@@ -62,63 +61,121 @@ class GraphController:
         self.socket_addr_socket_item_map: SocketItemMap = {}
         self.socket_addr_edge_key_map: SocketEdgeKeyMap = defaultdict(set)
 
-        self.node_registry: NodeRegistryMap = node_type_registry or {}
+        self.node_registry: NodeRegistryMap = dict(node_type_registry or {})
 
-        logger.info(
-            f"GraphController initialized with entity graph: {self.entity_graph} and graphics scene: {self.ui_scene}"
-        )
+        logger.info(f"GraphController initialized with entity graph: {self.entity_graph}. UI scene will be set later.")
 
-    def populate_scene_from_graph_data(self) -> None:
+    def set_scene(self, scene: "GraphicsScene") -> None:
+        """Links the controller to its UI scene and populates the scene."""
+        self.ui_scene = scene
+        logger.info(f"GraphController: UI scene set to {self.ui_scene}. Populating scene from graph data.")
+        self._populate_scene_from_graph_data()
+
+    def _register_node_internal(self, entity_node: EntityNode, scene_position: QPointF) -> NodeItem | None:
         """
-        Populates the GraphicsScene with NodeItems and EdgeItems based on the
-        current EntityGraph.
-
-        This method uses the `create_scene_items_from_graph` builder to generate
-        the UI items and then adds them to the scene and updates internal mappings.
-        It assumes the scene and controller's maps are in a clean state for population
-        (e.g., scene cleared, controller newly initialized).
+        Creates a NodeItem for the given EntityNode, adds it to the scene,
+        and updates internal controller maps.
+        Assumes entity_node is already in self.entity_graph.
         """
-        logger.info("GraphController: Populating UI scene from entity graph data.")
-        assert self.entity_graph and self.ui_scene
-
-        scene_items_representation: SceneItems = create_scene_items_from_graph(self.entity_graph)
-
-        for entity_node_id, node_item in scene_items_representation.nodes.items():
+        assert self.ui_scene is not None, "UI Scene must be set before registering nodes."
+        logger.debug(f"GraphController: Registering UI for node '{entity_node.id}' at {scene_position}")
+        try:
+            node_item = create_node_item(
+                entity_node,
+                scene_position.x(),
+                scene_position.y(),
+            )
             self.ui_scene.add_node(node_item)
-            self.node_map[entity_node_id] = node_item
+            self.node_map[entity_node.id] = node_item
 
-            entity_node = self.entity_graph.get_node(entity_node_id)
-            if entity_node:
-                all_entity_sockets: list["EntitySocket"] = list(entity_node.source_sockets.values()) + list(
-                    entity_node.target_sockets.values()
-                )
-                for entity_socket in all_entity_sockets:
-                    socket_addr = SocketAddress(node_id=entity_node_id, socket_name=entity_socket.name)
-                    is_target_socket_role = entity_socket.role == SocketRole.TARGET
-                    socket_link_item = node_item.get_socket_circle_item_by_name(
-                        entity_socket.name, is_target=is_target_socket_role
-                    )
-                    if socket_link_item:
-                        socket_row_item = socket_link_item.parentItem()
-                        if isinstance(socket_row_item, SocketItem):
-                            self.socket_addr_socket_item_map[socket_addr] = socket_row_item
-                        else:
-                            logger.warning(f"Could not find SocketItem for {socket_addr} during scene population.")
-                    else:
-                        logger.warning(
-                            f"Could not find SocketLinkItem for {socket_addr} on node {node_item.name} during scene population."
-                        )
-            else:
-                logger.warning(f"EntityNode {entity_node_id} not found in graph while populating socket map.")
-        logger.debug(f"GraphController: Added {len(self.node_map)} nodes to the scene.")
+            for socket_item in node_item.source_sockets + node_item.target_sockets:
+                if not socket_item:
+                    continue
 
-        # Add EdgeItems to the scene and update mappings
-        for edge_key, edge_item in scene_items_representation.edges.items():
+                self.socket_addr_socket_item_map[socket_item.socket_address] = socket_item
+
+            logger.debug(f"UI for node '{entity_node.id}' registered successfully. UI Item: {node_item.title}")
+            return node_item
+        except Exception as e:
+            logger.error(f"Error registering UI for node '{entity_node.id}': {e}", exc_info=True)
+            # Consider if rollback of entity_node from entity_graph is needed if called from request_add_node
+            return None
+
+    def _register_edge_internal(self, edge_key: EdgeKey) -> EdgeItem | None:
+        """
+        Creates an EdgeItem for the given EdgeKey, adds it to the scene,
+        and updates internal controller maps.
+        Assumes the link exists in self.entity_graph and source/target node UIs are registered.
+        """
+        assert self.ui_scene is not None, "UI Scene must be set before registering edges."
+        logger.debug(f"GraphController: Registering UI for edge {edge_key}")
+
+        source_socket_addr = edge_key.source
+        target_socket_addr = edge_key.target
+
+        source_socket_item = self.socket_addr_socket_item_map.get(source_socket_addr)
+        target_socket_item = self.socket_addr_socket_item_map.get(target_socket_addr)
+
+        assert source_socket_item and target_socket_item, "State without existing sockets should not be possible"
+
+        try:
+            edge_item = EdgeItem(source_socket_item.link_item, target_socket_item.link_item)
+
             self.ui_scene.add_edge(edge_item)
             self.edge_map[edge_key] = edge_item
-            self.socket_addr_edge_key_map[edge_key.source].add(edge_key)
-            self.socket_addr_edge_key_map[edge_key.target].add(edge_key)
-        logger.debug(f"GraphController: Added {len(self.edge_map)} edges to the scene.")
+            self.socket_addr_edge_key_map[source_socket_addr].add(edge_key)
+            self.socket_addr_edge_key_map[target_socket_addr].add(edge_key)
+
+            logger.debug(f"UI for edge {edge_key} registered successfully. UI Item: {edge_item}")
+            return edge_item
+        except Exception as e:
+            logger.error(f"Error registering UI for edge {edge_key}: {e}", exc_info=True)
+            # Consider if rollback of link in entity_graph is needed if called from request_add_edge
+            return None
+
+    def _populate_scene_from_graph_data(self) -> None:
+        """
+        Populates the GraphicsScene with NodeItems and EdgeItems based on the
+        current EntityGraph using internal registration methods.
+        This is called by set_scene() after the scene is linked.
+        """
+        assert self.ui_scene is not None, "UI Scene must be set before populating it."
+
+        logger.info("GraphController: Populating UI scene from entity graph data.")
+
+        # Basic layout logic (can be made more sophisticated), consider a dependency injection
+        # for layout functionality.
+        default_x, default_y = 50.0, 50.0
+        # Use getattr for theme attributes to provide defaults if theme doesn't have them
+        spacing_x = getattr(theme, "NODE_MIN_WIDTH", 150.0) + 50.0
+        spacing_y = getattr(theme, "NODE_MIN_HEIGHT", 100.0) + 50.0
+        nodes_per_row = 5
+
+        for i, (node_id, entity_node) in enumerate(self.entity_graph.nodes.items()):
+            # TODO: Persist and use actual node positions from entity_node.metadata if available
+            pos_x = default_x + (i % nodes_per_row) * spacing_x
+            pos_y = default_y + (i // nodes_per_row) * spacing_y
+            self._register_node_internal(entity_node, QPointF(pos_x, pos_y))
+        logger.debug(f"GraphController: Registered UI for {len(self.node_map)} nodes from entity graph.")
+
+        # Register edges
+        processed_edge_keys: set[EdgeKey] = set()
+        for source_node_id, source_entity_node in self.entity_graph.nodes.items():
+            # We treat this as a DAG, using the source to establish connection to targets.
+            for source_socket_name, source_entity_socket in source_entity_node.source_sockets.items():
+                for linked_target_entity_socket in source_entity_socket.links:  # These are EntitySocket instances
+                    target_node_id = linked_target_entity_socket.node.id
+                    target_socket_name = linked_target_entity_socket.name
+
+                    edge_key = EdgeKey(
+                        source=SocketAddress(node_id=source_node_id, socket_name=source_socket_name),
+                        target=SocketAddress(node_id=target_node_id, socket_name=target_socket_name),
+                    )
+                    if edge_key not in processed_edge_keys:
+                        self._register_edge_internal(edge_key)
+                        processed_edge_keys.add(edge_key)
+
+        logger.debug(f"GraphController: Registered UI for {len(self.edge_map)} edges from entity graph.")
 
         self.ui_scene._refresh_scene_interaction_state()
         logger.info("GraphController: UI scene population complete.")
@@ -138,15 +195,19 @@ class GraphController:
             logger.error(f"ERROR: Node type hint '{node_type_hint}' not found in registry. Cannot create node.")
             return
 
-        # XXX: This might be unnecessary
         # Node names are auto-generated based on type and a running count to ensure uniqueness.
-        type_count = sum(1 for node in self.entity_graph.nodes.values() if isinstance(node, node_class_to_create))
-        node_name = f"{node_class_to_create.__name__} {type_count + 1}"
+        # This logic for name generation could be part of EntityNode.__init__ or a factory.
+        type_count = sum(
+            1
+            for node_id in self.entity_graph.nodes
+            if self.entity_graph.nodes[node_id].node_type_name == node_class_to_create.node_type_name()
+        )
+        node_name = f"{node_class_to_create.node_type_name()} {type_count + 1}"
 
         self.request_add_node(
             node_entity_class=node_class_to_create,
-            name=node_name,
             scene_position=scene_pos,
+            **{"title": node_name},
         )
 
     def handle_ui_edge_link_request(
@@ -163,8 +224,16 @@ class GraphController:
         )
 
         edge_key = EdgeKey(source_socket_addr, target_socket_addr)
-        if edge_key in self.edge_map:
-            logger.warning(f"Edge {edge_key} already exists. Ignoring connection attempt.")
+        if edge_key in self.edge_map:  # Check UI map first
+            logger.warning(f"Edge {edge_key} already exists in UI. Ignoring connection attempt.")
+            return
+
+        # Also check entity graph to be sure, though UI map should be consistent
+        if self.entity_graph.has_edge(edge_key.source, edge_key.target):
+            logger.warning(f"Edge {edge_key} already exists in EntityGraph. Ignoring connection attempt.")
+            # XXX:
+            # Potentially re-register if UI is missing but entity exists (sync issue)
+            # self._register_edge_internal(edge_key)
             return
 
         self.request_add_edge(edge_key)
@@ -179,7 +248,10 @@ class GraphController:
         """Processes a UI request to delete one or more specified edges."""
         logger.info(f"GraphController: Received handle_ui_edge_deletion_request for {len(edge_items)} edge(s).")
         for edge_item in edge_items:
-            self.request_remove_edge(edge_item.edge_key)
+            if edge_item.edge_key:  # Ensure edge_key is available
+                self.request_remove_edge(edge_item.edge_key)
+            else:
+                logger.warning(f"EdgeItem {edge_item} has no edge_key, cannot process deletion request.")
 
     def request_add_node(
         self,
@@ -188,74 +260,60 @@ class GraphController:
         **node_specific_kwargs,
     ) -> NodeItem | None:
         """
-        Create a new entity node and its corresponding UI node, registering both with the controller.
+        Create a new entity node, add it to the entity graph, and then register
+        its UI representation.
         """
-        node_type = node_entity_class.__name__
-        logger.info(f"request_add_node of type {node_type} at {scene_position}")
+        node_type_name = node_entity_class.__name__
+        logger.info(f"GraphController: Requesting to add node of type '{node_type_name}' at {scene_position}")
 
         try:
             new_entity_node = node_entity_class(**node_specific_kwargs)
-            new_node_item = create_node_item(
-                new_entity_node,
-                scene_position.x(),
-                scene_position.y(),
-            )
+            self.entity_graph.add_node(new_entity_node)
 
-            # Populate the map using the sockets from the resulting NodeItem
-            for socket_item in new_node_item.source_sockets + new_node_item.target_sockets:
-                self.socket_addr_socket_item_map[socket_item.socket_address] = socket_item
+            node_item = self._register_node_internal(new_entity_node, scene_position)
+            if node_item:
+                logger.info(
+                    f"Successfully created and registered node: {new_entity_node.name} "
+                    f"(Entity ID: {new_entity_node.id}, UI: {node_item.name})"
+                )
+            else:
+                logger.error(
+                    f"Failed to register UI for node '{new_entity_node.id}'. Rolling back entity graph add might be needed."
+                )
+                self.entity_graph.remove_node(new_entity_node.id)
 
-            logger.info(
-                f"Successfully created and added node: {new_entity_node.name} (Entity ID: {new_entity_node.id}, UI: {new_node_item})"
-            )
-
-            # Add node to scene and maps AFTER successful creation and mapping
-            self.ui_scene.add_node(new_node_item)
-            self.node_map[new_entity_node.id] = new_node_item
-
-            return new_node_item
+            return node_item
         except Exception as e:
-            logger.error(f"Error creating or adding node of type '{node_entity_class.__name__}': {e}")
+            logger.error(f"Error in request_add_node for type '{node_type_name}': {e}", exc_info=True)
             return None
 
     def request_add_edge(self, edge_key: EdgeKey) -> EdgeItem | None:
         """
-        Create a new entity edge and its corresponding UI edge, registering both with the controller.
+        Link sockets in the entity graph and then register the UI edge representation.
         """
         logger.info(f"GraphController: Requesting to create edge: {edge_key}")
-        if edge_key in self.edge_map:
-            logger.debug(f"Connection {edge_key} already exists. No new connection created.")
-            return None
 
-        source_socket_addr = edge_key.source
-        target_socket_addr = edge_key.target
         link_success, reason = self.entity_graph.link_sockets(
-            source_socket_addr,
-            target_socket_addr,
+            edge_key.source,
+            edge_key.target,
         )
 
         if link_success:
-            logger.debug(f"Entity connection successful for {edge_key}. Creating UI EdgeItem.")
+            logger.debug(f"EntityGraph link successful for {edge_key}.")
 
-            source_socket_row = self.socket_addr_socket_item_map.get(source_socket_addr)
-            target_socket_row = self.socket_addr_socket_item_map.get(target_socket_addr)
+            edge_item = self._register_edge_internal(edge_key)
+            if edge_item:
+                logger.info(f"Successfully created and registered edge: {edge_key}")
+            else:
+                logger.error(
+                    f"Failed to register UI for edge {edge_key}. Rolling back entity graph link might be needed."
+                )
+                self.entity_graph.unlink_sockets(edge_key.source, edge_key.target)
 
-            source_ui_socket_link = source_socket_row.link_item
-            target_ui_socket_link = target_socket_row.link_item
-
-            new_edge_item = EdgeItem(source_ui_socket_link, target_ui_socket_link)
-            self.ui_scene.add_edge(new_edge_item)
-
-            self.edge_map[edge_key] = new_edge_item
-            self.socket_addr_edge_key_map[source_socket_addr].add(edge_key)
-            self.socket_addr_edge_key_map[target_socket_addr].add(edge_key)
-
-            logger.debug(f"UI EdgeItem created and added to scene/map for edge: {edge_key}")
-            return new_edge_item
+            return edge_item
         else:
-            logger.warning(f"  Entity connection FAILED for {edge_key}. Reason: {reason}. No UI edge created.")
-
-        return None
+            logger.warning(f"EntityGraph link FAILED for {edge_key}. Reason: {reason}. No UI edge created.")
+            return None
 
     def request_remove_node(self, entity_node_id: str) -> bool:
         """
@@ -286,12 +344,12 @@ class GraphController:
             # for all sockets belonging to the removed node.
             del self.socket_addr_socket_item_map[socket_item.socket_address]
 
-        # Remove the node from the controller's primary mapping of entity IDs to UI node items.
-        del self.node_map[entity_node_id]
-        self.entity_graph.remove_node(entity_node_id)
-        self.ui_scene.remove_node(node_item_to_remove)
+            # Remove the node from the controller's primary mapping of entity IDs to UI node items.
+            del self.node_map[entity_node_id]
+            self.entity_graph.remove_node(entity_node_id)
+            self.ui_scene.remove_node(node_item_to_remove)
 
-        logger.info(f"GraphController: Node removal process for {entity_node_id} complete.")
+            logger.info(f"GraphController: Node removal process for {entity_node_id} complete.")
 
         return True
 

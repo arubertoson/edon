@@ -72,22 +72,43 @@ class EdonApplication:
         self._qt_app: QApplication = self._create_qt_application()
         self._qt_app.setStyleSheet(theme.APPLICATION_STYLESHEET)
 
-        self._graphics_scene: GraphicsScene = GraphicsScene()
-        self._graphics_view: GraphicsView = GraphicsView(self._graphics_scene)
-
-        # Initialize public API components
-        # These are the main interfaces that users of EdonApplication will interact with
-        self.main_window: MainWindow = MainWindow(self._graphics_view)
-        self.command_registry: CommandRegistry = CommandRegistry()
-        self.key_mapping: KeyMapping = KeyMapping()
+        # Initialize core data and graph components following the new structure
         self._entity_graph: EntityGraph = EntityGraph()
         self._node_registry: dict[str, type[EntityNode]] = node_registry or {}
 
-        # Set up command system
-        self._setup_command_system()
+        # The initialization order for the core graph components is crucial:
+        # 1. GraphController: This is the central logic unit. It needs the data model
+        #    (EntityGraph) and type information (NodeRegistry) to function. It's
+        #    created first as it doesn't depend on UI elements yet.
+        # 2. GraphicsScene: This is the Qt-based representation of the graph. It
+        #    requires an existing GraphController to manage its content and interactions.
+        #    The controller is passed during construction, ensuring the scene always
+        #    has a valid controller.
+        # 3. GraphController.set_scene(): After both controller and scene exist,
+        #    the controller is explicitly linked to the scene. This step allows the
+        #    controller to populate the scene with initial data from the EntityGraph.
+        #    This two-step linking (scene gets controller, then controller gets scene)
+        #    avoids complex constructor dependencies and ensures both objects are
+        #    fully initialized before the link is finalized.
+        # 4. GraphicsView: This is the Qt widget that displays the GraphicsScene.
+        #    It's created last, taking the fully initialized and populated scene.
+        # This sequence ensures that dependencies are met at each step and components
+        # are correctly wired together before any user interaction.
 
-        # Set up graph system
-        self._graph_controller: GraphController = self._update_graph_system()
+        self._graph_controller: GraphController = GraphController(
+            entity_graph=self._entity_graph, node_type_registry=self._node_registry
+        )
+
+        self._graphics_scene: GraphicsScene = GraphicsScene(controller=self._graph_controller)
+        self._graphics_view: GraphicsView = GraphicsView(self._graphics_scene)
+        self._graph_controller.set_scene(self._graphics_scene)  # This also populates the scene
+
+        # Initialize public API components
+        self.main_window: MainWindow = MainWindow(self._graphics_view)
+        self.command_registry: CommandRegistry = CommandRegistry()
+        self.key_mapping: KeyMapping = KeyMapping()
+
+        self._setup_command_system()
 
         logger.info("EdonApplication initialized.")
 
@@ -99,57 +120,65 @@ class EdonApplication:
     def entity_graph(self, value: EntityGraph) -> None:
         """Sets the core data model for the graph.
 
-        Setting this property re-initializes the graph controller to reflect
-        the new graph in the UI.
+        Setting this property re-initializes the graph controller and scene
+        to reflect the new graph in the UI.
         """
         self._entity_graph = value
-        self._update_graph_system()
+        self._reinitialize_graph_components()
 
     @property
     def node_registry(self) -> dict[str, type[EntityNode]]:
         return self._node_registry
 
-    def _update_graph_system(self) -> GraphController:
-        """Initializes or re-initializes the graph controller.
-
-        This method ensures the UI's graph representation is synchronized with the
-        application's core data. It creates and configures a `GraphController`
-        instance, connecting the current `entity_graph` and `node_registry`
-        to the `GraphicsScene`. This is typically invoked during application
-        setup or when the underlying graph data or node types change.
-        """
-        # Before creating a new controller, ensure the scene is cleared of old elements.
-        if self._graphics_scene:
-            self._graphics_scene.clear_graph_elements()
-
-        # Create graph controller and connect it to the scene, the GraphController serves as
-        # the bridge between the entity graph model and the UI. It handles synchronization
-        # of nodes/edges and translates UI actions to model operations.
-        self._graph_controller = GraphController(
-            entity_graph=self.entity_graph,
-            ui_scene=self._graphics_scene,
-            node_type_registry=self.node_registry,
-        )
-
-        # Connect signals from UI components to the graph controller to handle user interactions
-        # This enables the UI to request node/edge creation, deletion, and other graph operations
-        logger.debug(f"GraphController created with {len(self.entity_graph.nodes)} existing nodes")
-        self._graphics_scene.controller = self._graph_controller
-
-        return self._graph_controller
-
     @node_registry.setter
     def node_registry(self, value: dict[str, type[EntityNode]]) -> None:
         """Sets the registry for mapping node type identifiers to their classes.
 
-        Setting this property re-initializes the graph controller to use the
-        new node registry.
+        Setting this property re-initializes the graph controller and scene
+        to use the new node registry.
         """
         self._node_registry = value
-        self._update_graph_system()
+        self._reinitialize_graph_components()
+
+    def _reinitialize_graph_components(self) -> None:
+        """
+        Re-initializes the GraphController and GraphicsScene when the
+        EntityGraph or NodeRegistry changes.
+        """
+        logger.debug("Reinitializing graph components (Controller and Scene)...")
+
+        # A new GraphController instance is created here because the controller's
+        # internal state (e.g., mappings of entity IDs to UI items, edge representations)
+        # is tightly coupled with the specific EntityGraph and NodeRegistry instances
+        # it was initialized with. If the EntityGraph (e.g., loading a new file) or
+        # NodeRegistry (e.g., plugins adding new node types) changes, the existing
+        # controller's state would be invalid or inconsistent. Creating a new
+        # controller ensures a clean slate, allowing it to accurately build its
+        # internal representations based on the new graph data and/or node types.
+        # This approach is more robust than trying to update an existing controller's
+        # complex internal state in-place.
+        self._graph_controller = GraphController(
+            entity_graph=self._entity_graph, node_type_registry=self._node_registry
+        )
+
+        # Important: The old scene might still be referenced by the view.
+        # We need to create a new one and then tell the view to use it.
+        # The old scene will be garbage collected if not referenced elsewhere.
+        # No need to call clear_graph_elements on the old scene as it will be replaced.
+        self._graphics_scene = GraphicsScene(controller=self._graph_controller)
+        self._graph_controller.set_scene(self._graphics_scene)  # This also populates the scene
+
+        if self._graphics_view:
+            self._graphics_view.setScene(self._graphics_scene)
+            # Re-assign key processor if it was set on the view
+            if hasattr(self, "_key_processor") and self._key_processor:
+                self._graphics_view.key_processor = self._key_processor
+        else:
+            logger.warning("GraphicsView not available to set new scene during reinitialization.")
+
+        logger.info("Graph components reinitialized.")
 
     def _setup_logging(self, log_level: str) -> None:
-        # Set up loguru
         setup_logging(log_level=log_level)
 
         # Install Qt message handler
@@ -194,12 +223,6 @@ class EdonApplication:
         event processing. The application's exit code is returned upon termination.
         """
         logger.info("Running EdonApplication...")
-        # Populate the graphics scene from the entity graph using the new controller method.
-        # This is done here to ensure the graph is visually represented before the main window is shown.
-        if self._graph_controller:
-            self._graph_controller.populate_scene_from_graph_data()
-        else:
-            logger.error("GraphController not initialized before run. Cannot populate scene.")
 
         logger.debug("About to call self.main_window.show()")
         try:

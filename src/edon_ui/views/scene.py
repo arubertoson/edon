@@ -131,9 +131,9 @@ class GraphicsScene(QGraphicsScene):
 
     scene_node_count_changed = Signal()
 
-    def __init__(self, controller: "GraphController | None" = None, parent: "QObject | None" = None):
+    def __init__(self, controller: "GraphController", parent: "QObject | None" = None):
         super().__init__(parent)
-        self.controller = controller
+        self.controller: "GraphController" = controller
 
         self.active_area_size = 2000  # Initial size, can be smaller if preferred
         self.setSceneRect(
@@ -157,30 +157,44 @@ class GraphicsScene(QGraphicsScene):
 
         self.selectionChanged.connect(self._handle_selection_changed)
 
+    @property
+    def node_items(self) -> list[NodeItem]:
+        return list(self.controller.node_map.values())
+
     def clear_graph_elements(self) -> None:
         logger.debug("GraphicsScene: Clearing all graph elements (nodes and edges).")
 
-        # We should block new draws to the viewport while we are deleting all objects like this.
+        # Temporarily disable updates on all views attached to this scene
+        # to prevent visual artifacts during bulk item removal.
+        associated_views = self.views()
+        for view in associated_views:
+            view.setUpdatesEnabled(False)
 
-        items_to_remove = [item for item in self.items() if isinstance(NodeItem, EdgeItem)]
+        try:
+            items_to_remove = [item for item in self.items() if isinstance(item, (NodeItem, EdgeItem))]
 
-        for item in items_to_remove:
-            # For NodeItem, ensure signals it might have connected to the scene are disconnected
-            # or that its removal from scene handles this.
-            if isinstance(item, NodeItem):
-                try:
-                    # Assuming NodeItem might connect these, attempt disconnection
-                    item.node_position_update_signal.disconnect(self._refresh_scene_edge_paths)
-                except (RuntimeError, TypeError):  # TypeError if signal was never connected
-                    pass
-                try:
-                    item.node_redraw_signal.disconnect(self._refresh_scene_node_size)
-                except (RuntimeError, TypeError):
-                    pass
+            for item in items_to_remove:
+                # For NodeItem, ensure signals it might have connected to the scene are disconnected
+                # or that its removal from scene handles this.
+                if isinstance(item, NodeItem):
+                    try:
+                        # Assuming NodeItem might connect these, attempt disconnection
+                        item.node_position_update_signal.disconnect(self._refresh_scene_edge_paths)
+                    except (RuntimeError, TypeError):  # TypeError if signal was never connected
+                        pass
+                    try:
+                        item.node_redraw_signal.disconnect(self._refresh_scene_node_size)
+                    except (RuntimeError, TypeError):
+                        pass
 
-            super().removeItem(item)
+                super().removeItem(item)
 
-        self._refresh_scene_interaction_state()
+            self._refresh_scene_interaction_state()
+        finally:
+            # Re-enable updates on all views
+            for view in associated_views:
+                view.setUpdatesEnabled(True)
+            logger.trace("GraphicsScene: View updates re-enabled after clearing graph elements.")
 
     def _handle_selection_changed(self):
         # XXX: We should keep an eye on this function as it could potentially be recursed and cause a crash/lock.
@@ -205,7 +219,7 @@ class GraphicsScene(QGraphicsScene):
         # self._refresh_scene_edge_paths()
 
         self._refresh_scene_interaction_state()
-        self.scene_node_count_changed.emit(len(self.controller.node_map))
+        self.scene_node_count_changed.emit(len(self.node_items))
 
     def remove_node(self, node: NodeItem):
         try:
@@ -219,7 +233,7 @@ class GraphicsScene(QGraphicsScene):
 
         super().removeItem(node)
         self._refresh_scene_interaction_state()
-        self.scene_node_count_changed.emit(len(self.controller.node_map))
+        self.scene_node_count_changed.emit(len(self.node_items))
 
     def add_edge(self, edge: EdgeItem):
         super().addItem(edge)
@@ -253,7 +267,7 @@ class GraphicsScene(QGraphicsScene):
         min_x, min_y = float("inf"), float("inf")
         max_x, max_y = float("-inf"), float("-inf")
 
-        for node in self.node_items:
+        for node in self.node_items.values():
             pos = node.pos()
             rect = node.boundingRect()
             min_x = min(min_x, pos.x())
@@ -308,7 +322,7 @@ class GraphicsScene(QGraphicsScene):
 
         node = self.controller.node_map.get(updated_node_id)
         for socket_item in node.source_sockets + node.target_sockets:
-            edges = self.controll.find_edge_items_at_socket(socket_item.socket_address)
+            edges = self.controller.find_edge_items_at_socket(socket_item.socket_address)
             for edge in edges:
                 edge.update_path()
 
@@ -329,8 +343,6 @@ class GraphicsScene(QGraphicsScene):
             if isinstance(item, SocketLinkItem):
                 return item
         return None
-
-    # XXX: Should the below really be managed by the scene?
 
     def is_dragging_edge(self) -> bool:
         return self._temp_edge is not None
@@ -391,7 +403,9 @@ class GraphicsScene(QGraphicsScene):
 
     def update_dragged_edge(self, current_scene_pos: QPointF):
         """Updates the end point of the temporary edge being dragged."""
-        assert self._temp_edge is not None
+
+        # This should not happen, start_edge_drag should setup the correct scene state for edge drag.
+        assert self._temp_edge and self._cached_drag_valid_targets
 
         self._temp_edge.update_target_position(current_scene_pos)
         potential_target_socket = self._get_socket_at_pos(current_scene_pos)
@@ -435,8 +449,10 @@ class GraphicsScene(QGraphicsScene):
                 Args:
                     event_scene_pos: The scene position where the edge drag ended
         """
-        # This is a bit of a hack to make the logic of the edge connection work in both
-        # directions. We do a swap to make the logic of the edge connection consistent.
+        # NOTE: we have the assert for self._temp_edge in update_dragged_edge and can
+        # avoid any cleanup. If we readch this point without a temporary edge something
+        # has gone terribly wrong and any resulting crash should happen.
+
         target_socket_item = self._get_socket_at_pos(event_scene_pos)
         source_socket_item = self._temp_edge.source_socket_item
         if source_socket_item.is_input:
@@ -457,21 +473,20 @@ class GraphicsScene(QGraphicsScene):
             self._currently_highlighted_target_socket = None
 
         # Remove the temporary edge.
-        if self._temp_edge:
-            source_socket = self._temp_edge.source_socket_item
-            logger.debug(
-                f"Scene: Removing temporary edge from '{source_socket.node_entity_id}::{source_socket.socket_entity_name}'"
-            )
-            # The edge is not part of the entity graph at this point so we avoid calling
-            # the controller.
-            super().removeItem(self._temp_edge)
-            self._temp_edge = None
+        source_socket_for_log = self._temp_edge.source_socket_item
+        logger.debug(
+            f"Scene: Removing temporary edge from '{source_socket_for_log.node_entity_id}::{source_socket_for_log.socket_entity_name}'"
+        )
+        super().removeItem(self._temp_edge)
+        self._temp_edge = None
 
         # Reset the cached valid targets and their visual state.
-        self._cached_drag_valid_targets = set()
-        for item in self.items():
-            if isinstance(item, SocketLinkItem):
-                item.set_not_valid_drop_target(False)
+        if self._cached_drag_valid_targets is not None:  # Check if it was ever populated
+            for item in self.items():
+                if isinstance(item, SocketLinkItem):
+                    # Reset the 'not_valid_drop_target' state for all SocketLinkItems
+                    item.set_not_valid_drop_target(False)
+        self._cached_drag_valid_targets = None  # Set to None after use
 
     def update_socket_drop_targets(self, source_socket: SocketLinkItem):
         """
@@ -479,16 +494,34 @@ class GraphicsScene(QGraphicsScene):
         including those that would create a cycle. Uses GraphController for validation.
         Uses cached targets if available during an active drag.
         """
+        if self._cached_drag_valid_targets is None:
+            logger.warning(
+                "GraphicsScene: update_socket_drop_targets called but _cached_drag_valid_targets is None. "
+                "This might happen if not in an active drag sequence initiated by start_edge_drag."
+            )
+            # Reset all to default state as we don't have valid targets.
+            for item in self.items():
+                if isinstance(item, SocketLinkItem):
+                    item.set_not_valid_drop_target(False)
+            return
+
         logger.debug("Using cached valid drop targets for global socket update.")
-        assert self._cached_drag_valid_targets is not None
 
         for item in self.items():
-            if item and not isinstance(item, SocketLinkItem):
+            if not isinstance(item, SocketLinkItem):  # Simplified check
                 continue
 
-            socket_link = item
+            socket_link = item  # item is already a SocketLinkItem
             if socket_link == source_socket:
                 socket_link.set_not_valid_drop_target(False)
             else:
-                is_valid = socket_link.parentItem().socket_address in self._cached_drag_valid_targets
-                socket_link.set_not_valid_drop_target(is_valid)
+                # Ensure parentItem() and socket_address exist before checking membership
+                parent_item = socket_link.parentItem()
+                if hasattr(parent_item, "socket_address"):
+                    is_valid_target = parent_item.socket_address in self._cached_drag_valid_targets
+                    # set_not_valid_drop_target(True) means it's disabled / grayed out
+                    # So if it's NOT a valid target, we disable it.
+                    socket_link.set_not_valid_drop_target(not is_valid_target)
+                else:
+                    # If no socket_address, assume it's not a valid target for safety
+                    socket_link.set_not_valid_drop_target(True)

@@ -12,6 +12,7 @@ dependencies = [
 
 [tool.ruff]
 line-length = 119
+ignore = ["E741"]
 
 [build-system]
 requires = ["hatchling"]
