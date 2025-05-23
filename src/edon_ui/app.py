@@ -93,7 +93,6 @@ class EdonApplication:
 
     @property
     def entity_graph(self) -> EntityGraph:
-        """The core data model representing nodes and links."""
         return self._entity_graph
 
     @entity_graph.setter
@@ -108,7 +107,6 @@ class EdonApplication:
 
     @property
     def node_registry(self) -> dict[str, type[EntityNode]]:
-        """Registry mapping node type string identifiers to `EntityNode` subclasses."""
         return self._node_registry
 
     def _update_graph_system(self) -> GraphController:
