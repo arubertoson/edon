@@ -1,3 +1,4 @@
+# Look over this file as well to see if it follows the guidelines correctly AI!
 """Provides the main EdonApplication class for managing the Edon UI.
 
 This class encapsulates the setup of the Qt application, main window,
