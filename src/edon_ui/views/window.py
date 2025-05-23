@@ -1,10 +1,11 @@
+# ensure that this fiel follows our guidelines AI!
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget
 
 if TYPE_CHECKING:
-    from edon_ui.graphics.view import GraphicsView
+    from edon_ui.views.viewer import GraphicsView
 
 
 class MainWindow(QMainWindow):
