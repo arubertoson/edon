@@ -1,4 +1,3 @@
-# ensure the file follows the style guide AI!
 """Provides the main EdonApplication class for managing the Edon UI.
 
 This class encapsulates the setup of the Qt application, main window,
@@ -148,10 +147,6 @@ class EdonApplication:
         self._update_graph_system()
 
     def _setup_logging(self, log_level: str) -> None:
-        """Set up logging for the application.
-
-        This configures both loguru and Qt message handling.
-        """
         # Set up loguru
         setup_logging(log_level=log_level)
 
