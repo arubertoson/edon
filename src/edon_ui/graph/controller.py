@@ -246,13 +246,11 @@ class GraphController:
             logger.debug(f"Drag originated from SOURCE socket: {drag_origin_socket_addr}. Looking for TARGET sockets.")
 
         for partner_node in self.entity_graph.nodes.values():
-            # Get the appropriate socket collection (source_sockets or target_sockets) from the partner_node
             partner_sockets_map: Mapping[str, "EntitySocket"] = getattr(partner_node, partner_sockets_collection_name)
 
             for partner_socket_name in partner_sockets_map.keys():
                 potential_partner_socket_addr = SocketAddress(partner_node.id, partner_socket_name)
 
-                # Define the prospective source and target addresses for the potential new edge
                 if drag_origin_ui_socket_item.role == SocketRole.TARGET:  # Reverse drag
                     # Proposed edge: potential_partner_socket_addr (Output) -> drag_origin_socket_addr (Input)
                     prospective_source_addr = potential_partner_socket_addr
@@ -262,11 +260,8 @@ class GraphController:
                     prospective_source_addr = drag_origin_socket_addr
                     prospective_target_addr = potential_partner_socket_addr
 
-                # Delegate all validation to the EntityGraph
-                can_form, reason = self.entity_graph.can_form_edge(prospective_source_addr, prospective_target_addr)
-
+                can_form, reason = self.entity_graph.can_form_link(prospective_source_addr, prospective_target_addr)
                 if can_form:
-                    # The valid drop target is the socket on the partner node
                     valid_targets.add(potential_partner_socket_addr)
                 else:
                     logger.trace(
