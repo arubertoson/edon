@@ -41,48 +41,12 @@ Comprehensive type hinting is mandatory to improve code clarity and enable stati
 -   **`TYPE_CHECKING`**: To avoid circular imports or unnecessary runtime imports solely for type annotations, use `from typing import TYPE_CHECKING`. Import modules needed only for type hints within an `if TYPE_CHECKING:` block.
 -   **Protocols (`typing.Protocol`)**: Use `from typing import Protocol` to define structural interfaces (i.e., specifying what methods and attributes a class must have, without requiring inheritance). This is useful for static duck typing and preferred over ABCs when you only need to specify a contract without enforcing inheritance.
 
-## 5. Docstrings
-
-All public modules, functions, classes, and methods MUST have a docstring.
-
--   **Module Docstrings**: Each module MUST have a module docstring describing its purpose and contents.
--   **Structure**:
-    -   A concise summary line (one line only), followed by a blank line, then a more detailed explanation if needed.
-    -   The summary line should not merely repeat the function/method signature.
-    -   DO NOT include Args/Returns/Raises or other direct attributes. Focus on why the function exists and what it tries to accomplish.
-    -   **Content Adherence**: All present docstrings will be evaluated to ensure their content aligns with these guidelines, focusing on clarity, purpose, and avoidance of redundancy, not just their existence.
--   **Function/Method Docstrings**:
-    -   **Purpose and Behavior**: The docstring MUST clearly explain the function/method's purpose (the "why") and its high-level behavior (the "what"). It should not merely rephrase the function name or its parameters.
-    -   **Avoid Redundancy**: Do *not* repeat type information from the signature. The summary line should not be a simple restatement of the signature.
-    -   **Content-Based Necessity (Conciseness)**: A docstring MAY be omitted *only if* its content would solely reiterate information already obvious from a well-chosen name and a clear type signature (e.g., simple getters like `def get_foo(self) -> Foo: return self._foo`). If a docstring is present, its content will be evaluated for adherence to these guidelines; a redundant docstring should be removed.
--   **Class Docstrings**:
-    -   **Summary**: The summary should provide a clear, high-level understanding of the class's role and responsibilities. Avoid including extensive lists of public attributes or methods if these are self-documenting through their own names and docstrings. Detailed examples of usage are often better placed in module-level docstrings or separate usage documentation unless they are very concise and critical to understanding the class's primary purpose.
-    -   If the class is intended to be subclassed and has an additional interface for subclasses, this interface should be listed separately.
--   **`__init__` Methods should not have docstring**
-- Where docstring is NOT necessary:
-    -   `@property` accessors (getter, setter, deleter):
-        -   A docstring for a property accessor (e.g., the getter) MAY be omitted if its logic is trivial (e.g., direct attribute return `return self._foo`) AND its purpose is clear from the property's name and type hint.
-        -   If an accessor's logic is non-trivial (e.g., involves computation, side effects, lazy initialization), it MUST have a docstring explaining this logic and its purpose.
-        -   If a docstring is present for a simple accessor, it will be evaluated for redundancy; if it only reiterates the obvious, it should be removed.
-    -   private methods/functions do not require docstrings, focus on inline comments if elaboration is necessary. *However, if a private method is complex or its purpose is not immediately obvious from its name and context, a docstring is encouraged.*
-    -   Try to reduce direct references to classes and functions in docstrings, only include them where necessary.
-
-## 6. Comments (Inline)
-
-While docstrings explain *what* a public interface does and *how* to use it, inline comments are crucial for explaining the *why* behind the implementation.
-
--   **Intent and Rationale**: Use comments to clarify the reasoning behind non-obvious design choices, complex algorithms, or specific implementations.
--   **Contextual Background**: Provide comments that offer background or context not immediately apparent from the code.
--   **High-Level Overviews**: For intricate functions or logical blocks, a brief comment at the beginning can summarize the strategy.
--   **Avoid Redundancy**: Do not comment on what is already clear from well-written code (e.g., avoid `x = x + 1  # Increment x`).
--   **Maintain Accuracy**: Ensure comments are kept meticulously up-to-date. Outdated comments are worse than no comments.
-
-## 7. Dependency Management
+## 5. Dependency Management
 
 -   Dependencies are managed via `pyproject.toml` and `uv` (as indicated by `uv.lock`).
 -   Keep dependencies updated and justify additions.
 
-## 8. Logging
+## 6. Logging
 
 -   `loguru` is the standard logging library for Edon.
 -   Use appropriate log levels consistently to aid in debugging and monitoring. The standard levels (DEBUG, INFO, WARNING, ERROR, CRITICAL) plus TRACE are available.
