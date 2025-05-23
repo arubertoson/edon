@@ -232,5 +232,61 @@ class EntityGraph:
 
         return target_socket.unlink_from(source_socket)
 
+    def can_form_edge(
+        self, prospective_source_addr: SocketAddress, prospective_target_addr: SocketAddress
+    ) -> tuple[bool, SocketLinkErrorReason | GraphObjectErrorReason | None]:
+        """
+        Checks if a new edge can be formed between a prospective source and target socket.
+
+        This method validates:
+        1. Existence of nodes and sockets.
+        2. Correct socket directions (source must be OUTPUT, target must be INPUT).
+        3. Compatibility between sockets (delegated to `EntitySocket.can_link_to`).
+        4. Prevention of cycles in the graph.
+
+        Args:
+            prospective_source_addr: The SocketAddress for the prospective source (output) socket.
+            prospective_target_addr: The SocketAddress for the prospective target (input) socket.
+
+        Returns:
+            A tuple: (can_form: bool, reason: Enum | None).
+            If `can_form` is True, the edge is valid and `reason` is None.
+            If `can_form` is False, `reason` indicates why (from SocketLinkErrorReason or GraphObjectErrorReason).
+        """
+        source_node = self.get_node(prospective_source_addr.node_id)
+        if not source_node:
+            return False, GraphObjectErrorReason.NODE_NOT_FOUND
+
+        target_node = self.get_node(prospective_target_addr.node_id)
+        if not target_node:
+            return False, GraphObjectErrorReason.NODE_NOT_FOUND
+
+        source_socket = source_node.source_sockets.get(prospective_source_addr.socket_name)
+        if not source_socket:
+            return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
+        if source_socket.direction != SocketRole.SOURCE:
+            # This implies the provided prospective_source_addr is not actually a source/output socket.
+            return False, GraphObjectErrorReason.SOCKET_DIRECTION_INVALID
+
+        target_socket = target_node.target_sockets.get(prospective_target_addr.socket_name)
+        if not target_socket:
+            return False, GraphObjectErrorReason.SOCKET_NOT_FOUND
+        if target_socket.direction != SocketRole.TARGET:
+            # This implies the provided prospective_target_addr is not actually a target/input socket.
+            return False, GraphObjectErrorReason.SOCKET_DIRECTION_INVALID
+
+        # Check 1: Basic link compatibility (type, role, self-connection etc.)
+        # EntitySocket.can_link_to(self, other) assumes self=Input (target), other=Output (source)
+        can_link, reason = target_socket.can_link_to(source_socket)
+        if not can_link:
+            return False, reason # reason is already a SocketLinkErrorReason
+
+        # Check 2: Prevent cyclical dependencies
+        # An edge A (source_node) -> B (target_node) creates a cycle if a path B -> A already exists.
+        if self._has_path(target_node.id, source_node.id):
+            return False, SocketLinkErrorReason.CYCLE_DETECTED
+
+        return True, None
+
     def __repr__(self) -> str:
         return f"Graph(nodes_count={len(self.nodes)})"

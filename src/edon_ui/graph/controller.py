@@ -25,6 +25,7 @@ from edon_ui.items.socket import SocketItem
 
 if TYPE_CHECKING:
     from edon_ui.views.scene import GraphicsScene
+    from edon.socket import EntitySocket
 
 
 NodeItemMap: TypeAlias = MutableMapping[str, NodeItem]
@@ -217,51 +218,65 @@ class GraphController:
             logger.warning(f"  Could not find edge {edge_key} in edge_map to remove.")
             return False
 
-    def find_valid_socket_drop_targets(self, socket_addr: SocketAddress) -> set[SocketAddress]:
+    def find_valid_socket_drop_targets(self, drag_origin_socket_addr: SocketAddress) -> set[SocketAddress]:
         """
-        Return a set of SocketAddress objects that are valid drop targets for the given source_socket_ui_item.
-        The source_socket_ui_item is the UI representation of the socket being dragged.
-        Only target sockets are considered as potential drop targets here, assuming a standard drag from an output.
-        If reverse drag (source to target) is fully supported, this logic might need adjustment for the target iteration.
+        Determines valid drop target sockets for an edge drag operation using EntityGraph validation.
+
+        Args:
+            drag_origin_socket_addr: The SocketAddress of the socket where the drag started.
+
+        Returns:
+            A set of SocketAddress objects representing sockets that are valid drop targets.
         """
         valid_targets: set[SocketAddress] = set()
 
-        node_id = socket_addr.node_id
-        entity_node = self.entity_graph.get_node(node_id)
+        drag_origin_entity_node = self.entity_graph.get_node(drag_origin_socket_addr.node_id)
+        # This assertion remains important as the starting point must be valid.
+        assert drag_origin_entity_node is not None, f"Node for dragged socket {drag_origin_socket_addr} not found."
 
-        # This should never happen, there should always be a source.
-        assert entity_node is not None, f"Source node not found for {node_id}"
+        drag_origin_ui_socket_item = self.socket_addr_socket_item_map.get(drag_origin_socket_addr)
 
-        socket_item = self.socket_addr_socket_item_map[socket_addr]
-        if socket_item.role == SocketRole.TARGET:  # This implies a reverse drag scenario for the source
-            entity_source_socket = entity_node.target_sockets.get(socket_addr.socket_name)
-            socket_iter = "source_sockets"
-            logger.debug(f"Source socket is reversed: {entity_node.target_sockets}")
+        # Determine which collection of sockets to iterate on partner nodes
+        # and how to define prospective source/target for the new edge.
+        if drag_origin_ui_socket_item.role == SocketRole.TARGET:  # Dragging from an TARGET socket (reverse drag)
+            partner_sockets_collection_name = "source_sockets"
+            logger.debug(f"Drag originated from TARGET socket: {drag_origin_socket_addr}. Looking for SOURCE sockets.")
+        else:
+            partner_sockets_collection_name = "target_sockets"
+            logger.debug(f"Drag originated from SOURCE socket: {drag_origin_socket_addr}. Looking for TARGET sockets.")
 
-        else:  # Standard drag: source_socket_ui_item is an output
-            entity_source_socket = entity_node.source_sockets.get(socket_addr.socket_name)
-            socket_iter = "target_sockets"
-            logger.debug(f"Source socket is normal: {entity_node.source_sockets}")
+        for partner_node in self.entity_graph.nodes.values():
+            # Get the appropriate socket collection (source_sockets or target_sockets) from the partner_node
+            partner_sockets_map: Mapping[str, "EntitySocket"] = getattr(partner_node, partner_sockets_collection_name)
 
-        # This should never happen, there should always be a source.
-        assert entity_source_socket is not None, f"Source socket not found for {socket_item.socket_entity_name}"
+            for partner_socket_name in partner_sockets_map.keys():
+                potential_partner_socket_addr = SocketAddress(partner_node.id, partner_socket_name)
 
-        # Iterate over all potential entity target sockets (which must be source for a standard drag)
-        for target_node in self.entity_graph.nodes.values():
-            for target_socket_name, entity_target_socket in getattr(target_node, socket_iter).items():
-                can_link, reason = entity_target_socket.can_link_to(entity_source_socket)
-                if can_link:
-                    would_cycle = self.entity_graph._has_path(
-                        entity_source_socket.node.id, entity_target_socket.node.id
-                    )
-                    if not would_cycle:
-                        valid_targets.add(SocketAddress(target_node.id, target_socket_name))
+                # Define the prospective source and target addresses for the potential new edge
+                if drag_origin_ui_socket_item.role == SocketRole.TARGET:  # Reverse drag
+                    # Proposed edge: potential_partner_socket_addr (Output) -> drag_origin_socket_addr (Input)
+                    prospective_source_addr = potential_partner_socket_addr
+                    prospective_target_addr = drag_origin_socket_addr
+                else:  # Standard drag
+                    # Proposed edge: drag_origin_socket_addr (Output) -> potential_partner_socket_addr (Input)
+                    prospective_source_addr = drag_origin_socket_addr
+                    prospective_target_addr = potential_partner_socket_addr
+
+                # Delegate all validation to the EntityGraph
+                can_form, reason = self.entity_graph.can_form_edge(prospective_source_addr, prospective_target_addr)
+
+                if can_form:
+                    # The valid drop target is the socket on the partner node
+                    valid_targets.add(potential_partner_socket_addr)
                 else:
                     logger.trace(
-                        f"  Entity socket {target_socket_name} cannot connect to {entity_source_socket.name} because {reason}"
+                        f"  EntityGraph: Cannot form edge from {prospective_source_addr} "
+                        f"to {prospective_target_addr}: {reason}"
                     )
 
-        logger.debug(f"Valid targets: {valid_targets}")
+        logger.debug(
+            f"Found {len(valid_targets)} valid drop targets for {drag_origin_socket_addr} via EntityGraph: {valid_targets}"
+        )
         return valid_targets
 
     def handle_ui_edge_link_request(self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress):

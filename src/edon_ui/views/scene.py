@@ -372,7 +372,7 @@ class GraphicsScene(QGraphicsScene):
         # Cache valid drop targets based on the actual source of the drag
         # This requires SocketLinkItem to have a 'socket_address' property.
         actual_drag_source_address = self._temp_edge.source_socket_item.socket_address
-        self._cached_drag_valid_targets = self.controller.request_edge_drop_targets(actual_drag_source_address)
+        self._cached_drag_valid_targets = self.controller.find_valid_socket_drop_targets(actual_drag_source_address)
         logger.debug(f"Cached valid drop targets for {actual_drag_source_address}: {self._cached_drag_valid_targets}")
 
         self.update_socket_drop_targets(self._temp_edge.source_socket_item)
