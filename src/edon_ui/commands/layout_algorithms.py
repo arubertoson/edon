@@ -49,8 +49,8 @@ def determine_node_selection_topology(
     for edge in all_edges_in_scene:
         # Assuming EdgeItem has 'source_socket_item.parent_node_entity_id' and
         # 'target_socket_item.parent_node_entity_id'
-        source_id = edge.source_socket_item.parent_node_entity_id
-        target_id = edge.target_socket_item.parent_node_entity_id
+        source_id = edge.source_socket_item.parent_node_entity_id  # type: ignore
+        target_id = edge.target_socket_item.parent_node_entity_id  # type: ignore
 
         # Consider only edges between nodes in the current selection
         if source_id in selected_node_ids_set and target_id in selected_node_ids_set:
@@ -118,8 +118,8 @@ def get_directed_graph_of_component(
             logger.trace("get_directed_graph_of_component: Edge missing source/target socket item. Skipping.")
             continue
 
-        source_node_id = edge.source_socket_item.parent_node_entity_id
-        target_node_id = edge.target_socket_item.parent_node_entity_id
+        source_node_id = edge.source_socket_item.parent_node_entity_id  # type: ignore
+        target_node_id = edge.target_socket_item.parent_node_entity_id  # type: ignore
 
         if source_node_id in component_node_ids_set and target_node_id in component_node_ids_set:
             if target_node_id not in directed_adj[source_node_id]:

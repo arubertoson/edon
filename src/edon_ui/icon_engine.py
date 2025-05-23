@@ -43,8 +43,8 @@ class FontIconEngine(QIconEngine):
         if self.char_code is None:
             # Optionally draw a fallback placeholder if char_code is not found
             painter.save()
-            painter.setPen(Qt.red)
-            painter.drawText(rect, Qt.AlignCenter, "?")
+            painter.setPen(Qt.GlobalColor.red)
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "?")
             painter.restore()
             return
 
@@ -80,19 +80,19 @@ class FontIconEngine(QIconEngine):
         if mode == QIcon.Mode.Disabled:
             # For disabled state, typically use a desaturated or semi-transparent color
             # Using QColor's HSL values to desaturate and lighten
-            h, s, l, a = current_color.getHsl()
+            h, s, l, a = current_color.getHsl()  # type: ignore
             current_color.setHsl(h, int(s * 0.3), min(255, l + 60), int(a * 0.6))
         elif mode == QIcon.Mode.Selected or mode == QIcon.Mode.Active:
             # For selected/active, make it slightly brighter or use a theme color
             # Here, we'll just make it a bit brighter if it's not too light already
-            h, s, l, a = current_color.getHsl()
+            h, s, l, a = current_color.getHsl()  # type: ignore
             if l < 230:  # Avoid making very light colors pure white
                 current_color.setHsl(h, s, min(255, l + 25), a)
             # Alternatively, you could use QApplication.palette().highlight().color()
             # current_color = QApplication.palette().color(QPalette.ColorRole.Highlight)
 
         painter.setPen(current_color)
-        painter.drawText(rect, Qt.AlignCenter, self.char_code)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.char_code)
 
         painter.restore()
 
@@ -102,7 +102,7 @@ class FontIconEngine(QIconEngine):
         This is essential for QIcon to work correctly in many contexts.
         """
         pm = QPixmap(size)
-        pm.fill(Qt.transparent)  # Transparent background for the pixmap
+        pm.fill(Qt.GlobalColor.transparent)  # Transparent background for the pixmap
 
         painter = QPainter(pm)
         # The rect for painting on the pixmap is its full bounds

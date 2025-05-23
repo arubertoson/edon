@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from edon.graph import EdgeKey, EntityGraph, NodeId, SocketAddress
+from edon.graph import EdgeKey, EntityGraph, SocketAddress
 from edon_ui import theme
-from edon_ui.items.factory import create_edge_item, create_node_item
+from edon_ui.items.edge import EdgeItem
+from edon_ui.items.factory import create_node_item
 
 if TYPE_CHECKING:
     from edon_ui.items.edge import EdgeItem
@@ -25,7 +26,7 @@ class SceneItems:
     not yet integrated into a live QGraphicsScene or GraphController.
     """
 
-    nodes: dict[NodeId, "NodeItem"] = field(default_factory=dict)
+    nodes: dict[str, "NodeItem"] = field(default_factory=dict)
     edges: dict[EdgeKey, "EdgeItem"] = field(default_factory=dict)
 
 
@@ -42,7 +43,7 @@ def create_scene_items_from_graph(
         A BuiltSceneRepresentation containing the constructed UI items.
     """
     logger.debug(f"SceneBuilder: Starting to build representation for graph with {len(entity_graph.nodes)} nodes.")
-    built_nodes: dict[NodeId, "NodeItem"] = {}
+    built_nodes: dict[str, "NodeItem"] = {}
     built_edges: dict[EdgeKey, "EdgeItem"] = {}
 
     default_x, default_y = 50.0, 50.0
@@ -105,8 +106,8 @@ def create_scene_items_from_graph(
                     )
                     continue
 
-                ui_edge = create_edge_item(source_socket_circle, target_socket_circle)
+                ui_edge = EdgeItem(source_socket_circle, target_socket_circle)
                 built_edges[edge_key] = ui_edge
     logger.debug(f"SceneBuilder: Built {len(built_edges)} EdgeItems.")
 
-    return BuiltSceneRepresentation(nodes=built_nodes, edges=built_edges)
+    return SceneItems(nodes=built_nodes, edges=built_edges)

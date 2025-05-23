@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from edon.graph import SocketAddress
+from edon.socket import SocketRole
 from edon_ui import theme
 from edon_ui.items.edge import DraggingEdgeItem, EdgeItem
 from edon_ui.items.node import NodeItem
@@ -128,7 +129,7 @@ class GraphicsScene(QGraphicsScene):
     feedback when empty to guide users on how to begin using the editor.
     """
 
-    scene_changed = Signal()
+    scene_node_count_changed = Signal()
 
     def __init__(self, controller: "GraphController | None" = None, parent: "QObject | None" = None):
         super().__init__(parent)
@@ -147,16 +148,14 @@ class GraphicsScene(QGraphicsScene):
         self.active_area.setZValue(-100)  # Ensure it's behind all other items
 
         self.empty_scene_text = EmptySceneTextItem()
-        super().addItem(self.empty_scene_text)
         self.empty_scene_text.setVisible(False)
+        super().addItem(self.empty_scene_text)
 
         self._temp_edge: DraggingEdgeItem | None = None
         self._currently_highlighted_target_socket: SocketLinkItem | None = None
         self._cached_drag_valid_targets: set[SocketAddress] | None = None  # Cache for valid drop targets during drag
 
         self.selectionChanged.connect(self._handle_selection_changed)
-
-        self._refresh_scene_edge_paths()
 
     def _handle_selection_changed(self):
         # XXX: We should keep an eye on this function as it could potentially be recursed and cause a crash/lock.
@@ -180,6 +179,9 @@ class GraphicsScene(QGraphicsScene):
         # XXX: Keep an eye on, I don't think we need to update paths here, it's a new node, should have no connections.
         # self._refresh_scene_edge_paths()
 
+        self._refresh_scene_interaction_state()
+        self.scene_node_count_changed.emit(len(self.controller.node_map))
+
     def remove_node(self, node: NodeItem):
         try:
             node.node_position_update_signal.disconnect(self._refresh_scene_edge_paths)
@@ -192,6 +194,7 @@ class GraphicsScene(QGraphicsScene):
 
         super().removeItem(node)
         self._refresh_scene_interaction_state()
+        self.scene_node_count_changed.emit(len(self.controller.node_map))
 
     def add_edge(self, edge: EdgeItem):
         super().addItem(edge)

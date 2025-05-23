@@ -3,7 +3,7 @@
 from loguru import logger
 
 # XXX: Editor Context should probably be a protocol.
-from edon_ui.graphics.view import EditorContext
+from edon_ui.views.viewer import EditorContext
 from edon_ui.items.node import NodeItem
 from edon_ui.items.edge import EdgeItem
 

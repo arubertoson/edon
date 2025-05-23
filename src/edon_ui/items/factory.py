@@ -3,17 +3,16 @@ UI Factory functions for constructing NodeItem, SocketRowItem, and socket widget
 This centralizes all UI construction logic for the node editor.
 """
 
-from edon.socket import SocketType
-from loguru import logger
 from typing import TYPE_CHECKING, Any
 
+from loguru import logger
 from PySide6.QtWidgets import QGraphicsItem
 
-from edon.graph import SocketAddress, SocketRole
+from edon.graph import SocketRole
+from edon.socket import SocketType
 from edon_ui import theme
-from edon_ui.items.edge import EdgeItem
 from edon_ui.items.node import NodeItem
-from edon_ui.items.socket import SocketLinkItem, SocketComponent, SocketItem
+from edon_ui.items.socket import SocketComponent, SocketItem, SocketLinkItem
 from edon_ui.widgets import (
     SOCKET_WIDGET_COMPONENT_FACTORIES,
     SocketLabel,
@@ -37,16 +36,13 @@ def create_socket_widget_component(
     This function utilizes the SOCKET_WIDGET_COMPONENT_FACTORIES to retrieve a factory function
     that generates a SocketWidgetAdaptor along with its associated QWidget.
     """
-    type_info = getattr(entity_socket, "type_info", None)
-    socket_name = getattr(entity_socket, "name", "")
+    type_info = entity_socket.type_info
+    socket_name = entity_socket.name
 
     factory_func = SOCKET_WIDGET_COMPONENT_FACTORIES.get(type_info)
     logger.debug(f"Tried to fetch {type_info} factory from {SOCKET_WIDGET_COMPONENT_FACTORIES} registry.")
 
     if factory_func is not None:
-        if initial_value is None:
-            initial_value = getattr(entity_socket, "default_value", None)
-
         component_adaptor, _ = factory_func(
             initial_value=initial_value,
             node_id=node_id,

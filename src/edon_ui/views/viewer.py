@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, Slot
 from PySide6.QtGui import QInputEvent, QKeyEvent, QMouseEvent, QPainter, QWheelEvent
 from PySide6.QtWidgets import QApplication, QGraphicsProxyWidget, QGraphicsView
 
@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 
     from edon.graph import EntityGraph
     from edon_ui.commands.key_processor import KeyProcessor
-    from edon_ui.graph_controller import GraphController
-    from edon_ui.graphics.scene import GraphicsScene
+    from edon_ui.graph.controller import GraphController
+    from edon_ui.views.scene import GraphicsScene
 
 
 @dataclass
@@ -58,15 +58,13 @@ class GraphicsView(QGraphicsView):
         self._zoom_factor = 1.1
         self._interaction_enabled = True
 
-        self._update_view_behavior()
-        if self.scene() and hasattr(self.scene(), "scene_changed"):
-            self.scene().scene_changed.connect(self._update_view_behavior)
+        self.scene().scene_node_count_changed.connect(self._update_view_behavior)
 
-    def _update_view_behavior(self):
+    @Slot(int)
+    def _update_view_behavior(self, num_scene_items: int) -> None:
         current_scene = self.scene()
-        # if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
-        # if not current_scene or not hasattr(current_scene, "node_items") or not current_scene.node_items:
-        has_scene_elements = bool(current_scene.node_items)
+
+        has_scene_elements = bool(num_scene_items)
         self.setInteractive(has_scene_elements)
         self._interaction_enabled = has_scene_elements
 
@@ -110,9 +108,6 @@ class GraphicsView(QGraphicsView):
         # Only update the sceneRect if it has actually changed to avoid unnecessary redraws.
         if new_scene_rect != current_s_rect:
             current_scene.setSceneRect(new_scene_rect)
-
-    def scene_content_changed(self):
-        self._update_view_behavior()
 
     def provide_context(self, event: QInputEvent | None = None) -> EditorContext:
         return EditorContext(

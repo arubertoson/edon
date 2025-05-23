@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from loguru import logger
 
-from edon_ui.graphics.view import EditorContext
+from edon_ui.views.viewer import EditorContext
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QInputEvent

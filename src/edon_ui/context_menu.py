@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QMenu
 
 
 class AppContextMenu(QMenu):
-    def __init__(self, parent=None, position: QPoint = None, main_window=None, view=None):
+    def __init__(self, parent=None, position: QPoint | None = None, main_window=None, view=None):
         super().__init__(parent)
         self.menu_position = position  # Store the global position where the menu was invoked
         self.main_window = main_window

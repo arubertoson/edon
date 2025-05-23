@@ -3,7 +3,7 @@ from loguru import logger
 from edon.graph import EntityGraph
 from edon.node import EntityNode, SocketDef
 from edon_ui.app import EdonApplication  # Import EdonApplication instead of main
-from edon_ui.items.socket_components.factories import SocketType  # Import the new enum
+from edon_ui.widgets.factories import SocketType  # Import the new enum
 
 # --- Define custom nodes declaratively ---
 

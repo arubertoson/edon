@@ -6,7 +6,7 @@ bindings based on command definitions and can be extended to support
 loading and saving user-customized hotkey configurations.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 from loguru import logger
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ class KeyMapping:
         self._bindings: dict[tuple[str, ...], str] = {}  # sequence_tuple -> command_id
 
     @classmethod
-    def from_command_defaults(cls, commands: list["Command"]) -> "KeyMapping":
+    def from_command_defaults(cls, commands: list["Command"]) -> Self:
         """Creates a new KeyMapping instance populated with command defaults.
 
         Args:
@@ -37,7 +37,7 @@ class KeyMapping:
         instance = cls()
         for cmd in commands:
             if cmd.default_hotkey_sequence:
-                sequence_tuple = tuple(cmd.default_hotkey_sequence)
+                sequence_tuple = tuple(cmd.default_hotkey_sequence or [])
                 instance.set_binding(sequence_tuple, cmd.id)
         return instance
 
