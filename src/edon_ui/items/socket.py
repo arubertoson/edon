@@ -142,14 +142,14 @@ class SocketLinkItem(QGraphicsEllipseItem):
         if event.button() == Qt.MouseButton.LeftButton:
             parent_item = self.parentItem()
             logger.debug(f"SocketCircleItem in {parent_item.socket_address} pressed at {event.scenePos()}")
-            self.scene().start_edge_drag(parent_item.socket_address, event.scenePos())
+            self.scene().initiate_dragging_edge(parent_item.socket_address, event.scenePos())
             event.accept()
         else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if self.scene().is_dragging_edge():
-            self.scene().update_dragged_edge(event.scenePos())
+            self.scene().update_dragging_edge(event.scenePos())
             event.accept()
         else:
             super().mouseMoveEvent(event)
@@ -160,7 +160,7 @@ class SocketLinkItem(QGraphicsEllipseItem):
                 f"SocketCircleItem '{self.parentItem().node_entity_id}::{self.parentItem().socket_entity_name}' released at {event.scenePos()}"
             )
             if self.scene().is_dragging_edge():
-                self.scene().finish_edge_drag(event.scenePos())
+                self.scene().finalize_dragging_edge(event.scenePos())
                 event.accept()
 
         super().mouseReleaseEvent(event)

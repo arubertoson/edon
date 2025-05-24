@@ -383,7 +383,9 @@ class GraphController:
             logger.warning(f"  Could not find edge {edge_key} in edge_map to remove.")
             return False
 
-    def find_valid_socket_drop_targets(self, drag_origin_socket_addr: SocketAddress) -> set[SocketAddress]:
+    def partition_socket_drop_targets(
+        self, drag_origin_socket_addr: SocketAddress
+    ) -> tuple[set[SocketAddress], set[SocketAddress]]:
         """
         Determines valid drop target sockets for an edge drag operation.
 
@@ -395,66 +397,61 @@ class GraphController:
         the existing connection.
         """
         valid_targets: set[SocketAddress] = set()
+        unvalid_targets: set[SocketAddress] = set()
 
-        drag_origin_ui_socket_item = self.socket_addr_socket_item_map.get(drag_origin_socket_addr)
-        if not drag_origin_ui_socket_item:
-            logger.error(f"UI item for drag origin socket {drag_origin_socket_addr} not found.")
-            return valid_targets
-
-        # Determine the role of the socket where the drag started.
-        drag_origin_role = drag_origin_ui_socket_item.role
+        drag_origin_node_entity = self.entity_graph.get_node(drag_origin_socket_addr.node_id)
+        drag_origin_socket_item = self.socket_addr_socket_item_map.get(drag_origin_socket_addr)
+        drag_origin_role = drag_origin_socket_item.role
 
         # Based on the drag origin's role, determine what kind of sockets to look for on partner nodes.
         # If dragging from a SOURCE, look for TARGET sockets on other nodes.
         # If dragging from a TARGET (reverse drag), look for SOURCE sockets on other nodes.
-        partner_role_to_find: SocketRole
-        if drag_origin_role == SocketRole.TARGET:
-            partner_role_to_find = SocketRole.SOURCE
-            partner_sockets_collection_name = "source_sockets"
-        else:  # drag_origin_role == SocketRole.SOURCE
-            partner_role_to_find = SocketRole.TARGET
-            partner_sockets_collection_name = "target_sockets"
+        target_role = SocketRole.TARGET
+        if drag_origin_role == target_role:
+            target_role = SocketRole.SOURCE
+
+        socket_collection = {
+            SocketRole.SOURCE: "source_sockets",
+            SocketRole.TARGET: "target_sockets",
+        }[target_role]
 
         logger.debug(
             f"Drag from {drag_origin_socket_addr} (role: {drag_origin_role}). "
-            f"Looking for partner sockets with role: {partner_role_to_find}."
+            f"Looking for partner sockets with role: {target_role}."
         )
 
-        for partner_node_entity in self.entity_graph.nodes.values():
-            # Get the map of sockets (name to EntitySocket) of the required role from the partner node.
-            partner_sockets_map: Mapping[str, "EntitySocket"] = getattr(
-                partner_node_entity, partner_sockets_collection_name
-            )
+        # We need to iterate through the entire graph node for this functionality.
+        for entity_node in self.entity_graph.nodes.values():
+            # To avoid having to deal with both source and target sockets depending on the role of the
+            # socket we can focus on either source or targets, not both.
+            socket_iter: list[EntitySocket] = getattr(entity_node, socket_collection).values()
 
-            for partner_socket_name, partner_socket_entity_candidate in partner_sockets_map.items():
-                # partner_socket_entity_candidate is an EntitySocket of the role `partner_role_to_find`.
-                # This is the socket on another node that we might connect to.
-                current_partner_socket_addr = SocketAddress(
-                    node_id=partner_node_entity.id, socket_name=partner_socket_name
+            # We are working on theoretical links, this means that we do have to create addresses and
+            # from each sockets to our origin address that we are currently dragging.
+            for entity_socket_link_candidate in socket_iter:
+                link_candidate_addr = SocketAddress(
+                    node_id=entity_node.id, socket_name=entity_socket_link_candidate.name
                 )
 
                 prospective_source_addr: SocketAddress
                 prospective_target_addr: SocketAddress
-                # entity_socket_receiving_link is the actual EntitySocket object that would get the new connection.
-                # This is crucial for the overwrite check.
                 entity_socket_receiving_link: "EntitySocket"
 
                 if drag_origin_role == SocketRole.SOURCE:
                     # Standard drag: drag_origin (SOURCE) -> current_partner (TARGET)
                     prospective_source_addr = drag_origin_socket_addr
-                    prospective_target_addr = current_partner_socket_addr
-                    entity_socket_receiving_link = partner_socket_entity_candidate  # The partner is the target
-                else:  # drag_origin_role == SocketRole.TARGET (Reverse drag)
+                    prospective_target_addr = link_candidate_addr
+                    entity_socket_receiving_link = entity_socket_link_candidate
+                else:
                     # Reverse drag: current_partner (SOURCE) -> drag_origin (TARGET)
-                    prospective_source_addr = current_partner_socket_addr
+                    prospective_source_addr = link_candidate_addr
                     prospective_target_addr = drag_origin_socket_addr
+                    entity_socket_receiving_link = drag_origin_node_entity.target_sockets.get(
+                        drag_origin_socket_addr.socket_name
+                    )
 
-                    # Need to fetch the EntitySocket for drag_origin_socket_addr as it's the receiver
-                    drag_origin_node_entity = self.entity_graph.get_node(drag_origin_socket_addr.node_id)
-                    receiving_socket = drag_origin_node_entity.target_sockets.get(drag_origin_socket_addr.socket_name)
-
-                    entity_socket_receiving_link = receiving_socket
-
+                # Now we have established the theoretical setup, we have our sockets, addresses and nodes,
+                # it's time to check if this setup is valid or not.
                 can_form: bool
                 reason: SocketLinkErrorReason | GraphObjectErrorReason | None
 
@@ -471,14 +468,15 @@ class GraphController:
 
                     entity_socket_receiving_link.links.extend(original_links)  # Restore
                 else:
-                    # Not a TARGET socket, or not linked. `can_form_link` handles role compatibility.
+                    # Not a TARGET socket, or not linked. `can_form_link` handles role, type compatibility etc.
                     can_form, reason = self.entity_graph.can_form_link(
                         prospective_source_addr, prospective_target_addr
                     )
 
                 if can_form:
-                    valid_targets.add(current_partner_socket_addr)
+                    valid_targets.add(link_candidate_addr)
                 else:
+                    unvalid_targets.add(link_candidate_addr)
                     logger.trace(
                         f"  EntityGraph: Cannot form edge from {prospective_source_addr} "
                         f"to {prospective_target_addr}: {reason}"
@@ -487,7 +485,7 @@ class GraphController:
         logger.debug(
             f"Found {len(valid_targets)} valid drop targets for {drag_origin_socket_addr} via EntityGraph: {valid_targets}"
         )
-        return valid_targets
+        return valid_targets, unvalid_targets
 
     def find_edge_items_at_socket(self, socket_addr: SocketAddress) -> set[EdgeItem]:
         """Retrieves all UI EdgeItems connected to the given socket address."""

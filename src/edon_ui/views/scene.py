@@ -238,7 +238,6 @@ class GraphicsScene(QGraphicsScene):
     def add_edge(self, edge: EdgeItem):
         # We let the SocketItem know that it's linked to trigger read-only/editable
         # socket widgets
-        # The parentItem returns a QGraphicsItem, but I know that the parent is a SocketItem, how dowe handle this in typing AI?
         socket_item: SocketItem = edge.target_socket_item.item
         socket_item.set_link_state(True)
 
@@ -354,7 +353,7 @@ class GraphicsScene(QGraphicsScene):
     def is_dragging_edge(self) -> bool:
         return self._temp_edge is not None
 
-    def start_edge_drag(self, clicked_socket_address: SocketAddress, drag_start_scene_pos: QPointF):
+    def initiate_dragging_edge(self, clicked_socket_address: SocketAddress, drag_start_scene_pos: QPointF):
         """Initiates a new edge drag.
 
         If an existing edge is connected to a clicked input socket, that edge is "lifted"
@@ -398,12 +397,13 @@ class GraphicsScene(QGraphicsScene):
         # Cache valid drop targets based on the actual source of the drag
         # This requires SocketLinkItem to have a 'socket_address' property.
         actual_drag_source_address = self._temp_edge.source_socket_item.address
-        self._cached_drag_valid_targets = self.controller.find_valid_socket_drop_targets(actual_drag_source_address)
+        valid, invalid = self.controller.partition_socket_drop_targets(actual_drag_source_address)
+        self._cached_drag_valid_targets = valid
         logger.debug(f"Cached valid drop targets for {actual_drag_source_address}: {self._cached_drag_valid_targets}")
 
         self.update_socket_drop_targets(self._temp_edge.source_socket_item)
 
-    def update_dragged_edge(self, current_scene_pos: QPointF):
+    def update_dragging_edge(self, current_scene_pos: QPointF):
         """Updates the end point of the temporary edge being dragged."""
 
         # This should not happen, start_edge_drag should setup the correct scene state for edge drag.
@@ -433,7 +433,7 @@ class GraphicsScene(QGraphicsScene):
                 potential_target_socket.set_drop_target_highlight(True)
                 self._currently_highlighted_target_socket = potential_target_socket
 
-    def finish_edge_drag(self, event_scene_pos: QPointF):
+    def finalize_dragging_edge(self, event_scene_pos: QPointF):
         """
                 Attempts to finalize the edge connection at the given scene position.
 
