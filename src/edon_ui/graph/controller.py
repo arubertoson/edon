@@ -179,7 +179,7 @@ class GraphController:
 
         logger.debug(f"GraphController: Registered UI for {len(self.edge_map)} edges from entity graph.")
 
-        self.ui_scene._refresh_scene_interaction_state()
+        self.ui_scene._update_scene_content_display()
         logger.info("GraphController: UI scene population complete.")
 
     def handle_ui_node_creation_request(self, node_type_hint: str, scene_pos: QPointF) -> None:

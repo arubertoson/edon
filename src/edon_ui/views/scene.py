@@ -211,28 +211,28 @@ class GraphicsScene(QGraphicsScene):
                     item.setSelected(False)
 
     def add_node(self, node: NodeItem):
-        node.node_position_update_signal.connect(self._refresh_scene_edge_paths)
-        node.node_redraw_signal.connect(self._refresh_scene_node_size)
+        node.node_position_update_signal.connect(self._update_edges_for_node)
+        node.node_redraw_signal.connect(self._update_edges_for_node)
 
         super().addItem(node)
         # XXX: Keep an eye on, I don't think we need to update paths here, it's a new node, should have no connections.
         # self._refresh_scene_edge_paths()
 
-        self._refresh_scene_interaction_state()
+        self._update_scene_content_display()
         self.scene_node_count_changed.emit(len(self.node_items))
 
     def remove_node(self, node: NodeItem):
         try:
-            node.node_position_update_signal.disconnect(self._refresh_scene_edge_paths)
+            node.node_position_update_signal.disconnect(self._update_edges_for_node)
         except RuntimeError:  # Signal was not connected or already disconnected
             pass
         try:
-            node.node_redraw_signal.disconnect(self._refresh_scene_node_size)
+            node.node_redraw_signal.disconnect(self._update_edges_for_node)
         except RuntimeError:  # Signal was not connected or already disconnected
             pass
 
         super().removeItem(node)
-        self._refresh_scene_interaction_state()
+        self._update_scene_content_display()
         self.scene_node_count_changed.emit(len(self.node_items))
 
     def add_edge(self, edge: EdgeItem):
@@ -252,7 +252,7 @@ class GraphicsScene(QGraphicsScene):
         super().removeItem(edge)
 
     @Slot()
-    def _refresh_scene_active_area_rect(self):
+    def _update_active_area_rect(self):
         """Calculate the active area rectangle based on the current node positions"""
         # XXX: this slot needs to ensure that our scene is having a size that can contain
         # all our elements and the main window of the application. It's an interactive scene
@@ -293,7 +293,7 @@ class GraphicsScene(QGraphicsScene):
         self.active_area.setRect(min_x, min_y, width, height)
 
     @Slot()
-    def _refresh_scene_interaction_state(self):
+    def _update_scene_content_display(self):
         """
         If we don't have any elements in the scene we also don't need an active area,
         a simple non interactive viewport that explains your first step is all we need.
@@ -317,31 +317,25 @@ class GraphicsScene(QGraphicsScene):
                 super().addItem(self.active_area)
 
                 # Updating the active area after we've added a node is necessary.
-                self._refresh_scene_active_area_rect()
+                self._update_active_area_rect()
 
     @Slot(str)
-    def _refresh_scene_node_size(self, updated_node_id: str):
+    def _update_edges_for_node(self, updated_node_id: str):
         """
-        This is necessary when we pick up drop an edge on a socket, this will trigger a
-        node resize as the widgets within it might be put to read only. At that point we
-        want to redraw any edges that have links to this node as otherwise they will
-        hang in the "air".
+        Updates the visual paths of all edges connected to the specified node.
+
+        This method is called when a node's position changes or when its internal
+        layout/size changes (e.g., due to socket widget modifications that might
+        affect socket positions). It ensures that edges remain correctly connected
+        visually.
         """
-        logger.trace(f"Scene: handle redrawing of edges for {updated_node_id}")
+        logger.trace(f"Scene: Updating edges for node {updated_node_id}")
 
         node = self.controller.node_map.get(updated_node_id)
         for socket_item in node.source_sockets + node.target_sockets:
             edges = self.controller.find_edge_items_at_socket(socket_item.socket_address)
             for edge in edges:
                 edge.update_path()
-
-    @Slot(str)
-    def _refresh_scene_edge_paths(self, updated_node_id: str):
-        logger.trace(f"Scene: refresh scene edge paths for {updated_node_id}")
-
-        # We might change this call in the future, but the logic is pretty much handled
-        # in _refresh_scene_node_size, if we need something else we can update then.
-        self._refresh_scene_node_size(updated_node_id)
 
     def _get_socket_at_pos(self, scene_pos: QPointF) -> SocketLinkItem | None:
         items_at_pos = self.items(scene_pos)
