@@ -58,22 +58,6 @@ class EmptySceneTextItem(QGraphicsItem):
         # Cache bounding rect calculation
         self._cached_bounding_rect = self._calculate_bounding_rect()
 
-    def _get_line_metrics(self, text, font):
-        fm = QFontMetricsF(font)
-        # boundingRect(text) gives a tight rect around the text.
-        # Alternatively, height() gives ascent+descent, width(text) gives advance width.
-        return fm.boundingRect(text)  # QRectF
-
-    def _calculate_bounding_rect(self) -> QRectF:
-        rect1 = self._get_line_metrics(self.line1_text, self._font1)
-        rect2 = self._get_line_metrics(self.line2_text, self._font2)
-
-        max_width = max(rect1.width(), rect2.width())
-        total_height = rect1.height() + self.line_spacing_px + rect2.height()
-
-        # We want the item's origin (0,0) to be its visual center for easy scene placement
-        return QRectF(-max_width / 2, -total_height / 2, max_width, total_height)
-
     def boundingRect(self) -> QRectF:
         return self._cached_bounding_rect
 
@@ -110,6 +94,22 @@ class EmptySceneTextItem(QGraphicsItem):
 
         drawing_rect2 = QRectF(overall_br.left(), y2_pos, overall_br.width(), line2_metrics_rect.height())
         painter.drawText(drawing_rect2, Qt.AlignmentFlag.AlignCenter, self.line2_text)
+
+    def _get_line_metrics(self, text, font):
+        fm = QFontMetricsF(font)
+        # boundingRect(text) gives a tight rect around the text.
+        # Alternatively, height() gives ascent+descent, width(text) gives advance width.
+        return fm.boundingRect(text)  # QRectF
+
+    def _calculate_bounding_rect(self) -> QRectF:
+        rect1 = self._get_line_metrics(self.line1_text, self._font1)
+        rect2 = self._get_line_metrics(self.line2_text, self._font2)
+
+        max_width = max(rect1.width(), rect2.width())
+        total_height = rect1.height() + self.line_spacing_px + rect2.height()
+
+        # We want the item's origin (0,0) to be its visual center for easy scene placement
+        return QRectF(-max_width / 2, -total_height / 2, max_width, total_height)
 
 
 class GraphicsScene(QGraphicsScene):
@@ -161,55 +161,6 @@ class GraphicsScene(QGraphicsScene):
     def node_items(self) -> list[NodeItem]:
         return list(self.controller.node_map.values())
 
-    def clear_graph_elements(self) -> None:
-        logger.debug("GraphicsScene: Clearing all graph elements (nodes and edges).")
-
-        # Temporarily disable updates on all views attached to this scene
-        # to prevent visual artifacts during bulk item removal.
-        associated_views = self.views()
-        for view in associated_views:
-            view.setUpdatesEnabled(False)
-
-        try:
-            items_to_remove = [item for item in self.items() if isinstance(item, (NodeItem, EdgeItem))]
-
-            for item in items_to_remove:
-                # For NodeItem, ensure signals it might have connected to the scene are disconnected
-                # or that its removal from scene handles this.
-                if isinstance(item, NodeItem):
-                    try:
-                        # Assuming NodeItem might connect these, attempt disconnection
-                        item.node_position_update_signal.disconnect(self._refresh_scene_edge_paths)
-                    except (RuntimeError, TypeError):  # TypeError if signal was never connected
-                        pass
-                    try:
-                        item.node_redraw_signal.disconnect(self._refresh_scene_node_size)
-                    except (RuntimeError, TypeError):
-                        pass
-
-                super().removeItem(item)
-
-            self._refresh_scene_interaction_state()
-        finally:
-            # Re-enable updates on all views
-            for view in associated_views:
-                view.setUpdatesEnabled(True)
-            logger.trace("GraphicsScene: View updates re-enabled after clearing graph elements.")
-
-    def _handle_selection_changed(self):
-        # XXX: We should keep an eye on this function as it could potentially be recursed and cause a crash/lock.
-        # If that happens we need to look into temporarily disconnecting the signal and reconnecting it.
-        current_selected_items = self.selectedItems()
-        nodes_are_present_in_selection = any(isinstance(item, NodeItem) for item in current_selected_items)
-
-        if nodes_are_present_in_selection:
-            # If any node is selected, iterate through a copy of the selected items and deselect any EdgeItem.
-            # We iterate a copy because setSelected(False) will modify the list returned by selectedItems() live.
-            # This might not be necessary if we are careful with the logic of the edge item selection.
-            for item in list(current_selected_items):
-                if isinstance(item, EdgeItem):
-                    item.setSelected(False)
-
     def add_node(self, node: NodeItem):
         node.node_position_update_signal.connect(self._update_edges_for_node)
         node.node_redraw_signal.connect(self._update_edges_for_node)
@@ -251,98 +202,40 @@ class GraphicsScene(QGraphicsScene):
 
         super().removeItem(edge)
 
-    @Slot()
-    def _update_active_area_rect(self):
-        """Calculate the active area rectangle based on the current node positions"""
-        # XXX: this slot needs to ensure that our scene is having a size that can contain
-        # all our elements and the main window of the application. It's an interactive scene
-        # where we move things around, so ensuring that we have a "container" is just nice
-        # style.
-        #
-        # So we need to think about when we need to about when we require this:
-        # - Node move events
-        # - Edge Drag events (not updating the rect but limiting movement at least)
-        if not self.node_items:
-            return
+    def clear_graph_elements(self) -> None:
+        logger.debug("GraphicsScene: Clearing all graph elements (nodes and edges).")
 
-        # XXX: As a side note we should only resize the active area so it's bigger
-        # if the user has moved the nodes around. If the nodes are within the current
-        # active area, we should not resize it. There should be a feature to "recalculate"
-        # it so it's optimized around the nodes as well.
+        # Temporarily disable updates on all views attached to this scene
+        # to prevent visual artifacts during bulk item removal.
+        associated_views = self.views()
+        for view in associated_views:
+            view.setUpdatesEnabled(False)
 
-        padding = 100
-        min_x, min_y = float("inf"), float("inf")
-        max_x, max_y = float("-inf"), float("-inf")
+        try:
+            items_to_remove = [item for item in self.items() if isinstance(item, (NodeItem, EdgeItem))]
 
-        for node in self.node_items:
-            pos = node.pos()
-            rect = node.boundingRect()
-            min_x = min(min_x, pos.x())
-            min_y = min(min_y, pos.y())
-            max_x = max(max_x, pos.x() + rect.width())
-            max_y = max(max_y, pos.y() + rect.height())
+            for item in items_to_remove:
+                # For NodeItem, ensure signals it might have connected to the scene are disconnected
+                # or that its removal from scene handles this.
+                if isinstance(item, NodeItem):
+                    try:
+                        # Assuming NodeItem might connect these, attempt disconnection
+                        item.node_position_update_signal.disconnect(self._update_edges_for_node)
+                    except (RuntimeError, TypeError):  # TypeError if signal was never connected
+                        pass
+                    try:
+                        item.node_redraw_signal.disconnect(self._update_edges_for_node)
+                    except (RuntimeError, TypeError):
+                        pass
 
-        min_x -= padding
-        min_y -= padding
-        max_x += padding
-        max_y += padding
+                super().removeItem(item)
 
-        width = max(max_x - min_x, 400)
-        height = max(max_y - min_y, 400)
-
-        self.active_area.setRect(min_x, min_y, width, height)
-
-    @Slot()
-    def _update_scene_content_display(self):
-        """
-        If we don't have any elements in the scene we also don't need an active area,
-        a simple non interactive viewport that explains your first step is all we need.
-        """
-        # XXX: This is just relevant for add/remove node. We need either signlas
-        # or direct calls to this. Signals for things such as node move, direct calls
-        # for add/remove node.
-        if not self.node_items:
-            logger.warning("interaction scene? 2222")
-            if self.active_area.scene() == self:
-                super().removeItem(self.active_area)
-
-            self.empty_scene_text.setVisible(True)
-            return
-        else:
-            logger.warning("interaction scene? 2223")
-            if self.empty_scene_text.isVisible():
-                self.empty_scene_text.setVisible(False)
-
-            if not self.active_area.scene() == self:
-                super().addItem(self.active_area)
-
-                # Updating the active area after we've added a node is necessary.
-                self._update_active_area_rect()
-
-    @Slot(str)
-    def _update_edges_for_node(self, updated_node_id: str):
-        """
-        Updates the visual paths of all edges connected to the specified node.
-
-        This method is called when a node's position changes or when its internal
-        layout/size changes (e.g., due to socket widget modifications that might
-        affect socket positions). It ensures that edges remain correctly connected
-        visually.
-        """
-        logger.trace(f"Scene: Updating edges for node {updated_node_id}")
-
-        node = self.controller.node_map.get(updated_node_id)
-        for socket_item in node.source_sockets + node.target_sockets:
-            edges = self.controller.find_edge_items_at_socket(socket_item.socket_address)
-            for edge in edges:
-                edge.update_path()
-
-    def _get_socket_at_pos(self, scene_pos: QPointF) -> SocketLinkItem | None:
-        items_at_pos = self.items(scene_pos)
-        for item in items_at_pos:
-            if isinstance(item, SocketLinkItem):
-                return item
-        return None
+            self._update_scene_content_display()
+        finally:
+            # Re-enable updates on all views
+            for view in associated_views:
+                view.setUpdatesEnabled(True)
+            logger.trace("GraphicsScene: View updates re-enabled after clearing graph elements.")
 
     def is_dragging_edge(self) -> bool:
         return self._temp_edge is not None
@@ -518,3 +411,110 @@ class GraphicsScene(QGraphicsScene):
                 else:
                     # If no socket_address, assume it's not a valid target for safety
                     socket_link.set_not_valid_drop_target(True)
+
+    def _handle_selection_changed(self):
+        # XXX: We should keep an eye on this function as it could potentially be recursed and cause a crash/lock.
+        # If that happens we need to look into temporarily disconnecting the signal and reconnecting it.
+        current_selected_items = self.selectedItems()
+        nodes_are_present_in_selection = any(isinstance(item, NodeItem) for item in current_selected_items)
+
+        if nodes_are_present_in_selection:
+            # If any node is selected, iterate through a copy of the selected items and deselect any EdgeItem.
+            # We iterate a copy because setSelected(False) will modify the list returned by selectedItems() live.
+            # This might not be necessary if we are careful with the logic of the edge item selection.
+            for item in list(current_selected_items):
+                if isinstance(item, EdgeItem):
+                    item.setSelected(False)
+
+    @Slot()
+    def _update_active_area_rect(self):
+        """Calculate the active area rectangle based on the current node positions"""
+        # XXX: this slot needs to ensure that our scene is having a size that can contain
+        # all our elements and the main window of the application. It's an interactive scene
+        # where we move things around, so ensuring that we have a "container" is just nice
+        # style.
+        #
+        # So we need to think about when we need to about when we require this:
+        # - Node move events
+        # - Edge Drag events (not updating the rect but limiting movement at least)
+        if not self.node_items:
+            return
+
+        # XXX: As a side note we should only resize the active area so it's bigger
+        # if the user has moved the nodes around. If the nodes are within the current
+        # active area, we should not resize it. There should be a feature to "recalculate"
+        # it so it's optimized around the nodes as well.
+
+        padding = 100
+        min_x, min_y = float("inf"), float("inf")
+        max_x, max_y = float("-inf"), float("-inf")
+
+        for node in self.node_items:
+            pos = node.pos()
+            rect = node.boundingRect()
+            min_x = min(min_x, pos.x())
+            min_y = min(min_y, pos.y())
+            max_x = max(max_x, pos.x() + rect.width())
+            max_y = max(max_y, pos.y() + rect.height())
+
+        min_x -= padding
+        min_y -= padding
+        max_x += padding
+        max_y += padding
+
+        width = max(max_x - min_x, 400)
+        height = max(max_y - min_y, 400)
+
+        self.active_area.setRect(min_x, min_y, width, height)
+
+    @Slot()
+    def _update_scene_content_display(self):
+        """
+        If we don't have any elements in the scene we also don't need an active area,
+        a simple non interactive viewport that explains your first step is all we need.
+        """
+        # XXX: This is just relevant for add/remove node. We need either signlas
+        # or direct calls to this. Signals for things such as node move, direct calls
+        # for add/remove node.
+        if not self.node_items:
+            logger.warning("interaction scene? 2222")
+            if self.active_area.scene() == self:
+                super().removeItem(self.active_area)
+
+            self.empty_scene_text.setVisible(True)
+            return
+        else:
+            logger.warning("interaction scene? 2223")
+            if self.empty_scene_text.isVisible():
+                self.empty_scene_text.setVisible(False)
+
+            if not self.active_area.scene() == self:
+                super().addItem(self.active_area)
+
+                # Updating the active area after we've added a node is necessary.
+                self._update_active_area_rect()
+
+    @Slot(str)
+    def _update_edges_for_node(self, updated_node_id: str):
+        """
+        Updates the visual paths of all edges connected to the specified node.
+
+        This method is called when a node's position changes or when its internal
+        layout/size changes (e.g., due to socket widget modifications that might
+        affect socket positions). It ensures that edges remain correctly connected
+        visually.
+        """
+        logger.trace(f"Scene: Updating edges for node {updated_node_id}")
+
+        node = self.controller.node_map.get(updated_node_id)
+        for socket_item in node.source_sockets + node.target_sockets:
+            edges = self.controller.find_edge_items_at_socket(socket_item.socket_address)
+            for edge in edges:
+                edge.update_path()
+
+    def _get_socket_at_pos(self, scene_pos: QPointF) -> SocketLinkItem | None:
+        items_at_pos = self.items(scene_pos)
+        for item in items_at_pos:
+            if isinstance(item, SocketLinkItem):
+                return item
+        return None
