@@ -178,7 +178,7 @@ class EdgeItem(QGraphicsPathItem):
 
         self._edge_key: EdgeKey | None = None
 
-        self._update_internal_path()
+        self.update_path()
 
     @property
     def edge_key(self) -> EdgeKey:

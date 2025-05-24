@@ -62,7 +62,12 @@ class EdonApplication:
     It orchestrates the core components and manages their lifecycle.
     """
 
-    def __init__(self, log_level: str = "DEBUG", node_registry: dict[str, type[EntityNode]] | None = None) -> None:
+    def __init__(
+        self,
+        entity_graph=EntityGraph | None,
+        node_registry: dict[str, type[EntityNode]] | None = None,
+        log_level: str = "DEBUG",
+    ) -> None:
         # Initialize logging as the first step to capture all subsequent initialization messages.
         self._setup_logging(log_level)
 
@@ -73,7 +78,7 @@ class EdonApplication:
         self._qt_app.setStyleSheet(theme.APPLICATION_STYLESHEET)
 
         # Initialize core data and graph components following the new structure
-        self._entity_graph: EntityGraph = EntityGraph()
+        self._entity_graph: EntityGraph = entity_graph or EntityGraph()
         self._node_registry: dict[str, type[EntityNode]] = node_registry or {}
 
         # The initialization order for the core graph components is crucial:

@@ -168,34 +168,25 @@ class EntityNode:
     def _add_socket_internal(
         self,
         socket_def: SocketDef,
-        direction: SocketRole,
+        role: SocketRole,
     ) -> EntitySocket:
         """
         Internal method to create and add a socket to the node.
 
         The `parent_node` for the socket is automatically set to this node instance.
-
-        Args:
-            socket_def: The SocketDef instance describing the socket.
-            direction: The direction of the socket (INPUT or OUTPUT).
-
-        Returns:
-            The created EntitySocket instance.
-
-        Raises:
-            ValueError: If a socket with the same name already exists on this node.
         """
         if socket_def.name in self.source_sockets or socket_def.name in self.target_sockets:
             raise ValueError(f"Socket with name '{socket_def.name}' already exists on node '{self.name}'.")
 
         socket_instance = EntitySocket(
             name=socket_def.name,
-            direction=direction,
+            role=role,
             node=self,
             type_info=socket_def.socket_type,
             value=socket_def.default,
         )
-        if direction == SocketRole.SOURCE:
+
+        if role == SocketRole.SOURCE:
             self.source_sockets[socket_def.name] = socket_instance
         else:
             self.target_sockets[socket_def.name] = socket_instance
@@ -233,5 +224,5 @@ class EntityNode:
     def __repr__(self) -> str:
         return (
             f"Node(name='{self.name}', type='{self.node_type}', id='{self.id}', "
-            f"inputs={list(self.source_sockets.keys())}, outputs={list(self.target_sockets.keys())})"
+            f"sources={list(self.source_sockets.keys())}, targets={list(self.target_sockets.keys())})"
         )

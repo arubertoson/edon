@@ -36,6 +36,8 @@ def create_socket_widget_component(
     This function utilizes the SOCKET_WIDGET_COMPONENT_FACTORIES to retrieve a factory function
     that generates a SocketWidgetAdaptor along with its associated QWidget.
     """
+    logger.debug(f"Creating socket widget item for {entity_socket}")
+
     type_info = entity_socket.type_info
     socket_name = entity_socket.name
 
@@ -62,6 +64,8 @@ def create_socket_row(
     socket_role: SocketRole,
 ) -> SocketItem:
     """Factory for creating a socket row with the correct composition."""
+    logger.debug(f"Creating socket item for {socket_def}::{socket_role}")
+
     linkable: bool = socket_def.linkable
     socket_type: SocketType = socket_def.socket_type.python_type.__name__
     initial_socket_value: Any = entity_socket.value
@@ -92,7 +96,7 @@ def create_socket_row(
         widget=widget_component,
         role=socket_role,
         socket_entity_name=entity_socket.name,
-        parent_entity_node_id=node_id,
+        node_entity_id=node_id,
     )
 
 
@@ -108,6 +112,8 @@ def create_node_item(
     x: float,
     y: float,
 ) -> NodeItem:
+    logger.debug(f"Creating {entity_node.node_type} node from factory.")
+
     source_defs = getattr(type(entity_node), "source_socket_definitions", [])
     target_defs = getattr(type(entity_node), "target_socket_definitions", [])
 

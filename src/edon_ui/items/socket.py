@@ -54,8 +54,6 @@ class SocketLinkItem(QGraphicsEllipseItem):
     socket entity via its name and parent node entity ID.
 
     Attributes:
-        socket_entity_name: The name of the logical socket entity.
-        node_entity_id: The ID of the parent node's logical entity.
         visual_type_key: A string key to determine visual styling from the theme.
     """
 
@@ -91,6 +89,10 @@ class SocketLinkItem(QGraphicsEllipseItem):
     @property
     def role(self) -> SocketRole:
         return self.parentItem().role
+
+    @property
+    def address(self) -> SocketAddress:
+        return self.parentItem().socket_address
 
     def _update_brush(self) -> None:
         """Updates the socket's fill brush based on its current state (hover, drop target)."""
@@ -148,7 +150,7 @@ class SocketLinkItem(QGraphicsEllipseItem):
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             logger.debug(
-                f"SocketCircleItem '{self.node_entity_id}::{self.socket_entity_name}' released at {event.scenePos()}"
+                f"SocketCircleItem '{self.parentItem().node_entity_id}::{self.parentItem().socket_entity_name}' released at {event.scenePos()}"
             )
             if self.scene().is_dragging_edge():
                 self.scene().finish_edge_drag(event.scenePos())
@@ -172,7 +174,7 @@ class SocketItem(QGraphicsObject):
         socket: SocketLinkItem,
         role: SocketRole,
         socket_entity_name: str,
-        parent_entity_node_id: str,
+        node_entity_id: str,
         widget: SocketComponent | None = None,
         parent: QGraphicsItem | None = None,
     ) -> None:
@@ -185,7 +187,7 @@ class SocketItem(QGraphicsObject):
         # "Hey do not change these"
         self.role = role
         self.socket_entity_name = socket_entity_name
-        self.parent_entity_node_id = parent_entity_node_id
+        self.node_entity_id = node_entity_id
 
         for item in (self.label_item, self.link_item, self.widget_item):
             if item is not None and isinstance(item, QGraphicsItem):  # Ensure it's a QGraphicsItem
@@ -209,7 +211,7 @@ class SocketItem(QGraphicsObject):
 
     @property
     def socket_address(self) -> SocketAddress:
-        return SocketAddress(self.parent_entity_node_id, self.socket_entity_name)
+        return SocketAddress(self.node_entity_id, self.socket_entity_name)
 
     def update_layout(self, available_width: float) -> None:
         self._update_bounding_rect()

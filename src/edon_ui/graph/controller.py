@@ -85,6 +85,7 @@ class GraphController:
                 scene_position.x(),
                 scene_position.y(),
             )
+            logger.warning("1")
             self.ui_scene.add_node(node_item)
             self.node_map[entity_node.id] = node_item
 
@@ -228,14 +229,6 @@ class GraphController:
             logger.warning(f"Edge {edge_key} already exists in UI. Ignoring connection attempt.")
             return
 
-        # Also check entity graph to be sure, though UI map should be consistent
-        if self.entity_graph.has_edge(edge_key.source, edge_key.target):
-            logger.warning(f"Edge {edge_key} already exists in EntityGraph. Ignoring connection attempt.")
-            # XXX:
-            # Potentially re-register if UI is missing but entity exists (sync issue)
-            # self._register_edge_internal(edge_key)
-            return
-
         self.request_add_edge(edge_key)
 
     def handle_ui_node_deletion_request(self, entity_node_ids: Sequence[str]) -> None:
@@ -291,7 +284,7 @@ class GraphController:
         """
         Link sockets in the entity graph and then register the UI edge representation.
         """
-        logger.info(f"GraphController: Requesting to create edge: {edge_key}")
+        logger.debug(f"GraphController: Requesting to create edge: {edge_key}")
 
         link_success, reason = self.entity_graph.link_sockets(
             edge_key.source,
@@ -303,7 +296,7 @@ class GraphController:
 
             edge_item = self._register_edge_internal(edge_key)
             if edge_item:
-                logger.info(f"Successfully created and registered edge: {edge_key}")
+                logger.debug(f"Successfully created and registered edge: {edge_key}")
             else:
                 logger.error(
                     f"Failed to register UI for edge {edge_key}. Rolling back entity graph link might be needed."

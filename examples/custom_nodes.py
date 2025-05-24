@@ -14,15 +14,15 @@ class IntegerNode(EntityNode):
     # Class attributes define the node's properties and sockets
     node_type = "constant.int"
     source_socket_definitions = [
-        SocketDef(name="out_int", socket_type=SocketType.INTEGER),
+        SocketDef(name="src_int", socket_type=SocketType.INTEGER),
     ]
     target_socket_definitions = [
-        SocketDef(name="in_int", socket_type=SocketType.INTEGER, linkable=False),
+        SocketDef(name="trg_int", socket_type=SocketType.INTEGER, linkable=False),
     ]
 
     def process(self):
-        self.target_sockets["in_int"].value = self.source_sockets["out_int"].value
-        return self.target_sockets["in_int"].value
+        self.target_sockets["trg_int"].value = self.source_sockets["src_int"].value
+        return self.target_sockets["trg_int"].value
 
 
 class FloatNode(EntityNode):
@@ -31,15 +31,15 @@ class FloatNode(EntityNode):
     # Class attributes define the node's properties and sockets
     node_type = "constant.float"
     source_socket_definitions = [
-        SocketDef(name="out_float", socket_type=SocketType.FLOAT),
+        SocketDef(name="src_float", socket_type=SocketType.FLOAT),
     ]
     target_socket_definitions = [
-        SocketDef(name="in_float", socket_type=SocketType.FLOAT, linkable=False),
+        SocketDef(name="trg_float", socket_type=SocketType.FLOAT, linkable=False),
     ]
 
     def process(self):
-        self.target_sockets["in_float"].value = self.source_sockets["out_float"].value
-        return self.target_sockets["in_float"].value
+        self.target_sockets["trg_float"].value = self.source_sockets["src_float"].value
+        return self.target_sockets["trg_float"].value
 
 
 class StringNode(EntityNode):
@@ -48,15 +48,15 @@ class StringNode(EntityNode):
     # Class attributes define the node's properties and sockets
     node_type = "string.text"
     source_socket_definitions = [
-        SocketDef(name="out_text", socket_type=SocketType.STRING),
+        SocketDef(name="src_text", socket_type=SocketType.STRING),
     ]
     target_socket_definitions = [
-        SocketDef(name="in_text", socket_type=SocketType.STRING, linkable=False),
+        SocketDef(name="trg_text", socket_type=SocketType.STRING, linkable=False),
     ]
 
     def process(self):
-        self.target_sockets["in_stext"].value = self.source_sockets["out_text"].value
-        return self.target_sockets["in_text"].value
+        self.target_sockets["trg_stext"].value = self.source_sockets["src_text"].value
+        return self.target_sockets["trg_text"].value
 
 
 class LargeTextNode(EntityNode):
@@ -64,15 +64,15 @@ class LargeTextNode(EntityNode):
 
     node_type = "text.large_input"
     source_socket_definitions = [
-        SocketDef(name="out_text", socket_type=SocketType.LARGE_STRING),
+        SocketDef(name="src_text", socket_type=SocketType.LARGE_STRING),
     ]
     target_socket_definitions = [
-        SocketDef(name="in_text", socket_type=SocketType.STRING, linkable=False),  # Output regular string
+        SocketDef(name="trg_text", socket_type=SocketType.STRING, linkable=False),  # Output regular string
     ]
 
     def process(self):
-        self.target_sockets["in_text"].value = self.source_sockets["out_text"].value
-        return self.target_sockets["in_text"].value
+        self.target_sockets["trg_text"].value = self.source_sockets["src_text"].value
+        return self.target_sockets["trg_text"].value
 
 
 class AddNode(EntityNode):
@@ -232,21 +232,21 @@ def create_sample_graph():
     graph.add_node(large_text_node1)  # Add to graph
 
     # Set initial values for the nodes
-    # int_node.source_sockets["in_int"].value = 5
-    # float_node.source_sockets["in_float"].value = 2.5
-    string_node1.target_sockets["in_text"].value = "Hello, "
-    string_node2.target_sockets["in_text"].value = "World!"
+    # int_node.source_sockets["trg_int"].value = 5
+    # float_node.source_sockets["trg_float"].value = 2.5
+    string_node1.target_sockets["trg_text"].value = "Hello, "
+    string_node2.target_sockets["trg_text"].value = "World!"
 
     # large_text_node1.source_sockets[
-    # "in_large_text"
+    # "trg_large_text"
     # ].value = "This is some initial large text.\nIt can span multiple lines."
 
     # Connect float_node and int_node to multiply_node
     # success1, reason1 = graph.connect_sockets(
-    #     SocketAddress(float_node.id, "out_float"), SocketAddress(multiply_node.id, "a")
+    #     SocketAddress(float_node.id, "src_float"), SocketAddress(multiply_node.id, "a")
     # )
     # success2, reason2 = graph.connect_sockets(
-    #     SocketAddress(int_node.id, "out_int"), SocketAddress(multiply_node.id, "b")
+    #     SocketAddress(int_node.id, "src_int"), SocketAddress(multiply_node.id, "b")
     # )
     # if not success1:
     #     logger.error(f"Failed to connect float_node to multiply_node: {reason1}")
@@ -255,15 +255,16 @@ def create_sample_graph():
 
     # # Connect string nodes to concat node
     # success3, reason3 = graph.connect_sockets(
-    #     SocketAddress(string_node1.id, "out_text"), SocketAddress(concat_node.id, "a")
+    #     SocketAddress(string_node1.id, "src_text"), SocketAddress(concat_node.id, "a")
     # )
     # success4, reason4 = graph.connect_sockets(
-    #     SocketAddress(string_node2.id, "out_text"), SocketAddress(concat_node.id, "b")
+    #     SocketAddress(string_node2.id, "src_text"), SocketAddress(concat_node.id, "b")
     # )
     # if not success3:
     #     logger.error(f"Failed to connect string_node1 to concat_node: {reason3}")
     # if not success4:
     #     logger.error(f"Failed to connect string_node2 to concat_node: {reason4}")
+    print(graph)
 
     return graph
 
@@ -271,12 +272,13 @@ def create_sample_graph():
 # --- Launch the app using the EdonApplication class ---
 if __name__ == "__main__":
     # Create and run the application with our custom graph and node registry
-    app = EdonApplication(log_level="DEBUG")
+    app = EdonApplication(create_sample_graph(), custom_node_registry, log_level="DEBUG")
 
     # Set our custom graph and node registry using property setters
-    app.entity_graph = create_sample_graph()
-    app.node_registry = custom_node_registry
+    # app.entity_graph = create_sample_graph()
+    # app.node_registry = custom_node_registry
 
+    print(":()")
     # Run the application
     import sys
 

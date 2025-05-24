@@ -153,7 +153,7 @@ class GraphicsScene(QGraphicsScene):
 
         self._temp_edge: DraggingEdgeItem | None = None
         self._currently_highlighted_target_socket: SocketLinkItem | None = None
-        self._cached_drag_valid_targets: set[SocketAddress] | None = None  # Cache for valid drop targets during drag
+        self._cached_drag_valid_targets: set[SocketAddress] = set()  # Cache for valid drop targets during drag
 
         self.selectionChanged.connect(self._handle_selection_changed)
 
@@ -267,7 +267,7 @@ class GraphicsScene(QGraphicsScene):
         min_x, min_y = float("inf"), float("inf")
         max_x, max_y = float("-inf"), float("-inf")
 
-        for node in self.node_items.values():
+        for node in self.node_items:
             pos = node.pos()
             rect = node.boundingRect()
             min_x = min(min_x, pos.x())
@@ -295,12 +295,14 @@ class GraphicsScene(QGraphicsScene):
         # or direct calls to this. Signals for things such as node move, direct calls
         # for add/remove node.
         if not self.node_items:
+            logger.warning("interaction scene? 2222")
             if self.active_area.scene() == self:
                 super().removeItem(self.active_area)
 
             self.empty_scene_text.setVisible(True)
             return
         else:
+            logger.warning("interaction scene? 2223")
             if self.empty_scene_text.isVisible():
                 self.empty_scene_text.setVisible(False)
 
@@ -354,7 +356,7 @@ class GraphicsScene(QGraphicsScene):
         by creating a new temporary drag from its original source.
         Otherwise, a new temporary edge is created from the clicked socket.
         """
-        socket_row_item = self.controller.socket_addr_row_item_map.get(clicked_socket_address)
+        socket_row_item = self.controller.socket_addr_socket_item_map.get(clicked_socket_address)
 
         if not socket_row_item or not socket_row_item.link_item:
             logger.error(
@@ -395,7 +397,7 @@ class GraphicsScene(QGraphicsScene):
 
         # Cache valid drop targets based on the actual source of the drag
         # This requires SocketLinkItem to have a 'socket_address' property.
-        actual_drag_source_address = self._temp_edge.source_socket_item.socket_address
+        actual_drag_source_address = self._temp_edge.source_socket_item.address
         self._cached_drag_valid_targets = self.controller.find_valid_socket_drop_targets(actual_drag_source_address)
         logger.debug(f"Cached valid drop targets for {actual_drag_source_address}: {self._cached_drag_valid_targets}")
 
@@ -405,7 +407,7 @@ class GraphicsScene(QGraphicsScene):
         """Updates the end point of the temporary edge being dragged."""
 
         # This should not happen, start_edge_drag should setup the correct scene state for edge drag.
-        assert self._temp_edge and self._cached_drag_valid_targets
+        assert self._temp_edge
 
         self._temp_edge.update_target_position(current_scene_pos)
         potential_target_socket = self._get_socket_at_pos(current_scene_pos)
@@ -420,13 +422,7 @@ class GraphicsScene(QGraphicsScene):
         if not potential_target_socket:
             return
 
-        is_valid = (
-            SocketAddress(
-                potential_target_socket.node_entity_id,
-                potential_target_socket.socket_entity_name,
-            )
-            in self._cached_drag_valid_targets
-        )
+        is_valid = potential_target_socket.address in self._cached_drag_valid_targets
 
         if is_valid:
             if hl_socket != potential_target_socket:
@@ -455,7 +451,7 @@ class GraphicsScene(QGraphicsScene):
 
         target_socket_item = self._get_socket_at_pos(event_scene_pos)
         source_socket_item = self._temp_edge.source_socket_item
-        if source_socket_item.is_input:
+        if source_socket_item.role == SocketRole.TARGET:
             source_socket_item, target_socket_item = target_socket_item, source_socket_item
 
         if source_socket_item and target_socket_item:
@@ -466,6 +462,8 @@ class GraphicsScene(QGraphicsScene):
                 self.controller.handle_ui_edge_link_request(source_addr, target_addr)
             else:
                 logger.error("Could not retrieve socket addresses to finalize edge drag.")
+        else:
+            logger.error("Could not retrieve socket items to finalize edge drag.")
 
         # Reset the currently highlighted target socket.
         if self._currently_highlighted_target_socket:
@@ -473,9 +471,9 @@ class GraphicsScene(QGraphicsScene):
             self._currently_highlighted_target_socket = None
 
         # Remove the temporary edge.
-        source_socket_for_log = self._temp_edge.source_socket_item
+        source_socket_addr_for_log = self._temp_edge.source_socket_item.address
         logger.debug(
-            f"Scene: Removing temporary edge from '{source_socket_for_log.node_entity_id}::{source_socket_for_log.socket_entity_name}'"
+            f"Scene: Removing temporary edge from '{source_socket_addr_for_log.node_id}::{source_socket_addr_for_log.socket_name}'"
         )
         super().removeItem(self._temp_edge)
         self._temp_edge = None
@@ -486,7 +484,7 @@ class GraphicsScene(QGraphicsScene):
                 if isinstance(item, SocketLinkItem):
                     # Reset the 'not_valid_drop_target' state for all SocketLinkItems
                     item.set_not_valid_drop_target(False)
-        self._cached_drag_valid_targets = None  # Set to None after use
+        self._cached_drag_valid_targets = set()
 
     def update_socket_drop_targets(self, source_socket: SocketLinkItem):
         """

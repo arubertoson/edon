@@ -68,7 +68,7 @@ class EntitySocket:
     """
 
     name: str
-    direction: SocketRole
+    role: SocketRole
     node: "EntityNode"
     type_info: SocketType
     links: list["EntitySocket"] = field(default_factory=list)
@@ -85,7 +85,7 @@ class EntitySocket:
         if not isinstance(self.name, str) or not self.name.strip():
             logger.error("Socket __post_init__: Socket name must be a non-empty string.")
             raise ValueError("Socket name must be a non-empty string.")
-        if not isinstance(self.direction, SocketRole):
+        if not isinstance(self.role, SocketRole):
             logger.error("Socket __post_init__: Socket direction must be a SocketDirection enum member.")
             raise ValueError("Socket direction must be a SocketDirection enum member.")
         if not isinstance(self.type_info, SocketType):
@@ -130,14 +130,14 @@ class EntitySocket:
         """
         if self == target:
             return False, SocketLinkErrorReason.CANNOT_LINK_TO_SELF
-        if self.direction == target.direction:
+        if self.role == target.role:
             return False, SocketLinkErrorReason.DIRECTIONS_NOT_OPPOSITE
         if self.node == target.node:
             return False, SocketLinkErrorReason.SAME_PARENT_NODE
 
         # Determine which socket is output and which is input for type checking
-        source = self if self.direction == SocketRole.TARGET else target
-        target = target if self.direction == SocketRole.TARGET else self
+        source = self if self.role == SocketRole.TARGET else target
+        target = target if self.role == SocketRole.TARGET else self
 
         source_py_type = source.data_type
         target_py_type = target.data_type
@@ -245,7 +245,7 @@ class EntitySocket:
             data_type_repr = str(self.data_type)
 
         return (
-            f"Socket(name='{self.name}', direction={self.direction.name}, "
+            f"Socket(name='{self.name}', direction={self.role.name}, "
             f"data_type={data_type_repr}, parent_node='{parent_node_repr}', "
             f"connections_count={len(self.links)})"
         )
