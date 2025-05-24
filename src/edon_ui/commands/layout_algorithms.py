@@ -42,9 +42,9 @@ def determine_node_selection_topology(
         return []
 
     # Assuming NodeItem has a 'node_entity_id' string attribute
-    adj: dict[str, list[str]] = {node.node_entity_id: [] for node in selected_nodes}
-    selected_node_ids_set = {node.node_entity_id for node in selected_nodes}
-    node_map_by_id: dict[str, NodeItem] = {node.node_entity_id: node for node in selected_nodes}
+    adj: dict[str, list[str]] = {node.entity_id: [] for node in selected_nodes}
+    selected_node_ids_set = {node.entity_id for node in selected_nodes}
+    node_map_by_id: dict[str, NodeItem] = {node.entity_id: node for node in selected_nodes}
 
     for edge in all_edges_in_scene:
         # Assuming EdgeItem has 'source_socket_item.parent_node_entity_id' and
@@ -61,12 +61,12 @@ def determine_node_selection_topology(
     subgraphs: list[list[NodeItem]] = []
 
     for node in selected_nodes:
-        if node.node_entity_id not in visited_ids:
+        if node.entity_id not in visited_ids:
             current_subgraph_nodes: list[NodeItem] = []
             q = deque()  # Use collections.deque for efficient queue operations in BFS
 
             q.append(node)
-            visited_ids.add(node.node_entity_id)
+            visited_ids.add(node.entity_id)
 
             while q:
                 curr_node = q.popleft()
@@ -83,7 +83,7 @@ def determine_node_selection_topology(
     logger.debug(f"Determined selection topology: {len(subgraphs)} subgraph(s).")
     for i, sg in enumerate(subgraphs):
         # Assuming NodeItem has a 'title' attribute or fallback to 'node_entity_id'
-        titles = [getattr(n, "title", n.node_entity_id) for n in sg]
+        titles = [getattr(n, "title", n.entity_id) for n in sg]
         logger.debug(f"  Subgraph {i + 1}: {titles}")
 
     return subgraphs
@@ -110,8 +110,8 @@ def get_directed_graph_of_component(
     if not component_nodes:
         return {}
 
-    directed_adj: dict[str, list[str]] = {node.node_entity_id: [] for node in component_nodes}
-    component_node_ids_set = {node.node_entity_id for node in component_nodes}
+    directed_adj: dict[str, list[str]] = {node.entity_id: [] for node in component_nodes}
+    component_node_ids_set = {node.entity_id for node in component_nodes}
 
     for edge in all_edges_in_scene:
         if not edge.source_socket_item or not edge.target_socket_item:
@@ -125,7 +125,7 @@ def get_directed_graph_of_component(
             if target_node_id not in directed_adj[source_node_id]:
                 directed_adj[source_node_id].append(target_node_id)
 
-    component_titles = [getattr(n, "title", n.node_entity_id) for n in component_nodes]
+    component_titles = [getattr(n, "title", n.entity_id) for n in component_nodes]
     logger.debug(f"Directed graph for component {component_titles}: {directed_adj}")
     return directed_adj
 

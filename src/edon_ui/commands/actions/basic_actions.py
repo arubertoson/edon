@@ -94,7 +94,7 @@ def delete_selection_action(context: EditorContext) -> bool:
     logger.info(f"Executing delete_selection_action: Deleting {len(node_items)} nodes and {len(edge_items)} edges.")
 
     if node_items:
-        node_ids = [node.node_entity_id for node in node_items]
+        node_ids = [node.entity_id for node in node_items]
         try:
             context.manager.handle_ui_node_deletion_request(node_ids)
             logger.debug(f"Requested deletion of nodes: {node_ids}")

@@ -129,7 +129,7 @@ class GraphicsScene(QGraphicsScene):
     feedback when empty to guide users on how to begin using the editor.
     """
 
-    scene_node_count_changed = Signal()
+    scene_node_count_changed = Signal(int)
 
     def __init__(self, controller: "GraphController", parent: "QObject | None" = None):
         super().__init__(parent)
@@ -239,7 +239,7 @@ class GraphicsScene(QGraphicsScene):
         super().addItem(edge)
         # XXX: again unsure if this is necesasry here
         # edge.update_path()
-        self._refresh_scene_edge_paths()
+        # self._refresh_scene_edge_paths(edge.node)
 
     def remove_edge(self, edge: EdgeItem):
         super().removeItem(edge)
@@ -318,7 +318,7 @@ class GraphicsScene(QGraphicsScene):
         want to redraw any edges that have links to this node as otherwise they will
         hang in the "air".
         """
-        logger.trace(f"Scene: handle redrawing of esdges for {updated_node_id}")
+        logger.trace(f"Scene: handle redrawing of edges for {updated_node_id}")
 
         node = self.controller.node_map.get(updated_node_id)
         for socket_item in node.source_sockets + node.target_sockets:

@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 class NodeItem(QGraphicsObject):
     """A visual node item in the editor, representing a logical node entity."""
 
-    node_position_update_signal = Signal()
+    node_position_update_signal = Signal(str)
     node_redraw_signal = Signal(str)
 
     def __init__(
@@ -43,7 +43,7 @@ class NodeItem(QGraphicsObject):
         super().__init__()
 
         self.title = title if title is not None else "Untitled"
-        self.node_entity_id = node_entity_id
+        self.entity_id = node_entity_id
         self._min_width_param = width
         self._min_height_param = height
 
@@ -135,10 +135,10 @@ class NodeItem(QGraphicsObject):
         # Finally, calculate the node's height based on the new row layouts
         self._height = self._calculate_dynamic_height()
 
-        logger.info(f"Node {self.node_entity_id} layout changed: {self._width}x{self._height}")
+        logger.info(f"Node {self.entity_id} layout changed: {self._width}x{self._height}")
 
         self.update()  # Redraw the node
-        self.node_redraw_signal.emit(self.node_entity_id)
+        self.node_redraw_signal.emit(self.entity_id)
 
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._width, self._height)
@@ -154,7 +154,7 @@ class NodeItem(QGraphicsObject):
             The processed value, potentially modified from the input value.
         """
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.node_position_update_signal.emit()
+            self.node_position_update_signal.emit(self.entity_id)
 
         return super().itemChange(change, value)
 
