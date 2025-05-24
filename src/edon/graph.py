@@ -103,24 +103,42 @@ class EntityGraph:
         Returns `True` if `end_node_id` is reachable from `start_node_id` following
         the directed edges of the graph, and `False` otherwise.
         """
-        visited = set()
-        stack = [start_node_id]
+        visited: set[str] = set()
+        # Stack stores node IDs to visit for DFS
+        stack: list[str] = [start_node_id]
+
         while stack:
-            current_id = stack.pop()
-            if current_id == end_node_id:
+            current_node_id = stack.pop()
+
+            if current_node_id == end_node_id:
+                # Path found from start_node_id to end_node_id.
+                # If start_node_id == end_node_id, this means a zero-length path,
+                # which is true. In the context of cycle detection, this call
+                # is made with start_node_id != end_node_id (target_node.id, source_node.id),
+                # because self-links are caught by EntitySocket.can_link_to.
                 return True
-            if current_id in visited:
+
+            if current_node_id in visited:
                 continue
-            visited.add(current_id)
-            node = self.get_node(current_id)
-            if not node:
+            visited.add(current_node_id)
+
+            current_node = self.get_node(current_node_id)
+            if not current_node:
+                # This can happen if start_node_id or an intermediate node_id is not in the graph.
                 continue
-            for source_socket in node.target_sockets.values():
-                for linked_source_socket in source_socket.links:
-                    # Traverse to the parent node of the linked target socket
-                    next_node = linked_source_socket.node
-                    if next_node and next_node.id not in visited:
-                        stack.append(next_node.id)
+
+            # Explore outgoing edges: from source sockets of current_node
+            # to target sockets of neighbor_nodes.
+            for source_socket in current_node.source_sockets.values():
+                for linked_target_socket in source_socket.links:
+                    # linked_target_socket is a socket on another node.
+                    # Its parent node is the neighbor in the graph.
+                    neighbor_node = linked_target_socket.node
+                    if neighbor_node: # Should always be true if graph is consistent
+                        if neighbor_node.id not in visited:
+                            stack.append(neighbor_node.id)
+                            # Optimization: if neighbor_node.id == end_node_id, could return True here.
+                            # However, handling it at the pop() stage is also correct and standard.
         return False
 
     def _get_socket_and_node(

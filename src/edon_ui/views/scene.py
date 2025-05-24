@@ -340,12 +340,9 @@ class GraphicsScene(QGraphicsScene):
     def _refresh_scene_edge_paths(self, updated_node_id: str):
         logger.trace(f"Scene: refresh scene edge paths for {updated_node_id}")
 
-        if self._temp_edge:
-            self._temp_edge.update_path()
-        else:
-            # We might change this call in the future, but the logic is pretty much handled
-            # in _refresh_scene_node_size, if we need something else we can update then.
-            self._refresh_scene_node_size(updated_node_id)
+        # We might change this call in the future, but the logic is pretty much handled
+        # in _refresh_scene_node_size, if we need something else we can update then.
+        self._refresh_scene_node_size(updated_node_id)
 
     def _get_socket_at_pos(self, scene_pos: QPointF) -> SocketLinkItem | None:
         items_at_pos = self.items(scene_pos)

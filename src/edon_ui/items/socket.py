@@ -5,7 +5,7 @@ and rows that can contain a socket circle, label, and widget (`SocketRowItem`),
 along with a protocol (`SocketComponent`) for items within a socket row.
 """
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable, cast
 
 from loguru import logger
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
@@ -86,20 +86,21 @@ class SocketLinkItem(QGraphicsEllipseItem):
         self.setBrush(QBrush(self._original_fill_color))
         self.setAcceptHoverEvents(True)
 
+    def _casted_parent(self) -> "SocketItem":
+        socket_item: SocketItem = cast(SocketItem, self.parentItem())
+        return socket_item
+
     @property
     def role(self) -> SocketRole:
-        return self.parentItem().role
+        return self._casted_parent().role
 
     @property
     def address(self) -> SocketAddress:
-        return self.parentItem().socket_address
+        return self._casted_parent().socket_address
 
     @property
     def item(self) -> "SocketItem":
-        socket_item = self.parentItem()
-        assert isinstance(socket_item, SocketItem)
-
-        return socket_item
+        return self._casted_parent()
 
     def _update_brush(self) -> None:
         """Updates the socket's fill brush based on its current state (hover, drop target)."""

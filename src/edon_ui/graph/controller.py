@@ -229,6 +229,15 @@ class GraphController:
             logger.warning(f"Edge {edge_key} already exists in UI. Ignoring connection attempt.")
             return
 
+        # If the target socket already has an edge, we remove it, input nodes can only have one edge
+        # and we decided on behavior that the new edge will replace the old one.
+        edge_items = self.find_edge_items_at_socket(target_socket_addr)
+        if edge_items:
+            logger.warning(
+                f"Target socket {target_socket_addr.node_id}::{target_socket_addr.socket_name} already has edges. Overwriting"
+            )
+            self.handle_ui_edge_deletion_request(list(edge_items))
+
         self.request_add_edge(edge_key)
 
     def handle_ui_node_deletion_request(self, entity_node_ids: Sequence[str]) -> None:
@@ -397,19 +406,40 @@ class GraphController:
         for partner_node in self.entity_graph.nodes.values():
             partner_sockets_map: Mapping[str, "EntitySocket"] = getattr(partner_node, partner_sockets_collection_name)
 
-            for partner_socket_name in partner_sockets_map.keys():
+            for partner_socket_name, partner_socket in partner_sockets_map.items():
                 potential_partner_socket_addr = SocketAddress(partner_node.id, partner_socket_name)
 
                 if drag_origin_ui_socket_item.role == SocketRole.TARGET:  # Reverse drag
                     # Proposed edge: potential_partner_socket_addr (Output) -> drag_origin_socket_addr (Input)
                     prospective_source_addr = potential_partner_socket_addr
                     prospective_target_addr = drag_origin_socket_addr
+                    # The target socket is the drag origin's socket
+                    target_socket = self.entity_graph.get_node(drag_origin_socket_addr.node_id).target_sockets[
+                        drag_origin_socket_addr.socket_name
+                    ]
                 else:  # Standard drag
                     # Proposed edge: drag_origin_socket_addr (Output) -> potential_partner_socket_addr (Input)
                     prospective_source_addr = drag_origin_socket_addr
                     prospective_target_addr = potential_partner_socket_addr
+                    target_socket = partner_socket
 
-                can_form, reason = self.entity_graph.can_form_link(prospective_source_addr, prospective_target_addr)
+                # If the target socket is a TARGET and already has a link, simulate unlinking it
+                is_target = target_socket.role == SocketRole.TARGET
+                already_linked = bool(target_socket.links)
+                if is_target and already_linked:
+                    # Temporarily remove all links
+                    old_links = list(target_socket.links)
+                    target_socket.links.clear()
+                    can_form, reason = self.entity_graph.can_form_link(
+                        prospective_source_addr, prospective_target_addr
+                    )
+                    # Restore links
+                    target_socket.links.extend(old_links)
+                else:
+                    can_form, reason = self.entity_graph.can_form_link(
+                        prospective_source_addr, prospective_target_addr
+                    )
+
                 if can_form:
                     valid_targets.add(potential_partner_socket_addr)
                 else:
