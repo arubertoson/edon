@@ -16,7 +16,7 @@ from edon.socket import SocketRole
 from edon_ui import theme
 from edon_ui.items.edge import DraggingEdgeItem, EdgeItem
 from edon_ui.items.node import NodeItem
-from edon_ui.items.socket import SocketLinkItem
+from edon_ui.items.socket import SocketLinkItem, SocketItem
 
 if TYPE_CHECKING:
     from PySide6.QtCore import QObject
@@ -236,12 +236,20 @@ class GraphicsScene(QGraphicsScene):
         self.scene_node_count_changed.emit(len(self.node_items))
 
     def add_edge(self, edge: EdgeItem):
+        # We let the SocketItem know that it's linked to trigger read-only/editable
+        # socket widgets
+        # The parentItem returns a QGraphicsItem, but I know that the parent is a SocketItem, how dowe handle this in typing AI?
+        socket_item: SocketItem = edge.target_socket_item.item
+        socket_item.set_link_state(True)
+
         super().addItem(edge)
-        # XXX: again unsure if this is necesasry here
-        # edge.update_path()
-        # self._refresh_scene_edge_paths(edge.node)
 
     def remove_edge(self, edge: EdgeItem):
+        # We let the SocketItem know that it's linked to trigger read-only/editable
+        # socket widgets
+        socket_item: SocketItem = edge.target_socket_item.item
+        socket_item.set_link_state(False)
+
         super().removeItem(edge)
 
     @Slot()

@@ -70,22 +70,23 @@ def create_socket_row(
     socket_type: SocketType = socket_def.socket_type.python_type.__name__
     initial_socket_value: Any = entity_socket.value
 
-    label_component = SocketTextAdaptor(
-        text_item=SocketLabel(
-            text=socket_type,
-            target_layout_height=theme.SOCKET_ROW_HEIGHT,
-        )
-    )
-    socket_component = SocketLinkItem(None)
+    label_component: SocketTextAdaptor | None = None
+    socket_component: SocketLinkItem | None = None
     widget_component: SocketComponent | None = None
 
     # If not socket role we simply have a label and socket
+    logger.warning(f"Socket Role: {socket_role}::{linkable}")
     if socket_role:
-        if socket_role and linkable:  # Input socket, connectable: Label, Circle, Widget (if not connected)
-            widget_component = create_socket_widget_component(
-                entity_socket, node_id, None, initial_value=initial_socket_value
+        if linkable:
+            socket_component = SocketLinkItem(None)
+            label_component = SocketTextAdaptor(
+                text_item=SocketLabel(
+                    text=socket_type,
+                    target_layout_height=theme.SOCKET_ROW_HEIGHT,
+                )
             )
-        else:
+
+        if socket_role == SocketRole.TARGET:
             widget_component = create_socket_widget_component(
                 entity_socket, node_id, None, initial_value=initial_socket_value
             )

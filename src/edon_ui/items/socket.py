@@ -94,6 +94,13 @@ class SocketLinkItem(QGraphicsEllipseItem):
     def address(self) -> SocketAddress:
         return self.parentItem().socket_address
 
+    @property
+    def item(self) -> "SocketItem":
+        socket_item = self.parentItem()
+        assert isinstance(socket_item, SocketItem)
+
+        return socket_item
+
     def _update_brush(self) -> None:
         """Updates the socket's fill brush based on its current state (hover, drop target)."""
         if self._is_drop_target:
@@ -140,7 +147,6 @@ class SocketLinkItem(QGraphicsEllipseItem):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        # XXX: ????
         if self.scene().is_dragging_edge():
             self.scene().update_dragged_edge(event.scenePos())
             event.accept()
@@ -170,11 +176,11 @@ class SocketItem(QGraphicsObject):
 
     def __init__(
         self,
-        label: SocketComponent,
-        socket: SocketLinkItem,
         role: SocketRole,
         socket_entity_name: str,
         node_entity_id: str,
+        label: SocketComponent | None = None,
+        socket: SocketLinkItem | None = None,
         widget: SocketComponent | None = None,
         parent: QGraphicsItem | None = None,
     ) -> None:
@@ -225,7 +231,7 @@ class SocketItem(QGraphicsObject):
         return QRectF(0, 0, self._width, self._height)
 
     def set_link_state(self, linked: bool) -> None:
-        if not self._widget or self.role == SocketRole.SOURCE:
+        if not self.widget_item or self.role == SocketRole.SOURCE:
             return
 
         if linked:
