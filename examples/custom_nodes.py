@@ -223,13 +223,13 @@ def create_sample_graph():
     print("!!!!!")
 
     # Add nodes to graph
-    graph.add_node(int_node)
-    graph.add_node(float_node)
-    graph.add_node(multiply_node)
+    # graph.add_node(int_node)
+    # graph.add_node(float_node)
+    # graph.add_node(multiply_node)
     graph.add_node(string_node1)
     graph.add_node(string_node2)
     graph.add_node(concat_node)
-    graph.add_node(large_text_node1)  # Add to graph
+    # graph.add_node(large_text_node1)  # Add to graph
 
     # Set initial values for the nodes
     # int_node.source_sockets["trg_int"].value = 5
