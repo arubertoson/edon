@@ -163,6 +163,7 @@ class GraphicsScene(QGraphicsScene):
 
     def add_node(self, node: NodeItem):
         node.node_position_update_signal.connect(self._update_edges_for_node)
+        node.node_position_update_signal.connect(self._update_active_area_rect)
         node.node_redraw_signal.connect(self._update_edges_for_node)
 
         super().addItem(node)
@@ -171,10 +172,12 @@ class GraphicsScene(QGraphicsScene):
 
         self._update_scene_content_display()
         self.scene_node_count_changed.emit(len(self.node_items))
+        self._update_active_area_rect()
 
     def remove_node(self, node: NodeItem):
         try:
             node.node_position_update_signal.disconnect(self._update_edges_for_node)
+            node.node_position_update_signal.disconnect(self._update_active_area_rect)
         except RuntimeError:  # Signal was not connected or already disconnected
             pass
         try:
