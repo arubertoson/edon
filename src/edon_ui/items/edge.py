@@ -184,10 +184,10 @@ class EdgeItem(QGraphicsPathItem):
     def edge_key(self) -> EdgeKey:
         if not self._edge_key:
             source_socket_addr = SocketAddress(
-                self.source_socket_item.node_entity_id, self.source_socket_item.socket_entity_name
+                self.source_socket_item.address.node_id, self.source_socket_item.address.socket_name
             )
             target_socket_addr = SocketAddress(
-                self.target_socket_item.node_entity_id, self.target_socket_item.socket_entity_name
+                self.target_socket_item.address.node_id, self.target_socket_item.address.socket_name
             )
             self._edge_key = EdgeKey(source_socket_addr, target_socket_addr)
         return self._edge_key

@@ -278,7 +278,7 @@ class SocketItem(QGraphicsObject):
             else 0
         )
 
-        if self.role:
+        if self.role == SocketRole.TARGET:
             # [circle][padding][label OR widget]
             # If label and widget are both visible (e.g. disconnected input), label is above widget.
             current_y = 0

@@ -356,30 +356,25 @@ class GraphicsScene(QGraphicsScene):
         by creating a new temporary drag from its original source.
         Otherwise, a new temporary edge is created from the clicked socket.
         """
-        socket_row_item = self.controller.socket_addr_socket_item_map.get(clicked_socket_address)
+        socket_item = self.controller.socket_addr_socket_item_map.get(clicked_socket_address)
 
-        if not socket_row_item or not socket_row_item.link_item:
+        if not socket_item or not socket_item.link_item:
             logger.error(
                 f"Could not find UI socket item or link_item for address {clicked_socket_address} to start edge drag."
             )
             return
 
-        clicked_socket_link_item = socket_row_item.link_item  # This is a SocketLinkItem
+        linked_edge_items = self.controller.find_edge_items_at_socket(clicked_socket_address)
 
-        # Determine if the clicked socket is an input (target role)
-        is_input_socket = socket_row_item.role == SocketRole.TARGET
-
-        connected_edges = self.controller.find_edge_items_at_socket(clicked_socket_address)
-
-        if is_input_socket and connected_edges:
+        if socket_item.role == SocketRole.TARGET and linked_edge_items:
             # Lifting an existing edge from an input socket.
             # An input socket should only have one edge due to controller logic.
-            lifted_edge_item = next(iter(connected_edges))
+            lifted_edge_item = next(iter(linked_edge_items))
             source_link_item_of_lifted_edge = lifted_edge_item.source_socket_item
 
             logger.debug(
                 f"Scene: Lifting existing edge from input {clicked_socket_address}. "
-                f"Original source: {source_link_item_of_lifted_edge.socket_address}"
+                f"Original source: {source_link_item_of_lifted_edge.address}"
             )
 
             # Remove the old EdgeItem logically and from UI
@@ -390,7 +385,7 @@ class GraphicsScene(QGraphicsScene):
         else:
             # Standard drag from an output, or an input socket with no existing connections.
             logger.debug(f"Scene: Starting new drag from socket: {clicked_socket_address}")
-            self._temp_edge = DraggingEdgeItem(clicked_socket_link_item, drag_start_scene_pos)
+            self._temp_edge = DraggingEdgeItem(socket_item.link_item, drag_start_scene_pos)
 
         super().addItem(self._temp_edge)  # Add the new/repurposed temp_edge to the scene.
         self._temp_edge.setZValue(theme.EDGE_Z_VALUE_DRAGGING)  # Ensure it's on top
@@ -476,6 +471,7 @@ class GraphicsScene(QGraphicsScene):
             f"Scene: Removing temporary edge from '{source_socket_addr_for_log.node_id}::{source_socket_addr_for_log.socket_name}'"
         )
         super().removeItem(self._temp_edge)
+
         self._temp_edge = None
 
         # Reset the cached valid targets and their visual state.
