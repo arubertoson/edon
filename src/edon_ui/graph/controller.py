@@ -23,11 +23,12 @@ from edon_ui.items.edge import EdgeItem
 from edon_ui.items.factory import create_node_item
 from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketItem
+from edon_ui.views.scene import DragPrepInfo
 
 if TYPE_CHECKING:
     from edon.socket import EntitySocket
     from edon.errors import SocketLinkErrorReason, GraphObjectErrorReason
-    from edon_ui.views.scene import GraphicsScene
+    from edon_ui.views.scene import GraphicsScene, DragPrepInfo
 
 
 type NodeItemMap = MutableMapping[str, NodeItem]
@@ -382,6 +383,50 @@ class GraphController:
         else:
             logger.warning(f"  Could not find edge {edge_key} in edge_map to remove.")
             return False
+
+    def prepare_drag_operation(self, clicked_socket_addr: SocketAddress) -> DragPrepInfo | None:
+        """
+        Analyzes a clicked socket and prepares the data needed for edge drag operations.
+
+        Handles the business logic of edge lifting when dragging from input sockets
+        that already have connections. Returns the actual source socket that should
+        be used for the new edge, along with precomputed drop target validation.
+        """
+        socket_item = self.socket_addr_socket_item_map.get(clicked_socket_addr)
+        if not socket_item:
+            return None
+
+        # Check if we need to lift an existing edge
+        connected_edges = self.find_edge_items_at_socket(clicked_socket_addr)
+
+        if socket_item.role == SocketRole.TARGET and connected_edges:
+            # Lift existing edge - the actual source becomes the original source
+            lifted_edge = next(iter(connected_edges))
+            actual_source_socket_item = lifted_edge.source_socket_item
+            actual_source_addr = actual_source_socket_item.socket_address
+
+            # We need to clean up the edge that we lifted, it will be replaced
+            # by a temporary edge and managed as a new object.
+            self.handle_ui_edge_deletion_request([lifted_edge])
+
+            is_lifted = True
+            logger.debug(f"Lifting edge from {clicked_socket_addr}, original source: {actual_source_addr}")
+        else:
+            # New edge - source is the clicked socket
+            actual_source_addr = clicked_socket_addr
+            actual_source_socket_item = socket_item
+            is_lifted = False
+            logger.debug(f"Preparing new edge drag from {clicked_socket_addr}")
+
+        valid_targets, invalid_targets = self.partition_socket_drop_targets(actual_source_addr)
+
+        return DragPrepInfo(
+            source_socket_addr=actual_source_addr,
+            source_socket_item=actual_source_socket_item,
+            is_lifted_edge=is_lifted,
+            valid_targets={addr: self.socket_addr_socket_item_map.get(addr) for addr in valid_targets},
+            invalid_targets={addr: self.socket_addr_socket_item_map.get(addr) for addr in invalid_targets},
+        )
 
     def partition_socket_drop_targets(
         self, drag_origin_socket_addr: SocketAddress
