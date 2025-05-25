@@ -121,7 +121,7 @@ class GraphController:
         assert source_socket_item and target_socket_item, "State without existing sockets should not be possible"
 
         try:
-            edge_item = EdgeItem(source_socket_item.link_item, target_socket_item.link_item)
+            edge_item = EdgeItem(source_socket_item, target_socket_item)
 
             self.ui_scene.add_edge(edge_item)
             self.edge_map[edge_key] = edge_item

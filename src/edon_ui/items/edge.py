@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QGraphicsItem, QGraphicsPathItem, QStyleOptionGrap
 from edon.socket import SocketRole
 from edon.graph import EdgeKey, SocketAddress
 from edon_ui import theme
-from edon_ui.items.socket import SocketLinkItem
+from edon_ui.items.socket import SocketItem, SocketLinkItem  # Added SocketItem
 
 PathCalculatorType = Callable[[QPointF, QPointF, bool, SocketRole], QPainterPath]
 
@@ -97,15 +97,15 @@ class DraggingEdgeItem(QGraphicsPathItem):
 
     def __init__(
         self,
-        source_socket_item: SocketLinkItem,
+        source_socket_item: SocketItem,
         initial_mouse_scene_pos: QPointF,
         path_calculator: PathCalculatorType = straight_line_path_calculator,
         parent: QGraphicsItem | None = None,
     ):
         super().__init__(parent)
 
-        self._source_socket_item: SocketLinkItem = source_socket_item
-        self._source_pos: QPointF = self._source_socket_item.scenePos()
+        self.source_socket_item: SocketItem = source_socket_item
+        self._source_pos: QPointF = self.source_socket_item.link_item.scenePos()
         self._current_target_pos: QPointF = initial_mouse_scene_pos
         self._path_calculator: PathCalculatorType = path_calculator
 
@@ -117,13 +117,11 @@ class DraggingEdgeItem(QGraphicsPathItem):
 
         self._update_internal_path()
 
-    @property
-    def source_socket_item(self) -> SocketLinkItem:
-        return self._source_socket_item
-
     def _update_internal_path(self) -> None:
-        self._source_pos = self._source_socket_item.scenePos()
-        path = self._path_calculator(self._source_pos, self._current_target_pos, True, SocketLinkItem.role)
+        self._source_pos = self.source_socket_item.link_item.scenePos()  # Use link_item for position
+        # Access role directly from the SocketItem
+        starting_role = self.source_socket_item.role
+        path = self._path_calculator(self._source_pos, self._current_target_pos, True, starting_role)
         self.setPath(path)
 
     def update_target_position(self, new_mouse_scene_pos: QPointF) -> None:
@@ -154,8 +152,8 @@ class EdgeItem(QGraphicsPathItem):
 
     def __init__(
         self,
-        source_socket_item: SocketLinkItem,
-        target_socket_item: SocketLinkItem,
+        source_socket_item: SocketItem,  # Changed from SocketLinkItem
+        target_socket_item: SocketItem,  # Changed from SocketLinkItem
         path_calculator: PathCalculatorType = straight_line_path_calculator,
         parent: QGraphicsItem | None = None,
     ) -> None:
@@ -165,11 +163,12 @@ class EdgeItem(QGraphicsPathItem):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self._path_calculator = path_calculator
 
-        self.source_socket_item = source_socket_item
-        self.target_socket_item = target_socket_item
+        self.source_socket_item: SocketItem = source_socket_item  # Type hint updated
+        self.target_socket_item: SocketItem = target_socket_item  # Type hint updated
 
-        self._source_pos: QPointF = self.source_socket_item.scenePos()
-        self._target_pos: QPointF = self.target_socket_item.scenePos()
+        # Positions are taken from the link_item of the SocketItem
+        self._source_pos: QPointF = self.source_socket_item.link_item.scenePos()
+        self._target_pos: QPointF = self.target_socket_item.link_item.scenePos()
 
         self._pen = QPen(theme.EDGE_COLOR_DEFAULT, theme.EDGE_THICKNESS)
         self._pen.setCapStyle(Qt.PenCapStyle.RoundCap)
@@ -183,12 +182,9 @@ class EdgeItem(QGraphicsPathItem):
     @property
     def edge_key(self) -> EdgeKey:
         if not self._edge_key:
-            source_socket_addr = SocketAddress(
-                self.source_socket_item.address.node_id, self.source_socket_item.address.socket_name
-            )
-            target_socket_addr = SocketAddress(
-                self.target_socket_item.address.node_id, self.target_socket_item.address.socket_name
-            )
+            # Access socket_address directly from SocketItem
+            source_socket_addr = self.source_socket_item.socket_address
+            target_socket_addr = self.target_socket_item.socket_address
             self._edge_key = EdgeKey(source_socket_addr, target_socket_addr)
         return self._edge_key
 
@@ -206,12 +202,13 @@ class EdgeItem(QGraphicsPathItem):
     def update_path(self) -> None:
         self.prepareGeometryChange()
 
-        self._source_pos = self.source_socket_item.scenePos()
-        self._target_pos = self.target_socket_item.scenePos()
+        # Positions are taken from the link_item of the SocketItem
+        self._source_pos = self.source_socket_item.link_item.scenePos()
+        self._target_pos = self.target_socket_item.link_item.scenePos()
 
         # An EdgeItem is always static when it simply "exists", meaning, it's inactive and it starts
-        # from it's source role.
-        path = self._path_calculator(self._source_pos, self._target_pos, False, SocketRole.SOURCE)
+        # from it's source role. The role is taken directly from the source SocketItem.
+        path = self._path_calculator(self._source_pos, self._target_pos, False, self.source_socket_item.role)
         self.setPath(path)
 
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:

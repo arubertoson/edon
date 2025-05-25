@@ -192,7 +192,8 @@ class GraphicsScene(QGraphicsScene):
     def add_edge(self, edge: EdgeItem):
         # We let the SocketItem know that it's linked to trigger read-only/editable
         # socket widgets
-        socket_item: SocketItem = edge.target_socket_item.item
+        # edge.target_socket_item is now a SocketItem directly
+        socket_item: SocketItem = edge.target_socket_item
         socket_item.set_link_state(True)
 
         super().addItem(edge)
@@ -200,7 +201,8 @@ class GraphicsScene(QGraphicsScene):
     def remove_edge(self, edge: EdgeItem):
         # We let the SocketItem know that it's linked to trigger read-only/editable
         # socket widgets
-        socket_item: SocketItem = edge.target_socket_item.item
+        # edge.target_socket_item is now a SocketItem directly
+        socket_item: SocketItem = edge.target_socket_item
         socket_item.set_link_state(False)
 
         super().removeItem(edge)
@@ -263,35 +265,41 @@ class GraphicsScene(QGraphicsScene):
         if socket_item.role == SocketRole.TARGET and linked_edge_items:
             # Lifting an existing edge from an input socket.
             # An input socket should only have one edge due to controller logic.
-            lifted_edge_item = next(iter(linked_edge_items))
-            source_link_item_of_lifted_edge = lifted_edge_item.source_socket_item
+            lifted_edge_item = next(iter(linked_edge_items))  # This is an EdgeItem
+            # lifted_edge_item.source_socket_item is now a SocketItem.
+            # DraggingEdgeItem now expects a SocketItem.
+            source_socket_item_of_lifted_edge = lifted_edge_item.source_socket_item
+            # source_link_item_of_lifted_edge = source_socket_item_of_lifted_edge.link_item # No longer needed to pass to DraggingEdgeItem
 
             logger.debug(
                 f"Scene: Lifting existing edge from input {clicked_socket_address}. "
-                f"Original source: {source_link_item_of_lifted_edge.address}"
+                f"Original source: {source_socket_item_of_lifted_edge.socket_address}"
             )
 
             # Remove the old EdgeItem logically and from UI
             self.controller.handle_ui_edge_deletion_request([lifted_edge_item])
 
             # Create a new DraggingEdgeItem starting from the *other* end of the lifted edge
-            self._temp_edge = DraggingEdgeItem(source_link_item_of_lifted_edge, drag_start_scene_pos)
+            self._temp_edge = DraggingEdgeItem(
+                source_socket_item_of_lifted_edge, drag_start_scene_pos
+            )  # Pass SocketItem
         else:
             # Standard drag from an output, or an input socket with no existing connections.
+            # socket_item here is the SocketItem that was clicked.
             logger.debug(f"Scene: Starting new drag from socket: {clicked_socket_address}")
-            self._temp_edge = DraggingEdgeItem(socket_item.link_item, drag_start_scene_pos)
+            self._temp_edge = DraggingEdgeItem(socket_item, drag_start_scene_pos)  # Pass SocketItem
 
         super().addItem(self._temp_edge)  # Add the new/repurposed temp_edge to the scene.
         self._temp_edge.setZValue(theme.EDGE_Z_VALUE_DRAGGING)  # Ensure it's on top
 
         # Cache valid drop targets based on the actual source of the drag
-        # This requires SocketLinkItem to have a 'socket_address' property.
-        actual_drag_source_address = self._temp_edge.source_socket_item.address
+        # Access socket_address directly from the source_socket_item (which is a SocketItem)
+        actual_drag_source_address = self._temp_edge.source_socket_item.socket_address
         valid, invalid = self.controller.partition_socket_drop_targets(actual_drag_source_address)
         self._cached_drag_valid_targets = valid
         logger.debug(f"Cached valid drop targets for {actual_drag_source_address}: {self._cached_drag_valid_targets}")
 
-        self.update_socket_drop_targets(self._temp_edge.source_socket_item)
+        self.update_socket_drop_targets(self._temp_edge.source_socket_item)  # Pass SocketItem
 
     def update_dragging_edge(self, current_scene_pos: QPointF):
         """Updates the end point of the temporary edge being dragged."""
@@ -300,7 +308,7 @@ class GraphicsScene(QGraphicsScene):
         assert self._temp_edge
 
         self._temp_edge.update_target_position(current_scene_pos)
-        potential_target_socket = self._get_socket_at_pos(current_scene_pos)
+        potential_target_socket: SocketItem = self._get_socket_at_pos(current_scene_pos)
 
         hl_socket = self._currently_highlighted_target_socket
 
@@ -309,19 +317,19 @@ class GraphicsScene(QGraphicsScene):
             hl_socket.set_drop_target_highlight(False)
             self._currently_highlighted_target_socket = None
 
-        if not potential_target_socket:
+        if (
+            not potential_target_socket
+            or potential_target_socket.socket_address not in self._cached_drag_valid_targets
+        ):
             return
 
-        is_valid = potential_target_socket.address in self._cached_drag_valid_targets
+        if hl_socket != potential_target_socket:
+            # If there was a different highlighted socket, turn its highlight off
+            if hl_socket:
+                hl_socket.set_drop_target_highlight(False)
 
-        if is_valid:
-            if hl_socket != potential_target_socket:
-                # If there was a different highlighted socket, turn its highlight off
-                if hl_socket:
-                    hl_socket.set_drop_target_highlight(False)
-
-                potential_target_socket.set_drop_target_highlight(True)
-                self._currently_highlighted_target_socket = potential_target_socket
+            potential_target_socket.set_drop_target_highlight(True)
+            self._currently_highlighted_target_socket = potential_target_socket
 
     def finalize_dragging_edge(self, event_scene_pos: QPointF):
         """
@@ -339,15 +347,23 @@ class GraphicsScene(QGraphicsScene):
         # avoid any cleanup. If we readch this point without a temporary edge something
         # has gone terribly wrong and any resulting crash should happen.
 
-        target_socket_item = self._get_socket_at_pos(event_scene_pos)
-        source_socket_item = self._temp_edge.source_socket_item
-        if source_socket_item.role == SocketRole.TARGET:
-            source_socket_item, target_socket_item = target_socket_item, source_socket_item
+        target_socket_item: SocketItem = self._get_socket_at_pos(event_scene_pos)
+        source_socket_item: SocketItem = self._temp_edge.source_socket_item
+
+        if source_socket_item and source_socket_item.role == SocketRole.TARGET:
+            # Ensure target_socket_item is not None before swapping
+            if target_socket_item:
+                source_socket_item, target_socket_item = target_socket_item, source_socket_item
+            else:
+                # If target_socket_item is None and source is a TARGET, this connection cannot be made.
+                # Log and proceed to cleanup.
+                logger.debug("Finalize dragging: Source is TARGET role but no valid target socket found for swap.")
+                source_socket_item = None  # effectively makes the next block fail
 
         if source_socket_item and target_socket_item:
             # Retrieve SocketAddress instances for the controller method
-            source_addr = source_socket_item.parentItem().socket_address
-            target_addr = target_socket_item.parentItem().socket_address
+            source_addr = source_socket_item.socket_address
+            target_addr = target_socket_item.socket_address
             if source_addr and target_addr:
                 self.controller.handle_ui_edge_link_request(source_addr, target_addr)
             else:
@@ -361,7 +377,9 @@ class GraphicsScene(QGraphicsScene):
             self._currently_highlighted_target_socket = None
 
         # Remove the temporary edge.
-        source_socket_addr_for_log = self._temp_edge.source_socket_item.address
+        # Access address directly from the source_socket_item (which is a SocketItem) for logging
+        source_socket_item_for_log = self._temp_edge.source_socket_item
+        source_socket_addr_for_log = source_socket_item_for_log.socket_address
         logger.debug(
             f"Scene: Removing temporary edge from '{source_socket_addr_for_log.node_id}::{source_socket_addr_for_log.socket_name}'"
         )
@@ -377,9 +395,9 @@ class GraphicsScene(QGraphicsScene):
                     item.set_not_valid_drop_target(False)
         self._cached_drag_valid_targets = set()
 
-    def update_socket_drop_targets(self, source_socket: SocketLinkItem):
+    def update_socket_drop_targets(self, source_socket_item: SocketItem):  # Changed parameter type
         """
-        Grays out all sockets that cannot be connected to from the given source_socket,
+        Grays out all sockets that cannot be connected to from the given source_socket_item,
         including those that would create a cycle. Uses GraphController for validation.
         Uses cached targets if available during an active drag.
         """
@@ -401,7 +419,8 @@ class GraphicsScene(QGraphicsScene):
                 continue
 
             socket_link = item  # item is already a SocketLinkItem
-            if socket_link == source_socket:
+            # Compare the SocketLinkItem with the link_item of the source_socket_item
+            if source_socket_item and socket_link == source_socket_item.link_item:
                 socket_link.set_not_valid_drop_target(False)
             else:
                 # Ensure parentItem() and socket_address exist before checking membership
@@ -519,5 +538,5 @@ class GraphicsScene(QGraphicsScene):
         items_at_pos = self.items(scene_pos)
         for item in items_at_pos:
             if isinstance(item, SocketLinkItem):
-                return item
+                return item.parent
         return None

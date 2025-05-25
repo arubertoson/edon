@@ -86,21 +86,10 @@ class SocketLinkItem(QGraphicsEllipseItem):
         self.setBrush(QBrush(self._original_fill_color))
         self.setAcceptHoverEvents(True)
 
-    def _casted_parent(self) -> "SocketItem":
+    @property
+    def parent(self) -> "SocketItem":
         socket_item: SocketItem = cast(SocketItem, self.parentItem())
         return socket_item
-
-    @property
-    def role(self) -> SocketRole:
-        return self._casted_parent().role
-
-    @property
-    def address(self) -> SocketAddress:
-        return self._casted_parent().socket_address
-
-    @property
-    def item(self) -> "SocketItem":
-        return self._casted_parent()
 
     def _update_brush(self) -> None:
         """Updates the socket's fill brush based on its current state (hover, drop target)."""
@@ -140,30 +129,34 @@ class SocketLinkItem(QGraphicsEllipseItem):
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            parent_item = self.parentItem()
-            logger.debug(f"SocketCircleItem in {parent_item.socket_address} pressed at {event.scenePos()}")
-            self.scene().initiate_dragging_edge(parent_item.socket_address, event.scenePos())
+            self.parent.handle_link_press(event)
             event.accept()
         else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        # Check if a drag is active before attempting to call the parent's handler.
+        # The parent's handler might assume a drag is in progress.
         if self.scene().is_dragging_edge():
-            self.scene().update_dragging_edge(event.scenePos())
+            self.parent.handle_link_move(event)
             event.accept()
         else:
+            # It's important to call the base class implementation if we're not handling the event,
+            # especially for events like mouseMove that might be used by QGraphicsItem for other purposes.
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            logger.debug(
-                f"SocketCircleItem '{self.parentItem().node_entity_id}::{self.parentItem().socket_entity_name}' released at {event.scenePos()}"
-            )
+            # Similar to mouseMoveEvent, only delegate if a drag was active.
             if self.scene().is_dragging_edge():
-                self.scene().finalize_dragging_edge(event.scenePos())
+                self.parent.handle_link_release(event)
                 event.accept()
-
-        super().mouseReleaseEvent(event)
+            else:
+                # If no drag was active, perhaps the press was consumed elsewhere or it was a simple click
+                # without initiating a drag. Call super to ensure normal event processing.
+                super().mouseReleaseEvent(event)
+        else:
+            super().mouseReleaseEvent(event)
 
 
 class SocketItem(QGraphicsObject):
@@ -216,6 +209,25 @@ class SocketItem(QGraphicsObject):
 
         self._update_bounding_rect()
 
+    def handle_link_press(self, event: QGraphicsSceneMouseEvent) -> None:
+        """Handles mouse press events forwarded from the SocketLinkItem."""
+        logger.debug(f"SocketItem link in {self.socket_address} pressed at {event.scenePos()}")
+        # Assuming self.scene() is accessible and returns the GraphicsScene instance
+        self.scene().initiate_dragging_edge(self.socket_address, event.scenePos())
+
+    def handle_link_move(self, event: QGraphicsSceneMouseEvent) -> None:
+        """Handles mouse move events forwarded from the SocketLinkItem during a drag."""
+        # The scene's update_dragging_edge method typically doesn't need the socket_address,
+        # just the current mouse position.
+        self.scene().update_dragging_edge(event.scenePos())
+
+    def handle_link_release(self, event: QGraphicsSceneMouseEvent) -> None:
+        """Handles mouse release events forwarded from the SocketLinkItem."""
+        logger.debug(
+            f"SocketItem link '{self.node_entity_id}::{self.socket_entity_name}' released at {event.scenePos()}"
+        )
+        self.scene().finalize_dragging_edge(event.scenePos())
+
     @property
     def socket_address(self) -> SocketAddress:
         return SocketAddress(self.node_entity_id, self.socket_entity_name)
@@ -230,6 +242,15 @@ class SocketItem(QGraphicsObject):
         components
         """
         return QRectF(0, 0, self._width, self._height)
+
+    def set_drop_target_highlight(self, highlight: bool) -> None:
+        """Forwards the drop target highlight state to the underlying SocketLinkItem."""
+        if self.link_item:
+            self.link_item.set_drop_target_highlight(highlight)
+        else:
+            logger.warning(
+                f"SocketItem {self.socket_address} has no link_item to set drop target highlight."
+            )
 
     def set_link_state(self, linked: bool) -> None:
         if not self.widget_item or self.role == SocketRole.SOURCE:
