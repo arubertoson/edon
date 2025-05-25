@@ -401,30 +401,12 @@ class GraphicsScene(QGraphicsScene):
                 if isinstance(item, EdgeItem):
                     item.setSelected(False)
 
-    @Slot()
-    def _update_active_area_rect(self):
-        """Calculate the active area rectangle based on the current node positions"""
-        # XXX: this slot needs to ensure that our scene is having a size that can contain
-        # all our elements and the main window of the application. It's an interactive scene
-        # where we move things around, so ensuring that we have a "container" is just nice
-        # style.
-        #
-        # So we need to think about when we need to about when we require this:
-        # - Node move events
-        # - Edge Drag events (not updating the rect but limiting movement at least)
-        if not self.node_items:
-            return
-
-        # XXX: As a side note we should only resize the active area so it's bigger
-        # if the user has moved the nodes around. If the nodes are within the current
-        # active area, we should not resize it. There should be a feature to "recalculate"
-        # it so it's optimized around the nodes as well.
-
-        padding = 100
+    def _calculate_node_bounds(self, nodes: list[NodeItem], padding: float) -> QRectF:
+        """Calculate the bounding rectangle for a list of nodes with padding."""
         min_x, min_y = float("inf"), float("inf")
         max_x, max_y = float("-inf"), float("-inf")
 
-        for node in self.node_items:
+        for node in nodes:
             pos = node.pos()
             rect = node.boundingRect()
             min_x = min(min_x, pos.x())
@@ -432,15 +414,80 @@ class GraphicsScene(QGraphicsScene):
             max_x = max(max_x, pos.x() + rect.width())
             max_y = max(max_y, pos.y() + rect.height())
 
-        min_x -= padding
-        min_y -= padding
-        max_x += padding
-        max_y += padding
+        return QRectF(
+            min_x - padding,
+            min_y - padding,
+            (max_x + padding) - (min_x - padding),
+            (max_y + padding) - (min_y - padding),
+        )
 
-        width = max(max_x - min_x, 400)
-        height = max(max_y - min_y, 400)
+    def _expand_bounds_only(self, current_rect: QRectF, new_bounds: QRectF) -> QRectF:
+        """Expand current bounds to include new bounds, but never shrink."""
+        final_left = min(current_rect.left(), new_bounds.left())
+        final_top = min(current_rect.top(), new_bounds.top())
+        final_right = max(current_rect.right(), new_bounds.right())
+        final_bottom = max(current_rect.bottom(), new_bounds.bottom())
 
-        self.active_area.setRect(min_x, min_y, width, height)
+        return QRectF(final_left, final_top, final_right - final_left, final_bottom - final_top)
+
+    @Slot()
+    def _update_active_area_rect(self):
+        """
+        Updates the active area rectangle based on node positions.
+
+        If nodes are selected by the user, it expands the current active area to
+        include these selected nodes. If no nodes are selected, it recalculates
+        the active area based on all nodes (e.g., for initial setup or after
+        a full recalculation request).
+        """
+        if not self.node_items:
+            # This case should ideally be handled by _update_scene_content_display
+            # which would hide the active_area. If called directly, just return.
+            return
+
+        padding = 100.0
+        current_active_rect = self.active_area.rect()
+
+        selected_nodes = [item for item in self.selectedItems() if isinstance(item, NodeItem)]
+        nodes_to_consider = selected_nodes if selected_nodes else self.node_items
+
+        if not nodes_to_consider:
+            return
+
+        bounds = self._calculate_node_bounds(nodes_to_consider, padding)
+
+        if selected_nodes:
+            final_bounds = self._expand_bounds_only(current_active_rect, bounds)
+        else:
+            # No selection: use bounds calculated from all nodes (initial or full recalc)
+            final_bounds = bounds
+
+        width = max(final_bounds.width(), 400.0)
+        height = max(final_bounds.height(), 400.0)
+
+        self.active_area.setRect(final_bounds.x(), final_bounds.y(), width, height)
+        logger.trace(f"Active area updated to: {self.active_area.rect()}")
+
+    def recalculate_active_area(self) -> None:
+        """
+        Recalculates the active area to optimally fit all nodes.
+
+        This method can be called to shrink the active area when nodes
+        have been moved closer together or deleted.
+        """
+        if not self.node_items:
+            return
+
+        # Force recalculation by temporarily clearing selection
+        # or just calculate from all nodes directly
+        bounds = self._calculate_node_bounds(self.node_items, 100)
+
+        width = max(bounds.width(), 400)
+        height = max(bounds.height(), 400)
+
+        self.active_area.setRect(bounds.x(), bounds.y(), width, height)
+
+        logger.debug("Active area recalculated to optimal size")
 
     @Slot()
     def _update_scene_content_display(self):
