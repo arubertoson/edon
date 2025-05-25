@@ -5,11 +5,11 @@ and rows that can contain a socket circle, label, and widget (`SocketRowItem`),
 along with a protocol (`SocketComponent`) for items within a socket row.
 """
 
-from typing import Protocol, runtime_checkable, cast
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from loguru import logger
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QHoverEvent, QPen
+from PySide6.QtGui import QBrush, QColor, QPen
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
@@ -20,6 +20,11 @@ from PySide6.QtWidgets import (
 from edon.graph import SocketAddress
 from edon.socket import SocketRole
 from edon_ui import theme
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QGraphicsSceneHoverEvent
+
+    from edon_ui.views.scene import GraphicsScene
 
 
 @runtime_checkable
@@ -34,6 +39,7 @@ class SocketComponent(Protocol):
     def setParentItem(self, parent: QGraphicsItem | None) -> None: ...
     def setPos(self, pos: QPointF | float, y: float | None = None) -> None: ...
     def pos(self) -> QPointF: ...
+    def boundingRect(self) -> QRectF: ...
     def isVisible(self) -> bool: ...
     def show(self) -> None: ...
     def hide(self) -> None: ...
@@ -44,6 +50,17 @@ class SocketComponent(Protocol):
 
     def get_required_component_height(self) -> float:
         """Returns the intrinsic height this component requires for layout."""
+        ...
+
+
+@runtime_checkable
+class SocketTextComponent(SocketComponent, Protocol):
+    """
+    Protocol defining the interface for a visual text component within a SocketItem.
+    """
+
+    def set_text_alignment(self, alignment: Qt.AlignmentFlag) -> None:
+        """Sets the alignment for the text component"""
         ...
 
 
@@ -113,14 +130,14 @@ class SocketLinkItem(QGraphicsEllipseItem):
             self._is_drop_target = highlight
             self._update_brush()
 
-    def hoverEnterEvent(self, event: QHoverEvent) -> None:
+    def hoverEnterEvent(self, event: "QGraphicsSceneHoverEvent") -> None:
         if not self._is_valid_drop_target:
             self._is_hovered = True
             self._update_brush()
 
         super().hoverEnterEvent(event)
 
-    def hoverLeaveEvent(self, event: QHoverEvent) -> None:
+    def hoverLeaveEvent(self, event: "QGraphicsSceneHoverEvent") -> None:
         if not self._is_valid_drop_target:
             self._is_hovered = False
             self._update_brush()
@@ -137,7 +154,8 @@ class SocketLinkItem(QGraphicsEllipseItem):
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         # Check if a drag is active before attempting to call the parent's handler.
         # The parent's handler might assume a drag is in progress.
-        if self.scene().is_dragging_edge():
+        scene = cast("GraphicsScene", self.scene())
+        if scene.is_dragging_edge():
             self.parent.handle_link_move(event)
             event.accept()
         else:
@@ -148,7 +166,8 @@ class SocketLinkItem(QGraphicsEllipseItem):
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             # Similar to mouseMoveEvent, only delegate if a drag was active.
-            if self.scene().is_dragging_edge():
+            scene = cast("GraphicsScene", self.scene())
+            if scene.is_dragging_edge():
                 self.parent.handle_link_release(event)
                 event.accept()
             else:
@@ -171,34 +190,27 @@ class SocketItem(QGraphicsObject):
     def __init__(
         self,
         role: SocketRole,
-        socket_entity_name: str,
+        entity_name: str,
         node_entity_id: str,
-        label: SocketComponent | None = None,
+        label: SocketTextComponent | None = None,
         socket: SocketLinkItem | None = None,
         widget: SocketComponent | None = None,
-        parent: QGraphicsItem | None = None,
+        parent: QGraphicsObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.label_item = label
         self.link_item = socket
         self.widget_item = widget
 
-        # XXX: Do we handle these as privates? Or do we work under the contract that
-        # "Hey do not change these"
         self.role = role
-        self.socket_entity_name = socket_entity_name
+        self.entity_name = entity_name
         self.node_entity_id = node_entity_id
 
         for item in (self.label_item, self.link_item, self.widget_item):
             if item is not None and isinstance(item, QGraphicsItem):  # Ensure it's a QGraphicsItem
                 item.setParentItem(self)
 
-        # XXX: We should create a custom protocol for the SockeRowitemLable which contains this
-        # method.
-        if self.label_item and hasattr(self.label_item, "set_text_alignment"):
-            # Assuming SocketComponent might have this method if it's a text label.
-            # This requires self.label to have a 'set_text_alignment' method.
-            # Consider adding 'set_text_alignment' to SocketComponent protocol if it's a common need.
+        if self.label_item:
             alignment = Qt.AlignmentFlag.AlignLeft
             if self.role == SocketRole.SOURCE:
                 alignment = Qt.AlignmentFlag.AlignRight
@@ -206,31 +218,36 @@ class SocketItem(QGraphicsObject):
 
         self._width: float = 0
         self._height: float = 0
+        self._address: SocketAddress | None = None
 
         self._update_bounding_rect()
+
+    def _scene(self) -> "GraphicsScene":
+        return cast(GraphicsScene, self.scene())
 
     def handle_link_press(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handles mouse press events forwarded from the SocketLinkItem."""
         logger.debug(f"SocketItem link in {self.socket_address} pressed at {event.scenePos()}")
-        # Assuming self.scene() is accessible and returns the GraphicsScene instance
-        self.scene().initiate_dragging_edge(self.socket_address, event.scenePos())
+
+        self._scene().initiate_dragging_edge(self.socket_address, event.scenePos())
 
     def handle_link_move(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handles mouse move events forwarded from the SocketLinkItem during a drag."""
         # The scene's update_dragging_edge method typically doesn't need the socket_address,
         # just the current mouse position.
-        self.scene().update_dragging_edge(event.scenePos())
+        self._scene().update_dragging_edge(event.scenePos())
 
     def handle_link_release(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handles mouse release events forwarded from the SocketLinkItem."""
-        logger.debug(
-            f"SocketItem link '{self.node_entity_id}::{self.socket_entity_name}' released at {event.scenePos()}"
-        )
-        self.scene().finalize_dragging_edge(event.scenePos())
+        logger.debug(f"SocketItem link '{self.node_entity_id}::{self.entity_name}' released at {event.scenePos()}")
+
+        self._scene().finalize_dragging_edge(event.scenePos())
 
     @property
     def socket_address(self) -> SocketAddress:
-        return SocketAddress(self.node_entity_id, self.socket_entity_name)
+        if not self._address:
+            self._address = SocketAddress(self.node_entity_id, self.entity_name)
+        return self._address
 
     def update_layout(self, available_width: float) -> None:
         self._update_bounding_rect()
@@ -238,9 +255,7 @@ class SocketItem(QGraphicsObject):
         self.update()
 
     def boundingRect(self) -> QRectF:
-        """Returns the bounding rectangle of the row, containing all laid-out child
-        components
-        """
+        """Returns the bounding rectangle of the row, containing all laid-out child components."""
         return QRectF(0, 0, self._width, self._height)
 
     def set_drop_target_highlight(self, highlight: bool) -> None:
@@ -248,9 +263,7 @@ class SocketItem(QGraphicsObject):
         if self.link_item:
             self.link_item.set_drop_target_highlight(highlight)
         else:
-            logger.warning(
-                f"SocketItem {self.socket_address} has no link_item to set drop target highlight."
-            )
+            logger.warning(f"SocketItem {self.socket_address} has no link_item to set drop target highlight.")
 
     def set_link_state(self, linked: bool) -> None:
         if not self.widget_item or self.role == SocketRole.SOURCE:

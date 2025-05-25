@@ -96,7 +96,7 @@ def create_socket_row(
         socket=socket_component,
         widget=widget_component,
         role=socket_role,
-        socket_entity_name=entity_socket.name,
+        entity_name=entity_socket.name,
         node_entity_id=node_id,
     )
 

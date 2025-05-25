@@ -65,15 +65,20 @@ class DragContext:
     source_socket_item: SocketItem
     valid_targets: Mapping[SocketAddress, SocketItem]
     invalid_targets: Mapping[SocketAddress, SocketItem]
-    highlighted_socket: SocketLinkItem | None = None
+    highlighted_socket: SocketItem | None = None
 
-    def reset_highlight(self) -> None:
-        self.highlighted_socket.set_drop_target_highlight(False)
-        self.highlighted_socket = None
+    def apply_target_socket_highlight(self, item: SocketItem) -> None:
+        # Here we check whether we had a highlight, or if we are already highlighting
+        # the target item. If not, we need to reset.
+        if self.highlighted_socket and not self.highlighted_socket == item:
+            self.highlighted_socket.set_drop_target_highlight(False)
+            self.highlighted_socket = None
 
-    def set_highlight_item(self, item: SocketItem) -> None:
-        item.set_drop_target_highlight(True)
-        self.highlighted_socket = item
+        # We check whether the target item is in the `DragContext` valid targets and highlight
+        # the object if it is.
+        if item and item.socket_address in self.valid_targets:
+            item.set_drop_target_highlight(True)
+            self.highlighted_socket = item
 
     def apply_target_socket_visuals(self) -> None:
         """Applies visual feedback by marking invalid drop target sockets."""
@@ -348,10 +353,9 @@ class GraphicsScene(QGraphicsScene):
 
         # Handle socket highlighting
         target_socket_item = self._get_socket_at_pos(current_scene_pos)
-        old_highlighted = self._drag_context.highlighted_socket
 
-        # Here we check whether we had a highlight, or if we are already highlighting
-        # the target item. If not, we need to reset.
+        self._drag_context.apply_target_socket_highlight(target_socket_item)
+
         if old_highlighted and old_highlighted != target_socket_item:
             self._drag_context.reset_highlight()
 
