@@ -501,24 +501,22 @@ class GraphicsScene(QGraphicsScene):
         """
         # XXX: This is just relevant for add/remove node. We need either signlas
         # or direct calls to this. Signals for things such as node move, direct calls
-        # for add/remove node.
+        # for add/remove node. ENSURE THIS.
         if not self.node_items:
-            logger.warning("interaction scene? 2222")
             if self.active_area.scene() == self:
                 super().removeItem(self.active_area)
 
             self.empty_scene_text.setVisible(True)
             return
         else:
-            logger.warning("interaction scene? 2223")
             if self.empty_scene_text.isVisible():
                 self.empty_scene_text.setVisible(False)
 
             if not self.active_area.scene() == self:
                 super().addItem(self.active_area)
 
-                # Updating the active area after we've added a node is necessary.
-                self._update_active_area_rect()
+            # Updating the active area after we've added a node is necessary.
+            self._update_active_area_rect()
 
     @Slot(str)
     def _update_edges_for_node(self, updated_node_id: str):

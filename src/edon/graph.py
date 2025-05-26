@@ -84,12 +84,12 @@ class EntityGraph:
             for other_sock in linked_sockets_copy:
                 sock_to_unlink.unlink_from(other_sock)
 
-    def get_node(self, node_id: str) -> EntityNode | None:
+    def get_node(self, node_id: str) -> EntityNode:
         """Retrieves an `EntityNode` from the graph by its `node_id`.
 
         Returns the `EntityNode` instance if found, otherwise `None`.
         """
-        return self.nodes.get(node_id)
+        return self.nodes[node_id]
 
     def _has_path(self, start_node_id: str, end_node_id: str) -> bool:
         """Determines if a directed path exists from a start node to an end node.
@@ -134,7 +134,7 @@ class EntityGraph:
                     # linked_target_socket is a socket on another node.
                     # Its parent node is the neighbor in the graph.
                     neighbor_node = linked_target_socket.node
-                    if neighbor_node: # Should always be true if graph is consistent
+                    if neighbor_node:  # Should always be true if graph is consistent
                         if neighbor_node.id not in visited:
                             stack.append(neighbor_node.id)
                             # Optimization: if neighbor_node.id == end_node_id, could return True here.
