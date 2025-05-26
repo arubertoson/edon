@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from edon_ui import theme
+from edon_ui.widgets.gfx import SocketLabel
 
 
 class PaintEventMixin:
@@ -37,7 +38,7 @@ class PaintEventMixin:
         pass
 
 
-class SocketTextAdaptor(QGraphicsObject, PaintEventMixin):
+class SocketTextAdaptor(QGraphicsObject):
     """
     Adapts a QGraphicsTextItem (like SocketLabel) to be used as a SocketComponent.
     It manages the overall footprint including horizontal margins, and positions the text item within.
@@ -45,9 +46,9 @@ class SocketTextAdaptor(QGraphicsObject, PaintEventMixin):
 
     def __init__(
         self,
-        text_item: QGraphicsTextItem,
+        text_item: SocketLabel,
         horizontal_margin: float = theme.SOCKET_HORIZONTAL_PADDING,
-        parent: QGraphicsItem | None = None,
+        parent: QGraphicsObject | None = None,
     ):
         super().__init__(parent)
         logger.trace(f"SocketTextAdaptor created for text_item: {text_item}")
@@ -78,10 +79,10 @@ class SocketTextAdaptor(QGraphicsObject, PaintEventMixin):
     def set_text_alignment(self, alignment: Qt.AlignmentFlag) -> None:
         if hasattr(self._text_item, "set_alignment"):
             # This assumes SocketLabel (or similar) has a 'set_alignment' method
-            self._text_item.set_alignment(alignment)
+            self._text_item.set_text_alignment(alignment)
 
 
-class SocketWidgetAdaptor(QGraphicsObject, PaintEventMixin):
+class SocketWidgetAdaptor(QGraphicsObject):
     """
     Adapts a QWidget (e.g., QLineEdit) to be used as a SocketComponent.
     It wraps the QWidget in a QGraphicsProxyWidget and handles size, position, and internal

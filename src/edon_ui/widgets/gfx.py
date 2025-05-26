@@ -57,7 +57,7 @@ class SocketLabel(QGraphicsTextItem):
         """Returns the actual bounding height of the text item, including document margins."""
         return self.boundingRect().height()
 
-    def set_alignment(self, alignment: Qt.AlignmentFlag):
+    def set_text_alignment(self, alignment: Qt.AlignmentFlag):
         doc = self.document()
         option = doc.defaultTextOption()
         option.setAlignment(alignment)

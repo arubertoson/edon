@@ -222,26 +222,27 @@ class SocketItem(QGraphicsObject):
 
         self._update_bounding_rect()
 
+    @property
     def _scene(self) -> "GraphicsScene":
-        return cast(GraphicsScene, self.scene())
+        return cast("GraphicsScene", self.scene())
 
     def handle_link_press(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handles mouse press events forwarded from the SocketLinkItem."""
         logger.debug(f"SocketItem link in {self.socket_address} pressed at {event.scenePos()}")
 
-        self._scene().initiate_dragging_edge(self.socket_address, event.scenePos())
+        self._scene.initiate_dragging_edge(self.socket_address, event.scenePos())
 
     def handle_link_move(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handles mouse move events forwarded from the SocketLinkItem during a drag."""
         # The scene's update_dragging_edge method typically doesn't need the socket_address,
         # just the current mouse position.
-        self._scene().update_dragging_edge(event.scenePos())
+        self._scene.update_dragging_edge(event.scenePos())
 
     def handle_link_release(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handles mouse release events forwarded from the SocketLinkItem."""
         logger.debug(f"SocketItem link '{self.node_entity_id}::{self.entity_name}' released at {event.scenePos()}")
 
-        self._scene().finalize_dragging_edge(event.scenePos())
+        self._scene.finalize_dragging_edge(event.scenePos())
 
     @property
     def socket_address(self) -> SocketAddress:

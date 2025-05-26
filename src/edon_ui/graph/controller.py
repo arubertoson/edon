@@ -46,16 +46,18 @@ class GraphController:
 
     def __init__(
         self,
-        entity_graph: EntityGraph,
         node_type_registry: Mapping[str, Type[EntityNode]] | None = None,
     ):
+        """
+        Initialize controller with empty graph and registry.
+        Graph content will be loaded separately via load_graph().
+        """
         self._scene: "GraphicsScene | None" = None  # Will be set by set_scene
-        self.entity_graph: EntityGraph = entity_graph
+        self.entity_graph: EntityGraph = EntityGraph()  # Always start empty
         self.data: GraphUIDataRegistry = GraphUIDataRegistry()
-
         self.node_registry: NodeRegistryMap = dict(node_type_registry or {})
 
-        logger.info(f"GraphController initialized with entity graph: {self.entity_graph}. UI scene will be set later.")
+        logger.info("GraphController initialized with an empty entity graph. UI scene will be set later.")
 
     @property
     def scene(self) -> "GraphicsScene":
@@ -63,20 +65,81 @@ class GraphController:
 
         return self._scene
 
-    def set_scene(self, scene: "GraphicsScene") -> None:
-        """Links the controller to its UI scene and populates the scene."""
+    @scene.setter
+    def scene(self, scene: "GraphicsScene") -> None:
         logger.debug(f"GraphController: UI scene set to {scene}. Populating scene from graph data.")
 
         self._scene = scene
-        self._populate_scene_from_graph_data()
 
-    def _register_node_internal(self, entity_node: EntityNode, scene_position: QPointF) -> NodeItem | None:
+    def _clear_all_ui(self) -> None:
         """
-        Creates a NodeItem for the given EntityNode, adds it to the scene,
-        and updates internal controller maps.
-        Assumes entity_node is already in self.entity_graph.
+        Removes all UI elements and clears the registry.
+
+        This method ensures a clean slate by removing all visual elements
+        and resetting the UI data registry. Order matters: edges must be
+        removed before nodes due to dependencies.
         """
-        logger.debug(f"GraphController: Registering UI for node '{entity_node.id}' at {scene_position}")
+        # XXX: We should look into scene reset that is prettier than this.
+        # I don't think we have to go through everything and delete it.
+        # But if we do we should delegate it to scene either way.
+        edge_items_to_remove = list(self.data.edges)
+        for edge_item in edge_items_to_remove:
+            self.scene.remove_edge(edge_item)
+
+        node_items_to_remove = list(self.data.nodes)
+        for node_item in node_items_to_remove:
+            self.scene.remove_node(node_item)
+
+        # Reset the registry to clean state
+        self.data = GraphUIDataRegistry()
+        # self._registration_order.clear() # _registration_order is not a member
+
+        logger.debug(f"Cleared {len(edge_items_to_remove)} edges and {len(node_items_to_remove)} nodes")
+
+    def load_graph(self, entity_graph: EntityGraph) -> None:
+        """
+        Replaces the current graph and rebuilds the entire UI representation.
+
+        This method provides a clean slate approach: it clears all existing UI elements,
+        replaces the entity graph, and rebuilds the UI from the new graph data.
+        Ideal for file loading, graph replacement, or resetting the workspace.
+        """
+        logger.info(f"Loading new graph with {len(entity_graph.nodes)} nodes")
+
+        assert self._scene is not None, "Scene must be set before loading a graph."
+
+        self._clear_all_ui()
+        self.entity_graph = entity_graph
+        self._populate_scene_from_graph_data()
+        self._scene._update_scene_content_display()  # Ensure empty scene text is updated
+
+        logger.info("Graph loading completed successfully")
+
+    def clear_graph(self) -> None:
+        """
+        Clears the current graph and all UI elements, returning to empty state.
+        """
+        logger.info("Clearing current graph and UI")
+        assert self._scene is not None, "Scene must be set before clearing the graph."
+        self._clear_all_ui()
+        self.entity_graph = EntityGraph()  # Reset to a new empty graph
+        self._scene._update_scene_content_display()
+
+    def _register_node_internal(self, entity_node: EntityNode, scene_position: QPointF) -> NodeItem:
+        """
+        Creates a NodeItem for an EntityNode that is ALREADY in self.entity_graph.
+
+        This method only handles UI registration and assumes the entity_node
+        is already properly added to the entity graph. It never modifies
+        the entity graph itself, maintaining clear separation of concerns.
+        """
+        logger.debug(f"Registering UI for existing node '{entity_node.id}' at {scene_position}")
+        assert self._scene is not None, "Scene must be set before registering a node."
+
+        # Validate the node exists in the entity graph
+        assert entity_node.id in self.entity_graph.nodes, (
+            f"CORRUPTION: Cannot register UI for node '{entity_node.id}': not found in entity graph"
+        )
 
         node_item = create_node_item(
             entity_node,
@@ -84,15 +147,13 @@ class GraphController:
             scene_position.y(),
         )
 
-        # Populate scene, entity graph and ensure the data layer is synced.
+        # Register with scene and data layer
         self.scene.add_node(node_item)
-        self.entity_graph.add_node(entity_node)
-
         self.data.register_node_with_sockets(node_item)
 
         return node_item
 
-    def _register_edge_internal(self, edge_key: EdgeKey) -> EdgeItem | None:
+    def _register_edge_internal(self, edge_key: EdgeKey) -> EdgeItem:
         """
         Creates an EdgeItem for the given EdgeKey, adds it to the scene,
         and updates internal controller maps.
@@ -164,9 +225,9 @@ class GraphController:
         )
 
         node_class_to_create = self.node_registry.get(node_type_hint)
-        if not node_class_to_create:
-            logger.error(f"ERROR: Node type hint '{node_type_hint}' not found in registry. Cannot create node.")
-            return
+        assert node_class_to_create is not None, (
+            f"CORRUPTION: Node type hint '{node_type_hint}' not found in registry. Cannot create node."
+        )
 
         self.request_add_node(
             node_entity_class=node_class_to_create,
@@ -220,19 +281,24 @@ class GraphController:
         node_entity_class: type[EntityNode],
         scene_position: QPointF,
         **node_specific_kwargs,
-    ) -> NodeItem | None:
+    ) -> NodeItem:
         """
-        Create a new entity node, add it to the entity graph, and then register
-        its UI representation.
+        Creates a new entity node and adds it to both the entity graph and UI.
+
+        This is the primary method for adding new nodes during user interaction.
+        It follows the pattern: create entity → add to graph → register UI.
         """
-        logger.debug(f"GraphController: Requesting to add node of type '{node_entity_class}' at {scene_position}")
+        logger.debug(f"Creating new node of type '{node_entity_class}' at {scene_position}")
 
         new_entity_node = node_entity_class(**node_specific_kwargs)
+        self.entity_graph.add_node(new_entity_node)  # Add to the graph first
+
+        # Then register its UI representation
         node_item = self._register_node_internal(new_entity_node, scene_position)
 
         return node_item
 
-    def request_add_edge(self, edge_key: EdgeKey) -> EdgeItem | None:
+    def request_add_edge(self, edge_key: EdgeKey) -> EdgeItem:
         """
         Link sockets in the entity graph and then register the UI edge representation.
         """
@@ -245,10 +311,24 @@ class GraphController:
 
         if link_success:
             logger.debug(f"EntityGraph link successful for {edge_key}.")
+            # If link_success is true, _register_edge_internal is guaranteed to return an EdgeItem
+            # or GraphUIDataRegistry would have asserted if socket items were not found.
+            edge_item = self._register_edge_internal(edge_key)
+            assert edge_item is not None, (
+                "CORRUPTION: _register_edge_internal returned None unexpectedly after successful link"
+            )  # Should be unreachable
+            return edge_item
+        # If link_success is false, it implies a condition that should ideally be caught
+        # by can_form_link checks before attempting to link.
+        # For tiger style, we might assert here if we expect `can_form_link` to prevent this.
+        # However, EntityGraph.link_sockets itself might return reasons for failure that are not
+        # strictly corruption (e.g. max connections reached if that was a soft rule).
+        # For now, let's assume if link_sockets fails, it's a state that shouldn't have been reached.
+        assert link_success, f"CORRUPTION: EntityGraph.link_sockets failed for {edge_key} with reason {_}"
+        # The following line is unreachable due to the assertion above but makes linters happy.
+        raise AssertionError("Unreachable code after link_sockets failure assertion")
 
-            return self._register_edge_internal(edge_key)
-
-    def request_remove_node(self, entity_node_id: str) -> bool:
+    def request_remove_node(self, entity_node_id: str) -> None:
         """
         Handles a request to remove a node and its linked edges from both the
         entity graph and the UI scene.
@@ -274,9 +354,7 @@ class GraphController:
         self.entity_graph.remove_node(entity_node_id)
         self.scene.remove_node(node_item_to_remove)
 
-        return True
-
-    def request_remove_edge(self, edge_key: EdgeKey) -> bool:
+    def request_remove_edge(self, edge_key: EdgeKey) -> None:
         """
         Handles a request to remove a single edge (entity and UI).
         """
@@ -285,22 +363,14 @@ class GraphController:
         # XXX: This should be handled by assertions in the `entity_graph`, not by upstream checks.
         # Unlink sockets in the entity graph first. Refactor necessary.
         disconnection_success, reason = self.entity_graph.unlink_sockets(edge_key.source, edge_key.target)
-        if disconnection_success:
-            logger.debug(f"Entity disconnection successful for {edge_key}.")
-        else:
-            # Log failure but proceed to remove UI, as UI state might be inconsistent
-            # or the request might be to clean up a UI-only edge.
-            logger.warning(
-                f"Entity disconnection FAILED for {edge_key}. Reason: {reason}. Proceeding with UI removal."
-            )
+        assert disconnection_success, f"CORRUPTION: Entity disconnection FAILED for {edge_key}. Reason: {reason}."
 
         edge_item = self.data.unregister_edge(edge_key)
         self.scene.remove_edge(edge_item)
 
         logger.debug(f"UI EdgeItem for {edge_key} removed from graphics scene and UI registry.")
-        return True
 
-    def prepare_drag_operation(self, clicked_socket_addr: SocketAddress) -> DragPrepInfo | None:
+    def prepare_drag_operation(self, clicked_socket_addr: SocketAddress) -> DragPrepInfo:
         """
         Analyzes a clicked socket and prepares the data needed for edge drag operations.
 
@@ -308,6 +378,7 @@ class GraphController:
         that already have connections. Returns the actual source socket that should
         be used for the new edge, along with precomputed drop target validation.
         Assertions in `GraphUIDataRegistry` handle cases where the socket address is not found.
+        If this method returns, it guarantees a valid DragPrepInfo object.
         """
         socket_item = self.data.socket_item_for_address(clicked_socket_addr)
 
@@ -317,8 +388,9 @@ class GraphController:
 
         if socket_item.role == SocketRole.TARGET and linked_edges:
             # Lift existing edge - the actual source becomes the original source
-            assert len(linked_edges) > 1, (
-                f"CORRUPTION: Target socket {clicked_socket_addr} should only have one edge, {linked_edges}."
+            assert len(linked_edges) == 1, (
+                f"CORRUPTION: Target socket {clicked_socket_addr} should have exactly one edge, "
+                f"found {len(linked_edges)}: {linked_edges}."
             )
 
             lifted_edge = linked_edges[0]

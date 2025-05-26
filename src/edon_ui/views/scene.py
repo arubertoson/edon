@@ -6,7 +6,7 @@ helper classes for managing edge dragging operations (`DragPrepInfo`, `DragConte
 and for displaying instructional text when the scene is empty (`EmptySceneTextItem`).
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, ValuesView, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -67,7 +67,7 @@ class DragContext:
     invalid_targets: Mapping[SocketAddress, SocketItem]
     highlighted_socket: SocketItem | None = None
 
-    def apply_target_socket_highlight(self, item: SocketItem) -> None:
+    def apply_target_socket_highlight(self, item: SocketItem | None) -> None:
         # Here we check whether we had a highlight, or if we are already highlighting
         # the target item. If not, we need to reset.
         if self.highlighted_socket and not self.highlighted_socket == item:
@@ -89,7 +89,7 @@ class DragContext:
             if socket_item and socket_item.link_item:
                 socket_item.link_item.set_not_valid_drop_target(True)
 
-    def cleanup_visuals(self, scene: "GraphicsScene") -> None:
+    def cleanup_visuals(self) -> None:
         """Resets all visual feedback states applied during the drag operation."""
         if self.highlighted_socket:
             self.highlighted_socket.set_drop_target_highlight(False)
@@ -206,9 +206,11 @@ class GraphicsScene(QGraphicsScene):
 
     scene_node_count_changed = Signal(int)
 
-    def __init__(self, controller: "GraphController", parent: "QObject | None" = None):
+    def __init__(self, parent: "QObject | None" = None):
         super().__init__(parent)
-        self.controller: "GraphController" = controller
+
+        self._controller: "GraphController | None"
+        self._drag_context: DragContext | None = None
 
         self.active_area_size = 2000  # Initial size, can be smaller if preferred
         self.setSceneRect(
@@ -226,13 +228,17 @@ class GraphicsScene(QGraphicsScene):
         self.empty_scene_text.setVisible(False)
         super().addItem(self.empty_scene_text)
 
-        self._drag_context: DragContext | None = None
-
         self.selectionChanged.connect(self._handle_selection_changed)
 
     @property
-    def node_items(self) -> list[NodeItem]:
-        return list(self.controller.node_map.values())
+    def controller(self) -> "GraphController":
+        assert self._controller is not None, "CORRUPTION: Scene needs a controller before operationg."
+
+        return self._controller
+
+    @controller.setter
+    def controller(self, controller: "GraphController") -> None:
+        self._controller = controller
 
     def add_node(self, node: NodeItem):
         node.node_position_update_signal.connect(self._update_edges_for_node)
@@ -244,7 +250,7 @@ class GraphicsScene(QGraphicsScene):
         # self._refresh_scene_edge_paths()
 
         self._update_scene_content_display()
-        self.scene_node_count_changed.emit(len(self.node_items))
+        self.scene_node_count_changed.emit(len(self.controller.data.nodes))
         self._update_active_area_rect()
 
     def remove_node(self, node: NodeItem):
@@ -260,60 +266,34 @@ class GraphicsScene(QGraphicsScene):
 
         super().removeItem(node)
         self._update_scene_content_display()
-        self.scene_node_count_changed.emit(len(self.node_items))
+        self.scene_node_count_changed.emit(len(self.controller.data.nodes))
 
     def add_edge(self, edge: EdgeItem):
+        """Adds a visual EdgeItem to the scene.
+
+        The logical linking and state updates on SocketItems are handled by the GraphController.
+        """
         # We let the SocketItem know that it's linked to trigger read-only/editable
         # socket widgets
         # edge.target_socket_item is now a SocketItem directly
-        socket_item: SocketItem = edge.target_socket_item
-        socket_item.set_link_state(True)
+        # socket_item: SocketItem = edge.target_socket_item
+        # socket_item.set_link_state(True)
 
+        # The GraphController is responsible for updating the SocketItem's link state
+        # via the GraphUIDataRegistry before this method is called to add the visual edge.
         super().addItem(edge)
 
     def remove_edge(self, edge: EdgeItem):
-        # We let the SocketItem know that it's linked to trigger read-only/editable
-        # socket widgets
-        # edge.target_socket_item is now a SocketItem directly
-        socket_item: SocketItem = edge.target_socket_item
-        socket_item.set_link_state(False)
+        """Removes a visual EdgeItem from the scene.
 
+        The logical unlinking and state updates on SocketItems are handled by the GraphController.
+        """
+        # The GraphController is responsible for updating the SocketItem's link state
+        # via the GraphUIDataRegistry before this method is called to remove the visual edge.
+
+        # socket_item: SocketItem = edge.target_socket_item
+        # socket_item.set_link_state(False)
         super().removeItem(edge)
-
-    def clear_graph_elements(self) -> None:
-        logger.debug("GraphicsScene: Clearing all graph elements (nodes and edges).")
-
-        # Temporarily disable updates on all views attached to this scene
-        # to prevent visual artifacts during bulk item removal.
-        associated_views = self.views()
-        for view in associated_views:
-            view.setUpdatesEnabled(False)
-
-        try:
-            items_to_remove = [item for item in self.items() if isinstance(item, (NodeItem, EdgeItem))]
-
-            for item in items_to_remove:
-                # For NodeItem, ensure signals it might have connected to the scene are disconnected
-                # or that its removal from scene handles this.
-                if isinstance(item, NodeItem):
-                    try:
-                        # Assuming NodeItem might connect these, attempt disconnection
-                        item.node_position_update_signal.disconnect(self._update_edges_for_node)
-                    except (RuntimeError, TypeError):  # TypeError if signal was never connected
-                        pass
-                    try:
-                        item.node_redraw_signal.disconnect(self._update_edges_for_node)
-                    except (RuntimeError, TypeError):
-                        pass
-
-                super().removeItem(item)
-
-            self._update_scene_content_display()
-        finally:
-            # Re-enable updates on all views
-            for view in associated_views:
-                view.setUpdatesEnabled(True)
-            logger.trace("GraphicsScene: View updates re-enabled after clearing graph elements.")
 
     def is_dragging_edge(self) -> bool:
         return self._drag_context is not None
@@ -353,17 +333,7 @@ class GraphicsScene(QGraphicsScene):
 
         # Handle socket highlighting
         target_socket_item = self._get_socket_at_pos(current_scene_pos)
-
         self._drag_context.apply_target_socket_highlight(target_socket_item)
-
-        if old_highlighted and old_highlighted != target_socket_item:
-            self._drag_context.reset_highlight()
-
-        # We check whether the target item is in the `DragContext` valid targets and highlight
-        # the object if it is.
-        if target_socket_item:
-            if target_socket_item.socket_address in self._drag_context.valid_targets:
-                self._drag_context.set_highlight_item(target_socket_item)
 
     def finalize_dragging_edge(self, event_scene_pos: QPointF):
         """
@@ -388,7 +358,7 @@ class GraphicsScene(QGraphicsScene):
 
         # Cleanup everything
         super().removeItem(self._drag_context.temp_edge)
-        self._drag_context.cleanup_visuals(self)
+        self._drag_context.cleanup_visuals()
         self._drag_context = None
 
     def _handle_selection_changed(self):
@@ -405,7 +375,7 @@ class GraphicsScene(QGraphicsScene):
                 if isinstance(item, EdgeItem):
                     item.setSelected(False)
 
-    def _calculate_node_bounds(self, nodes: list[NodeItem], padding: float) -> QRectF:
+    def _calculate_node_bounds(self, nodes: Iterable[NodeItem], padding: float) -> QRectF:
         """Calculate the bounding rectangle for a list of nodes with padding."""
         min_x, min_y = float("inf"), float("inf")
         max_x, max_y = float("-inf"), float("-inf")
@@ -442,9 +412,10 @@ class GraphicsScene(QGraphicsScene):
         If nodes are selected by the user, it expands the current active area to
         include these selected nodes. If no nodes are selected, it recalculates
         the active area based on all nodes (e.g., for initial setup or after
-        a full recalculation request).
+        a full recalculation request). Node data is sourced via the controller's data registry.
         """
-        if not self.node_items:
+        node_items = self.controller.data.nodes
+        if not node_items:
             # This case should ideally be handled by _update_scene_content_display
             # which would hide the active_area. If called directly, just return.
             return
@@ -453,7 +424,7 @@ class GraphicsScene(QGraphicsScene):
         current_active_rect = self.active_area.rect()
 
         selected_nodes = [item for item in self.selectedItems() if isinstance(item, NodeItem)]
-        nodes_to_consider = selected_nodes if selected_nodes else self.node_items
+        nodes_to_consider = selected_nodes if selected_nodes else node_items
 
         if not nodes_to_consider:
             return
@@ -477,14 +448,16 @@ class GraphicsScene(QGraphicsScene):
         Recalculates the active area to optimally fit all nodes.
 
         This method can be called to shrink the active area when nodes
-        have been moved closer together or deleted.
+        have been moved closer together or deleted. Node data is sourced via the
+        controller's data registry.
         """
-        if not self.node_items:
+        node_items = self.controller.data.nodes
+        if not node_items:
             return
 
         # Force recalculation by temporarily clearing selection
         # or just calculate from all nodes directly
-        bounds = self._calculate_node_bounds(self.node_items, 100)
+        bounds = self._calculate_node_bounds(node_items, 100)
 
         width = max(bounds.width(), 400)
         height = max(bounds.height(), 400)
@@ -496,13 +469,16 @@ class GraphicsScene(QGraphicsScene):
     @Slot()
     def _update_scene_content_display(self):
         """
-        If we don't have any elements in the scene we also don't need an active area,
-        a simple non interactive viewport that explains your first step is all we need.
+        Updates the scene display based on whether nodes are present.
+
+        If no nodes are present (checked via the controller's data registry),
+        it shows an empty scene message and hides the active area. Otherwise,
+        it ensures the active area is visible and the empty message is hidden.
         """
         # XXX: This is just relevant for add/remove node. We need either signlas
         # or direct calls to this. Signals for things such as node move, direct calls
         # for add/remove node. ENSURE THIS.
-        if not self.node_items:
+        if not self.controller.data.nodes:  # self.node_items correctly uses controller.data.nodes
             if self.active_area.scene() == self:
                 super().removeItem(self.active_area)
 
@@ -526,12 +502,19 @@ class GraphicsScene(QGraphicsScene):
         This method is called when a node's position changes or when its internal
         layout/size changes (e.g., due to socket widget modifications that might
         affect socket positions). It ensures that edges remain correctly connected
-        visually.
+        visually. Node and edge data are sourced via the controller and its data registry.
         """
         logger.trace(f"Scene: Updating edges for node {updated_node_id}")
 
-        node = self.controller.node_map.get(updated_node_id)
+        node = self.controller.data.node_item_for_id(updated_node_id)
+        if not node:  # Node might have been removed from the registry
+            logger.warning(
+                f"Scene: Attempted to update edges for node ID '{updated_node_id}', but it was not found in the UI registry."
+            )
+            return
+
         for socket_item in node.source_sockets + node.target_sockets:
+            # find_edge_items_at_socket is a method on GraphController, which uses its data registry
             edges = self.controller.find_edge_items_at_socket(socket_item.socket_address)
             for edge in edges:
                 edge.update_path()

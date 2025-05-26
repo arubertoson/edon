@@ -58,3 +58,13 @@ Edon employs an architecture inspired by the MVC pattern, tailored for a node-ba
     1.  User actions in the UI (View) are translated by the `GraphController` (Controller) or Commands.
     2.  These operations modify the `EntityGraph` (Model).
     3.  The `GraphController` (Controller) observes changes in the `EntityGraph` (Model) and updates the `GraphicsScene` (View).
+
+## Graph Loading Workflow
+
+The Edon application follows a clear separation between entity graph management
+and UI representation:
+
+1. **Initialization**: Controllers start with empty graphs. The `EdonApplication` initializes its `GraphController` with an empty `EntityGraph`.
+2. **Loading**: Use `EdonApplication.load_graph()` or `GraphController.load_graph()` to replace the current graph content. This typically involves clearing the existing UI and rebuilding it from the new `EntityGraph` data. This is the standard way to load data from a file or reset the workspace with new content.
+3. **Adding**: Use `GraphController.request_add_node()` and `GraphController.request_add_edge()` for user-driven additions of individual nodes and edges to the current graph. These methods handle both the `EntityGraph` modification and the corresponding UI update.
+4. **Clearing**: Use `EdonApplication.clear_graph()` or `GraphController.clear_graph()` to remove all nodes and edges from the current graph and UI, returning the workspace to an empty state.

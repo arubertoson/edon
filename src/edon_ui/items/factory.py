@@ -67,7 +67,7 @@ def create_socket_row(
     logger.debug(f"Creating socket item for {socket_def}::{socket_role}")
 
     linkable: bool = socket_def.linkable
-    socket_type: SocketType = socket_def.socket_type.python_type.__name__
+    socket_type: str = socket_def.socket_type.python_type.__name__
     initial_socket_value: Any = entity_socket.value
 
     label_component: SocketTextAdaptor | None = None

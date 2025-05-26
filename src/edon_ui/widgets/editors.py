@@ -52,7 +52,7 @@ class ValueWidget(Protocol):
     def set_value(self, value: Any) -> None: ...
 
 
-ValueWidgetType: TypeAlias = ValueWidget | QWidget
+ValueWidgetType: TypeAlias = ValueWidget |  QWidget
 
 
 class CustomDialogWidget(QWidget):
