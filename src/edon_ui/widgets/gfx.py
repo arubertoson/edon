@@ -1,8 +1,8 @@
 """Graphical primitives for socket UI rendering."""
 
+from loguru import logger
 from PySide6.QtCore import Qt
 from PySide6.QtGui import (
-    QColor,
     QFont,
     QFontMetricsF,
 )
@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsTextItem,
 )
-from loguru import logger
 
 from edon_ui import theme
 

@@ -4,9 +4,9 @@ This module provides the QGraphicsObject subclass that handles rendering,
 interaction, and layout for individual nodes within the graphics scene.
 """
 
-from loguru import logger
 from typing import TYPE_CHECKING, Any
 
+from loguru import logger
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (

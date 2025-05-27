@@ -5,11 +5,14 @@ and rows that can contain a socket circle, label, and widget (`SocketRowItem`),
 along with a protocol (`SocketComponent`) for items within a socket row.
 """
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from loguru import logger
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPen
+from dataclasses import dataclass
+
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
@@ -36,8 +39,8 @@ class SocketComponent(Protocol):
     It must be able to report its required size and position itself within an allocated rectangle.
     """
 
-    def setParentItem(self, parent: QGraphicsItem | None) -> None: ...
-    def setPos(self, pos: QPointF | float, y: float | None = None) -> None: ...
+    def setParentItem(self, parent: QGraphicsItem, /) -> None: ...
+    def setPos(self, pos: QPointF, /) -> None: ...
     def pos(self) -> QPointF: ...
     def boundingRect(self) -> QRectF: ...
     def isVisible(self) -> bool: ...
@@ -62,6 +65,91 @@ class SocketTextComponent(SocketComponent, Protocol):
     def set_text_alignment(self, alignment: Qt.AlignmentFlag) -> None:
         """Sets the alignment for the text component"""
         ...
+
+
+@dataclass
+class SocketComponents:
+    """Pure data structure holding socket visual components."""
+
+    link: "SocketLinkItem"
+    label: SocketTextComponent
+    widget: SocketComponent
+
+    def __iter__(self) -> Iterator[SocketComponent]:
+        return iter([self.link, self.label, self.widget])
+
+    def visible_components(self) -> list[SocketComponent]:
+        return [c for c in [self.link, self.label, self.widget] if c.isVisible()]
+
+
+def _layout_target_socket(components: SocketComponents, padding: float = theme.SOCKET_HORIZONTAL_PADDING) -> None:
+    """Layout components for TARGET role: [circle][padding][content]
+    Content (label/widget) is stacked vertically and starts at x=0.
+    Circle is positioned to the left of content, vertically centered with the primary content component.
+    """
+    current_y = 0.0
+
+    label, label_visble = components.label, components.label.isVisible()
+    widget, widget_visble = components.widget, components.widget.isVisible()
+    link, link_visble = components.link, components.link.isVisible()
+
+    assert label_visble or widget_visble, "CORRUPTION: At least one of label and widget needs to be visible."
+
+    primary_content_height = 0.0
+    if label_visble:
+        primary_content_height = label.get_required_component_height()
+    elif widget_visble:
+        primary_content_height = widget.get_required_component_height()
+
+    if link_visble:
+        circle_radius = link.get_required_component_height() / 2.0
+        circle_y_center = primary_content_height / 2.0
+        circle_x_pos = -circle_radius - padding
+        link.setPos(QPointF(circle_x_pos, circle_y_center))
+
+    if label_visble:
+        label.setPos(QPointF(0, current_y))
+        current_y += components.label.get_required_component_height()
+
+    if widget_visble:
+        widget.setPos(QPointF(0, current_y))
+
+
+def _layout_source_socket(
+    components: SocketComponents, available_width: float, padding: float = theme.SOCKET_HORIZONTAL_PADDING
+) -> None:
+    """Layout components for SOURCE role: [content][padding][circle]
+    Content (label/widget) is stacked vertically and right-aligned within available_width.
+    Circle is positioned to the right of content, vertically centered with the primary content component.
+    """
+    current_content_y = 0.0
+
+    label, label_visble = components.label, components.label.isVisible()
+    widget, widget_visble = components.widget, components.widget.isVisible()
+    link, link_visble = components.link, components.link.isVisible()
+
+    assert label_visble or widget_visble, "CORRUPTION: At least one of label and widget needs to be visible."
+
+    primary_content_height = 0.0
+    if label_visble:
+        primary_content_height = label.get_required_component_height()
+    elif widget_visble:
+        primary_content_height = widget.get_required_component_height()
+
+    if label_visble:
+        label_width = label.get_required_component_width()
+        label.setPos(QPointF(available_width - label_width, current_content_y))
+        current_content_y += label.get_required_component_height()
+
+    if widget_visble:
+        widget_width = widget.get_required_component_width()
+        widget.setPos(QPointF(available_width - widget_width, current_content_y))
+
+    if link_visble:
+        circle_radius = link.get_required_component_height() / 2.0
+        circle_y_center = primary_content_height / 2.0
+        circle_x_pos = available_width + circle_radius + padding
+        link.setPos(QPointF(circle_x_pos, circle_y_center))
 
 
 class SocketLinkItem(QGraphicsEllipseItem):
@@ -117,6 +205,12 @@ class SocketLinkItem(QGraphicsEllipseItem):
         else:
             self.setBrush(QBrush(self._original_fill_color))
         self.update()
+
+    def get_required_component_width(self) -> float:
+        return self.boundingRect().width()
+
+    def get_required_component_height(self) -> float:
+        return self.boundingRect().height()
 
     def set_not_valid_drop_target(self, disabled: bool) -> None:
         self._is_valid_drop_target = disabled
@@ -192,35 +286,34 @@ class SocketItem(QGraphicsObject):
         role: SocketRole,
         entity_name: str,
         node_entity_id: str,
-        label: SocketTextComponent | None = None,
-        socket: SocketLinkItem | None = None,
-        widget: SocketComponent | None = None,
+        components: SocketComponents,
         parent: QGraphicsObject | None = None,
     ) -> None:
         super().__init__(parent)
-        self.label_item = label
-        self.link_item = socket
-        self.widget_item = widget
 
         self.role = role
         self.entity_name = entity_name
         self.node_entity_id = node_entity_id
 
-        for item in (self.label_item, self.link_item, self.widget_item):
-            if item is not None and isinstance(item, QGraphicsItem):  # Ensure it's a QGraphicsItem
-                item.setParentItem(self)
+        self.components = components
+        for item_candidate in self.components:
+            item_candidate.setParentItem(self)
 
-        if self.label_item:
-            alignment = Qt.AlignmentFlag.AlignLeft
-            if self.role == SocketRole.SOURCE:
-                alignment = Qt.AlignmentFlag.AlignRight
-            self.label_item.set_text_alignment(alignment)
+        alignment = Qt.AlignmentFlag.AlignLeft
+        if self.role == SocketRole.SOURCE:
+            alignment = Qt.AlignmentFlag.AlignRight
+        self.components.label.set_text_alignment(alignment)
 
-        self._width: float = 0
-        self._height: float = 0
+        self._width: float = 0.0
+        self._height: float = 0.0
         self._address: SocketAddress | None = None
 
-        self._update_bounding_rect()
+        self._calculate_bounding_rect()
+
+    @property
+    def link_item(self) -> SocketLinkItem:
+        """Provides access to the socket's connection circle (SocketLinkItem)."""
+        return self.components.link
 
     @property
     def _scene(self) -> "GraphicsScene":
@@ -251,129 +344,51 @@ class SocketItem(QGraphicsObject):
         return self._address
 
     def update_layout(self, available_width: float) -> None:
-        self._update_bounding_rect()
-        self._do_layout(available_width)
+        """Updates the layout of socket components based on role and available width."""
+        self._calculate_bounding_rect()
+
+        if self.role == SocketRole.TARGET:
+            _layout_target_socket(self.components, available_width, theme.SOCKET_HORIZONTAL_PADDING)
+        else:
+            _layout_source_socket(self.components, available_width, theme.SOCKET_HORIZONTAL_PADDING)
+
         self.update()
 
     def boundingRect(self) -> QRectF:
-        """Returns the bounding rectangle of the row, containing all laid-out child components."""
+        """Returns the bounding rectangle of the row's primary content area (label/widget).
+        The SocketItem's (0,0) is the top-left of this content area.
+        Child items like SocketLinkItem might be positioned relative to this,
+        potentially outside this explicit QRectF. QGraphicsObject handles overall bounds.
+        """
         return QRectF(0, 0, self._width, self._height)
 
     def set_drop_target_highlight(self, highlight: bool) -> None:
         """Forwards the drop target highlight state to the underlying SocketLinkItem."""
-        if self.link_item:
-            self.link_item.set_drop_target_highlight(highlight)
-        else:
-            logger.warning(f"SocketItem {self.socket_address} has no link_item to set drop target highlight.")
+        self.components.link.set_drop_target_highlight(highlight)
 
-    def set_link_state(self, linked: bool) -> None:
-        if not self.widget_item or self.role == SocketRole.SOURCE:
+    def transition_to(self, linked: bool) -> None:
+        if self.role == SocketRole.SOURCE:
             return
 
         if linked:
-            # Socket is in a "read-only" state and receives it's value
+            # Socket is in a "read-only" state and receives its value
             # from a source socket.
-            self.widget_item.hide()
+            self.components.widget.hide()
         else:
-            self.widget_item.show()
+            self.components.widget.show()
 
-        self._update_bounding_rect()
-        self.layoutChanged.emit()
+        self._calculate_bounding_rect()  # Recalculate bounds as widget visibility changed
+        self.layoutChanged.emit()  # Notify parent (NodeItem) that layout might need update
 
-    def _update_bounding_rect(self) -> None:
-        """Updates the internal bounding rectangle of the row based on its current layout.
-        Sets self._width to the maximum width of visible label and widget, and self._height to their combined heights.
+    def _calculate_bounding_rect(self) -> None:
+        """Calculates the bounding rectangle for the SocketItem's main content area.
+        This area is defined by the stacked label and/or widget components.
+        The SocketItem's own (0,0) is considered the top-left of this label/widget block.
         """
-        self.prepareGeometryChange()  # Needs to be called when we change boundingRect
+        self.prepareGeometryChange()
 
-        visible_widgets = [w for w in (self.label_item, self.widget_item) if w and w.isVisible()]
-        if not visible_widgets:
-            self._width = 0
-            self._height = 0
-            return
+        components = self.components.visible_components()
+        assert components, f"CORRUPTION: Node should always have at least one component. {self.components}"
 
-        self._width = max(w.boundingRect().width() for w in visible_widgets)
-        self._height = sum(w.boundingRect().height() for w in visible_widgets)
-
-    def _do_layout(self, available_width: float) -> None:  # Modified signature
-        """Layout the label, circle, and widget according to the mode and available_width.
-
-        The available_width parameter is provided by the parent NodeItem since it has access to all socket rows
-        and can determine the maximum width needed across all rows. This ensures consistent alignment
-        of socket components (labels, widgets) across all rows in the node, even though each row
-        handles its own internal layout independently.
-        """
-        padding: float = theme.SOCKET_HORIZONTAL_PADDING
-
-        circle_diameter: float = (
-            self.link_item.boundingRect().height() if self.link_item and self.link_item.isVisible() else 0
-        )
-        circle_radius: float = circle_diameter / 2
-
-        # Heights of primary components
-        label_h = (
-            self.label_item.get_required_component_height() if self.label_item and self.label_item.isVisible() else 0
-        )
-        widget_h = (
-            self.widget_item.get_required_component_height()
-            if self.widget_item and self.widget_item.isVisible()
-            else 0
-        )
-
-        if self.role == SocketRole.TARGET:
-            # [circle][padding][label OR widget]
-            # If label and widget are both visible (e.g. disconnected input), label is above widget.
-            current_y = 0
-
-            # Calculate vertical center for the circle, we want the circle to line up with the
-            # label if it exists, otherwise we use the widget.
-            if self.link_item and self.link_item.isVisible():
-                circle_y_pos = (label_h if label_h else widget_h) / 2
-                circle_x_pos = -circle_radius - padding
-                self.link_item.setPos(circle_x_pos, circle_y_pos)
-
-            if self.label_item and self.label_item.isVisible():
-                self.label_item.setPos(0, current_y)
-
-            if self.widget_item and self.widget_item.isVisible():
-                # If label was also visible, widget is below it.
-                current_y += label_h
-                self.widget_item.setPos(0, current_y)
-
-        else:
-            # Output socket: [content (label/widget)] [padding] [circle]
-            # Content is left-aligned, circle is right-aligned within available_width.
-            current_y = 0
-
-            label_w = (
-                self.label_item.get_required_component_width()
-                if self.label_item and self.label_item.isVisible()
-                else 0
-            )
-            widget_w = (
-                self.widget_item.get_required_component_width()
-                if self.widget_item and self.widget_item.isVisible()
-                else 0
-            )
-
-            # Most of the time, an output will just consist of a label and a circle.
-            if self.label_item and self.label_item.isVisible():
-                self.label_item.setPos(available_width - label_w, current_y)
-                current_y += self.label_item.get_required_component_height()
-
-            if self.widget_item and self.widget_item.isVisible():  # Widget takes precedence
-                self.widget_item.setPos(available_width - widget_w, current_y)  # Widget starts at left
-                current_y += self.widget_item.get_required_component_height()
-
-            if self.link_item and self.link_item.isVisible():
-                # Circle is positioned at the far right of the available_width
-                circle_x_pos = available_width + circle_radius + padding
-                self.link_item.setPos(
-                    circle_x_pos,
-                    (
-                        self.label_item.get_required_component_height()
-                        if self.label_item and self.label_item.isVisible()
-                        else widget_h
-                    )
-                    / 2,
-                )
+        self._width = max(c.get_required_component_width() for c in components)
+        self._height = sum(c.get_required_component_height() for c in components)

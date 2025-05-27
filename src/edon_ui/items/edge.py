@@ -5,14 +5,15 @@ connect socket items in the scene.
 """
 
 from collections.abc import Callable
+
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsPathItem, QStyleOptionGraphicsItem, QWidget
 
+from edon.graph import EdgeKey
 from edon.socket import SocketRole
-from edon.graph import EdgeKey, SocketAddress
 from edon_ui import theme
-from edon_ui.items.socket import SocketItem, SocketLinkItem  # Added SocketItem
+from edon_ui.items.socket import SocketItem
 
 PathCalculatorType = Callable[[QPointF, QPointF, bool, SocketRole], QPainterPath]
 
@@ -152,8 +153,8 @@ class EdgeItem(QGraphicsPathItem):
 
     def __init__(
         self,
-        source_socket_item: SocketItem,  # Changed from SocketLinkItem
-        target_socket_item: SocketItem,  # Changed from SocketLinkItem
+        source_socket_item: SocketItem,
+        target_socket_item: SocketItem,
         path_calculator: PathCalculatorType = straight_line_path_calculator,
         parent: QGraphicsItem | None = None,
     ) -> None:
@@ -163,8 +164,8 @@ class EdgeItem(QGraphicsPathItem):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self._path_calculator = path_calculator
 
-        self.source_socket_item: SocketItem = source_socket_item  # Type hint updated
-        self.target_socket_item: SocketItem = target_socket_item  # Type hint updated
+        self.source_socket_item: SocketItem = source_socket_item
+        self.target_socket_item: SocketItem = target_socket_item
 
         # Positions are taken from the link_item of the SocketItem
         self._source_pos: QPointF = self.source_socket_item.link_item.scenePos()

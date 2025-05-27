@@ -8,13 +8,13 @@ for running or extending the Edon UI.
 import sys
 
 from loguru import logger
-from PySide6.QtCore import QtMsgType, qInstallMessageHandler, QMessageLogContext
+from PySide6.QtCore import QMessageLogContext, QtMsgType, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 
 from edon.graph import EntityGraph
 from edon.logging import setup_logging
 from edon.node import EntityNode
-
+from edon_ui import theme
 from edon_ui.commands import (
     ALL_COMMAND_DEFINITIONS,
     CommandRegistry,
@@ -23,7 +23,6 @@ from edon_ui.commands import (
 )
 from edon_ui.graph import GraphController
 from edon_ui.views import GraphicsScene, GraphicsView, MainWindow
-from edon_ui import theme
 
 
 def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, message: str) -> None:
@@ -152,6 +151,8 @@ class EdonApplication:
         app = QApplication.instance()
         if not app:
             app = QApplication(sys.argv)
+
+        assert isinstance(app, QApplication)
         return app
 
     def _setup_command_system(self) -> None:

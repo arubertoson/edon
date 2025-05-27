@@ -6,7 +6,7 @@ helper classes for managing edge dragging operations (`DragPrepInfo`, `DragConte
 and for displaying instructional text when the scene is empty (`EmptySceneTextItem`).
 """
 
-from collections.abc import Mapping, ValuesView, Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 

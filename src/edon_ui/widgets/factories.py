@@ -1,28 +1,33 @@
 """Factory functions for creating socket editor components."""
 
-from collections.abc import Callable
-from typing import Any
+from typing import Protocol, Any
 
 from loguru import logger
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator, QIntValidator
-from PySide6.QtWidgets import QGraphicsItem, QLineEdit
 
 from edon.socket import SocketType
 from edon_ui.widgets.adaptors import SocketWidgetAdaptor
 from edon_ui.widgets.editors import ExpandLineEdit, FocusSelectLineEdit, ValueTextEdit
 
 
-# Type alias for socket widget component factory functions
-SocketWidgetComponentFactory = Callable[[Any, str, str, QGraphicsItem | None], tuple[SocketWidgetAdaptor, QLineEdit]]
+class SocketWidgetComponentFactoryProtocol(Protocol):
+    def __call__(
+        self,
+        initial_value: Any,
+        node_id: str,
+        socket_name: str,
+    ) -> SocketWidgetAdaptor: ...
+
+
+type SocketWidgetComponentFactory = SocketWidgetComponentFactoryProtocol
 
 
 def create_integer_socket_component(
-    initial_value: int | None = 0,
-    node_id: str = "",
-    socket_name: str = "",
-    parent_gfx_item: QGraphicsItem | None = None,
-) -> tuple[SocketWidgetAdaptor, QLineEdit]:
+    initial_value: int,
+    node_id: str,
+    socket_name: str,
+) -> SocketWidgetAdaptor:
     """
     Creates a QLineEdit configured for integer input and wraps it in a SocketWidgetAdaptor.
     """
@@ -34,18 +39,17 @@ def create_integer_socket_component(
     line_edit.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
     line_edit.setValidator(QIntValidator(-2147483648, 2147483647, line_edit))
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-    line_edit.setText(str(initial_value if initial_value is not None else 0))
+    line_edit.setText(str(initial_value))
 
-    adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
-    return adaptor, line_edit
+    adaptor = SocketWidgetAdaptor(widget=line_edit)
+    return adaptor
 
 
 def create_float_socket_component(
-    initial_value: float | None = 0.0,
-    node_id: str = "",
-    socket_name: str = "",
-    parent_gfx_item: QGraphicsItem | None = None,
-) -> tuple[SocketWidgetAdaptor, QLineEdit]:
+    initial_value: float,
+    node_id: str,
+    socket_name: str,
+) -> SocketWidgetAdaptor:
     """
     Creates a QLineEdit configured for float input and wraps it in a SocketWidgetAdaptor.
     """
@@ -59,18 +63,17 @@ def create_float_socket_component(
     validator.setNotation(QDoubleValidator.Notation.StandardNotation)
     line_edit.setValidator(validator)
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-    line_edit.setText(str(initial_value if initial_value is not None else 0.0))
+    line_edit.setText(str(initial_value))
 
-    adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
-    return adaptor, line_edit
+    adaptor = SocketWidgetAdaptor(widget=line_edit)
+    return adaptor
 
 
 def create_string_socket_component(
-    initial_value: str | None = "",
-    node_id: str = "",
-    socket_name: str = "",
-    parent_gfx_item: QGraphicsItem | None = None,
-) -> tuple[SocketWidgetAdaptor, QLineEdit]:
+    initial_value: str,
+    node_id: str,
+    socket_name: str,
+) -> SocketWidgetAdaptor:
     logger.debug(
         f"Creating string socket component (QLineEdit) for node_id='{node_id}', socket_name='{socket_name}' with initial_value='{initial_value}'"
     )
@@ -86,28 +89,28 @@ def create_string_socket_component(
         f"  String QLineEdit '{line_edit.objectName()}': text='{line_edit.text()}', calculated fontMetrics text_width_pixels={text_width_pixels}"
     )
 
-    adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
-    return adaptor, line_edit
+    adaptor = SocketWidgetAdaptor(widget=line_edit)
+    return adaptor
 
 
 def create_large_string_socket_component(
-    initial_value: str | None = "",
-    node_id: str = "",
-    socket_name: str = "",
-    parent_gfx_item: QGraphicsItem | None = None,
-) -> tuple[SocketWidgetAdaptor, QLineEdit]:  # QLineEdit is the base for IconPopupLineEdit
+    initial_value: str,
+    node_id: str,
+    socket_name: str,
+) -> SocketWidgetAdaptor:
     logger.debug(
         f"Creating large string socket component (IconPopupLineEdit) for node_id='{node_id}', socket_name='{socket_name}' with initial_value='{initial_value}'"
     )
-    line_edit = ExpandLineEdit(parent=None, widget_factory=type[ValueTextEdit])
+    line_edit = ExpandLineEdit(parent=None, widget_factory=ValueTextEdit)
     line_edit.setObjectName(f"text_edit_{node_id}_{socket_name}")
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-    line_edit.setText(str(initial_value if initial_value is not None else ""))
+    line_edit.setText(initial_value)
 
+    # XXX: Popup logic needs it own way of ending on top.
     # We have weird parenting logic here. Ensure that this is not the end result required.
     # adaptor = SocketWidgetAdaptor(widget=line_edit, parent=controller.graphics_scene.views()[0])
-    adaptor = SocketWidgetAdaptor(widget=line_edit, parent=parent_gfx_item)
-    return adaptor, line_edit
+    adaptor = SocketWidgetAdaptor(widget=line_edit)
+    return adaptor
 
 
 # Registry for socket widget component factories

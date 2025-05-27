@@ -9,7 +9,6 @@ from loguru import logger
 from PySide6.QtWidgets import QGraphicsItem
 
 from edon.graph import SocketRole
-from edon.socket import SocketType
 from edon_ui import theme
 from edon_ui.items.node import NodeItem
 from edon_ui.items.socket import SocketComponent, SocketItem, SocketLinkItem
@@ -21,13 +20,12 @@ from edon_ui.widgets import (
 
 if TYPE_CHECKING:
     from edon.node import EntityNode, SocketDef
-    from edon.socket import EntitySocket
+    from edon.socket import EntitySocket, SocketType
 
 
 def create_socket_widget_component(
     entity_socket: "EntitySocket",
     node_id: str,
-    parent_gfx_item: QGraphicsItem | None,
     initial_value: Any | None = None,
 ) -> SocketComponent | None:
     """
@@ -45,11 +43,10 @@ def create_socket_widget_component(
     logger.debug(f"Tried to fetch {type_info} factory from {SOCKET_WIDGET_COMPONENT_FACTORIES} registry.")
 
     if factory_func is not None:
-        component_adaptor, _ = factory_func(
+        component_adaptor = factory_func(
             initial_value=initial_value,
             node_id=node_id,
             socket_name=socket_name,
-            parent_gfx_item=parent_gfx_item,
         )
 
         return component_adaptor
@@ -57,7 +54,7 @@ def create_socket_widget_component(
         logger.warning(f"Warning: No widget factory found for data_type {type_info} of socket {socket_name}")
 
 
-def create_socket_row(
+def create_socket_item(
     entity_socket: "EntitySocket",
     socket_def: "SocketDef",
     node_id: str,
@@ -67,28 +64,26 @@ def create_socket_row(
     logger.debug(f"Creating socket item for {socket_def}::{socket_role}")
 
     linkable: bool = socket_def.linkable
-    socket_type: str = socket_def.socket_type.python_type.__name__
+    socket_type: "SocketType" = socket_def.socket_type
     initial_socket_value: Any = entity_socket.value
 
     label_component: SocketTextAdaptor | None = None
     socket_component: SocketLinkItem | None = None
     widget_component: SocketComponent | None = None
 
-    # If not socket role we simply have a label and socket
-    logger.warning(f"Socket Role: {socket_role}::{linkable}")
     if socket_role:
         if linkable:
-            socket_component = SocketLinkItem(None)
+            socket_component = SocketLinkItem(None, visual_type_key=socket_type.description)
             label_component = SocketTextAdaptor(
                 text_item=SocketLabel(
-                    text=socket_type,
+                    text=socket_type.python_type.__name__,
                     target_layout_height=theme.SOCKET_ROW_HEIGHT,
                 )
             )
 
         if socket_role == SocketRole.TARGET:
             widget_component = create_socket_widget_component(
-                entity_socket, node_id, None, initial_value=initial_socket_value
+                entity_socket, node_id, initial_value=initial_socket_value
             )
 
     return SocketItem(
@@ -101,9 +96,9 @@ def create_socket_row(
     )
 
 
-def _get_socketdef(socket_defs: list[Any], name: str) -> Any:
+def _get_socketdef(socket_defs: list["SocketDef"], name: str) -> "SocketDef | None":
     for sd in socket_defs:
-        if hasattr(sd, "name") and sd.name == name:
+        if sd.name == name:
             return sd
     return None
 
@@ -115,14 +110,21 @@ def create_node_item(
 ) -> NodeItem:
     logger.debug(f"Creating {entity_node.node_type} node from factory.")
 
-    source_defs = getattr(type(entity_node), "source_socket_definitions", [])
-    target_defs = getattr(type(entity_node), "target_socket_definitions", [])
+    source_defs = type(entity_node).source_socket_definitions
+    target_defs = type(entity_node).target_socket_definitions
+
+    assert source_defs and target_defs, "CORRUPTION: EntityNode.*_socket_definitions are None."
 
     target_sockets_ui: list[SocketItem] = []
     for entity_socket in entity_node.target_sockets.values():
-        row = create_socket_row(
+        socket_def = _get_socketdef(target_defs, entity_socket.name)
+        assert socket_def is not None, (
+            f"CORRUPTION: No `SocketDef` for target entity: {entity_socket}. Available Defs: {target_defs}"
+        )
+
+        row = create_socket_item(
             entity_socket,
-            _get_socketdef(target_defs, entity_socket.name),
+            socket_def,
             entity_node.id,
             SocketRole.TARGET,
         )
@@ -130,9 +132,14 @@ def create_node_item(
 
     source_sockets_ui: list[SocketItem] = []
     for entity_socket in entity_node.source_sockets.values():
-        row = create_socket_row(
+        socket_def = _get_socketdef(source_defs, entity_socket.name)
+        assert socket_def is not None, (
+            f"CORRUPTION: No `SocketDef` for source entity: {entity_socket}. Available Defs: {source_defs}"
+        )
+
+        row = create_socket_item(
             entity_socket,
-            _get_socketdef(source_defs, entity_socket.name),
+            socket_def,
             entity_node.id,
             SocketRole.SOURCE,
         )
