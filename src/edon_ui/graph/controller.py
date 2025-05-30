@@ -25,8 +25,6 @@ from edon_ui.items.node import NodeItem
 from edon_ui.views.scene import DragPrepInfo
 
 if TYPE_CHECKING:
-    from edon.errors import GraphObjectErrorReason, SocketLinkErrorReason
-    from edon.socket import EntitySocket
     from edon_ui.views.scene import GraphicsScene
 
 
@@ -142,12 +140,6 @@ class GraphController:
         the entity graph itself, maintaining clear separation of concerns.
         """
         logger.debug(f"Registering UI for existing node '{entity_node.id}' at {scene_position}")
-        assert self._scene is not None, "Scene must be set before registering a node."
-
-        # Validate the node exists in the entity graph
-        assert entity_node.id in self.entity_graph.nodes, (
-            f"CORRUPTION: Cannot register UI for node '{entity_node.id}': not found in entity graph"
-        )
 
         node_item = create_node_item(
             entity_node,
@@ -157,6 +149,8 @@ class GraphController:
 
         # Register with scene and data layer
         self.scene.add_node(node_item)
+        self.entity_graph.add_node(entity_node)
+
         self.data.register_node_with_sockets(node_item)
 
         return node_item
@@ -310,7 +304,6 @@ class GraphController:
         logger.debug(f"Creating new node of type '{node_entity_class}' at {scene_position}")
 
         new_entity_node = node_entity_class(**node_specific_kwargs)
-        self.entity_graph.add_node(new_entity_node)  # Add to the graph first
 
         # Then register its UI representation
         node_item = self._register_node_internal(new_entity_node, scene_position)
@@ -457,134 +450,18 @@ class GraphController:
     ) -> tuple[set[SocketAddress], set[SocketAddress]]:
         """
         Determines valid drop target sockets for an edge drag operation.
+
+        This method delegates to EntityGraph.get_connection_targets() to maintain
+        proper separation of concerns between UI coordination and business logic.
         """
-        valid_targets: set[SocketAddress] = set()
-        unvalid_targets: set[SocketAddress] = set()
-
-        drag_origin_node_entity = self.entity_graph.get_node(drag_origin_socket_addr.node_id)
-        drag_origin_socket_item = self.data.socket_item_for_address(drag_origin_socket_addr)
-        drag_origin_role = drag_origin_socket_item.role
-
-        # Based on the drag origin's role, determine the roles and corresponding socket
-        # collection names on other nodes.
-        potential_link_partners_collection_name: (
-            str  # Sockets to check with can_form_link (opposite role to origin)
+        valid_targets, invalid_targets = self.entity_graph.partition_valid_link_targets(
+            drag_origin_socket_addr
         )
-        same_role_as_origin_collection_name: (
-            str  # Sockets inherently invalid (same role as origin)
-        )
-        target_role: SocketRole  # The role a socket must have to potentially link with drag_origin
-
-        if drag_origin_role == SocketRole.SOURCE:
-            target_role = SocketRole.TARGET
-            potential_link_partners_collection_name = "target_sockets"
-            same_role_as_origin_collection_name = "source_sockets"
-        else:  # drag_origin_role == SocketRole.TARGET
-            target_role = SocketRole.SOURCE
-            potential_link_partners_collection_name = "source_sockets"
-            same_role_as_origin_collection_name = "target_sockets"
-
-        logger.debug(
-            f"Drag from {drag_origin_socket_addr} (role: {drag_origin_role}). "
-            f"Potential link partners must have role: {target_role} (collection: '{potential_link_partners_collection_name}'). "
-            f"Sockets with role {drag_origin_role} (collection: '{same_role_as_origin_collection_name}') are inherently invalid."
-        )
-        # The assertion `assert not drag_origin_role == target_role` is implicitly covered by the logic
-        # above, as drag_origin_role and target_role are now defined to be opposites.
-
-        # Iterate through each node in the graph to categorize its sockets.
-        for entity_node in self.entity_graph.nodes.values():
-            # 1. Add sockets with the same role as drag_origin to unvalid_targets.
-            #    These are inherently incompatible for forming a new link.
-            #    dict.values() returns a view (Iterable).
-            sockets_with_same_role_view: Iterable[EntitySocket] = getattr(
-                entity_node, same_role_as_origin_collection_name
-            ).values()
-
-            current_node_inherently_invalid_addrs: set[SocketAddress] = set()
-            for s in sockets_with_same_role_view:
-                addr = SocketAddress(node_id=entity_node.id, socket_name=s.name)
-                current_node_inherently_invalid_addrs.add(addr)
-                logger.trace(
-                    f"  Marking {addr} as invalid (role incompatibility: same as drag origin role {drag_origin_role})."
-                )
-            unvalid_targets.update(current_node_inherently_invalid_addrs)
-
-            # 2. Check sockets with the opposite role (potential_link_partners) using can_form_link.
-            #    These are candidates for valid_targets or unvalid_targets based on detailed rules.
-            potential_partner_sockets_view: Iterable[EntitySocket] = getattr(
-                entity_node, potential_link_partners_collection_name
-            ).values()
-
-            # We are working on theoretical links, this means that we do have to create addresses and
-            # from each sockets to our origin address that we are currently dragging.
-            for entity_socket_link_candidate in potential_partner_sockets_view:
-                link_candidate_addr = SocketAddress(
-                    node_id=entity_node.id, socket_name=entity_socket_link_candidate.name
-                )
-
-                prospective_source_addr: SocketAddress
-                prospective_target_addr: SocketAddress
-                entity_socket_receiving_link: "EntitySocket"
-
-                if drag_origin_role == SocketRole.SOURCE:
-                    # Standard drag: drag_origin (SOURCE) -> current_partner (TARGET)
-                    prospective_source_addr = drag_origin_socket_addr
-                    prospective_target_addr = link_candidate_addr
-                    entity_socket_receiving_link = entity_socket_link_candidate
-                else:
-                    # Reverse drag: current_partner (SOURCE) -> drag_origin (TARGET)
-                    prospective_source_addr = link_candidate_addr
-                    prospective_target_addr = drag_origin_socket_addr
-                    entity_socket_receiving_link = drag_origin_node_entity.target_sockets[
-                        drag_origin_socket_addr.socket_name
-                    ]
-
-                # Now we have established the theoretical setup, we have our sockets, addresses and nodes,
-                # it's time to check if this setup is valid or not.
-                can_form: bool
-                reason: SocketLinkErrorReason | GraphObjectErrorReason | None
-
-                # Overwrite logic: if the socket receiving the link is a TARGET socket
-                # and it's already connected, temporarily remove its existing links
-                # to check if the new link can be formed (simulating replacement).
-                if entity_socket_receiving_link.role == SocketRole.TARGET and bool(
-                    entity_socket_receiving_link.links
-                ):
-                    # XXX: This feels like a dangerous operation, we are changing the state of the graph
-                    # to validate a connection. We need to handle this differently. There is a theritical
-                    # hey, "could we make this connection", and "can we make this connection."
-                    original_links = list(entity_socket_receiving_link.links)
-                    entity_socket_receiving_link.links.clear()
-
-                    can_form, reason = self.entity_graph.can_form_link(
-                        prospective_source_addr, prospective_target_addr
-                    )
-
-                    entity_socket_receiving_link.links.extend(original_links)
-                else:
-                    # Not a TARGET socket, or not linked. `can_form_link` handles role, type compatibility etc.
-                    can_form, reason = self.entity_graph.can_form_link(
-                        prospective_source_addr, prospective_target_addr
-                    )
-
-                if can_form:
-                    valid_targets.add(link_candidate_addr)
-                    logger.trace(
-                        f"  EntityGraph: Can form edge from {prospective_source_addr} "
-                        f"to {prospective_target_addr}: {reason}"
-                    )
-                else:
-                    unvalid_targets.add(link_candidate_addr)
-                    logger.trace(
-                        f"  EntityGraph: Cannot form edge from {prospective_source_addr} "
-                        f"to {prospective_target_addr}: {reason}"
-                    )
 
         logger.debug(
             f"Found {len(valid_targets)} valid drop targets for {drag_origin_socket_addr} via EntityGraph: {valid_targets}"
         )
-        return valid_targets, unvalid_targets
+        return valid_targets, invalid_targets
 
     def find_edge_items_at_socket(self, socket_addr: SocketAddress) -> set[EdgeItem]:
         """Retrieves all UI EdgeItems connected to the given socket address from the UI registry.

@@ -143,7 +143,7 @@ class EntityGraph:
 
     def _get_socket_and_node(
         self, socket_addr: SocketAddress, expected_role: SocketRole
-    ) -> tuple[EntitySocket | None, EntityNode | None, GraphObjectErrorReason | None]:
+    ) -> tuple[EntitySocket, EntityNode]:
         """Retrieves a socket and its parent node, validating against an expected role.
 
         If the node or socket (in the expected role's collection) is not found,
@@ -151,42 +151,33 @@ class EntityGraph:
         an appropriate error reason is returned.
         """
         node = self.get_node(socket_addr.node_id)
-        if not node:
-            return None, None, GraphObjectErrorReason.NODE_NOT_FOUND
+        assert node, f"CORRUPTION: Private node lookup failed on {socket_addr.node_id}"
 
-        # XXX: Need to observe if this is working correclty.
         socket_collection: Mapping[str, EntitySocket]
         if expected_role == SocketRole.SOURCE:
             socket_collection = node.source_sockets
         elif expected_role == SocketRole.TARGET:
             socket_collection = node.target_sockets
-        else:
-            # This case should ideally not be reached if called with valid SocketRole.
-            # Adding an assertion for robustness during development.
-            raise AssertionError(f"Invalid expected_role: {expected_role}")
 
-        socket = socket_collection.get(socket_addr.socket_name)
+        socket = socket_collection[socket_addr.socket_name]
         assert socket, f"CORRUPTION: failed lookup for {SocketAddress}, in {node}"
-        if not socket:
-            return None, node, GraphObjectErrorReason.SOCKET_NOT_FOUND
 
         # Sockets fetched from node.source_sockets or node.target_sockets
         # are guaranteed by EntityNode's structure to have the correct direction.
         # Thus, an explicit check like `if socket.direction != expected_role:`
         # is redundant here and has been removed.
-        return socket, node, None
+        return socket, node
 
     def link_sockets(
         self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
     ) -> tuple[bool, SocketLinkErrorReason | GraphObjectErrorReason | None]:
         """Establishes a directed link from a source socket to a target socket."""
-        source_socket, source_node, error = self._get_socket_and_node(source_socket_addr, SocketRole.SOURCE)
-        if error:
-            return False, error
-
-        target_socket, target_node, error = self._get_socket_and_node(target_socket_addr, SocketRole.TARGET)
-        if error:
-            return False, error
+        source_socket, source_node = self._get_socket_and_node(
+            source_socket_addr, SocketRole.SOURCE
+        )
+        target_socket, target_node = self._get_socket_and_node(
+            target_socket_addr, SocketRole.TARGET
+        )
 
         if self._has_path(target_node.id, source_node.id):
             return False, SocketLinkErrorReason.CYCLE_DETECTED
@@ -197,13 +188,8 @@ class EntityGraph:
         self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
     ) -> tuple[bool, SocketUnlinkErrorReason | GraphObjectErrorReason | None]:
         """Removes a specific link between a source socket and a target socket."""
-        source_socket, _, error = self._get_socket_and_node(source_socket_addr, SocketRole.SOURCE)
-        if error:
-            return False, error
-
-        target_socket, _, error = self._get_socket_and_node(target_socket_addr, SocketRole.TARGET)
-        if error:
-            return False, error
+        source_socket, _ = self._get_socket_and_node(source_socket_addr, SocketRole.SOURCE)
+        target_socket, _ = self._get_socket_and_node(target_socket_addr, SocketRole.TARGET)
 
         return target_socket.unlink_from(source_socket)
 
@@ -211,20 +197,96 @@ class EntityGraph:
         self, prospective_source_addr: SocketAddress, prospective_target_addr: SocketAddress
     ) -> tuple[bool, SocketLinkErrorReason | GraphObjectErrorReason | None]:
         """Determines if a new directed edge can be validly formed."""
-        source_socket, source_node, src_error = self._get_socket_and_node(prospective_source_addr, SocketRole.SOURCE)
-        target_socket, target_node, trg_error = self._get_socket_and_node(prospective_target_addr, SocketRole.TARGET)
-        assert src_error is None and trg_error is None, "CORRUPTION: unable to get existing entities."
+        source_socket, source_node = self._get_socket_and_node(
+            prospective_source_addr, SocketRole.SOURCE
+        )
+        target_socket, target_node = self._get_socket_and_node(
+            prospective_target_addr, SocketRole.TARGET
+        )
 
-        # Check 1: Basic link compatibility (type, role, self-connection etc.)
+        # If target socket has existing links it's a valid drop target. But we don't
+        # want to recreate the connection if it's not necessary which is why we
+        # pass the error along, the requester can react and stop any further
+        # unnecessary execution. But if we are just checking validity it would
+        # still give us the correct response.
+        if target_socket.links:
+            return True, SocketLinkErrorReason.ALREADY_LINKED
+
+        # Validates basic link compatibility (type, role, self-connection etc.)
         can_link, reason = target_socket.can_link_to(source_socket)
         if not can_link:
             return False, reason
 
-        # Check 2: Prevent cyclical dependencies
+        # Prevent cyclical dependencies
         if self._has_path(target_node.id, source_node.id):
             return False, SocketLinkErrorReason.CYCLE_DETECTED
 
         return True, None
+
+    def _get_socket_role(self, socket_addr: SocketAddress) -> SocketRole:
+        """Determines the role of a socket by checking which collection it belongs to."""
+        node = self.get_node(socket_addr.node_id)
+
+        if socket_addr.socket_name in node.source_sockets:
+            return SocketRole.SOURCE
+        elif socket_addr.socket_name in node.target_sockets:
+            return SocketRole.TARGET
+        else:
+            raise ValueError(f"Socket {socket_addr} not found in node {node.id}")
+
+    def partition_valid_link_targets(
+        self, source_socket_addr: SocketAddress
+    ) -> tuple[set[SocketAddress], set[SocketAddress]]:
+        """Determines valid and invalid drop target sockets for the given source socket.
+
+        Returns a tuple of (valid_targets, invalid_targets) where each is a set of SocketAddress.
+        """
+        valid_targets: set[SocketAddress] = set()
+        invalid_targets: set[SocketAddress] = set()
+
+        # Determine the role of the source socket
+        source_role = self._get_socket_role(source_socket_addr)
+        source_socket, source_node = self._get_socket_and_node(source_socket_addr, source_role)
+
+        target_role = SocketRole.TARGET if source_role == SocketRole.SOURCE else SocketRole.SOURCE
+
+        # Iterate through all nodes to categorize their sockets
+        for node in self.nodes.values():
+            # Get sockets with same role as source (inherently invalid)
+            same_role_sockets = (
+                node.source_sockets.values()
+                if source_role == SocketRole.SOURCE
+                else node.target_sockets.values()
+            )
+            for socket in same_role_sockets:
+                addr = SocketAddress(node_id=node.id, socket_name=socket.name)
+                invalid_targets.add(addr)
+
+            # Get sockets with opposite role (potential partners)
+            opposite_role_sockets = (
+                node.target_sockets.values()
+                if source_role == SocketRole.SOURCE
+                else node.source_sockets.values()
+            )
+            for socket in opposite_role_sockets:
+                candidate_addr = SocketAddress(node_id=node.id, socket_name=socket.name)
+
+                # Determine proper source and target for validation
+                if source_role == SocketRole.SOURCE:
+                    prospective_source_addr = source_socket_addr
+                    prospective_target_addr = candidate_addr
+                else:
+                    prospective_source_addr = candidate_addr
+                    prospective_target_addr = source_socket_addr
+
+                can_form, _ = self.can_form_link(prospective_source_addr, prospective_target_addr)
+
+                if can_form:
+                    valid_targets.add(candidate_addr)
+                else:
+                    invalid_targets.add(candidate_addr)
+
+        return valid_targets, invalid_targets
 
     def __repr__(self) -> str:
         return f"Graph(nodes_count={len(self.nodes)})"
