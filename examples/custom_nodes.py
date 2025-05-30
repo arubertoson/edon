@@ -1,7 +1,7 @@
 from loguru import logger
 
 from edon.graph import EntityGraph
-from edon.node import EntityNode, SocketDef
+from edon.node import EntityNode, SocketDef, SocketDisplayState
 from edon_ui.app import EdonApplication  # Import EdonApplication instead of main
 from edon_ui.widgets.factories import SocketType  # Import the new enum
 
@@ -17,7 +17,7 @@ class IntegerNode(EntityNode):
         SocketDef(name="src_int", socket_type=SocketType.INTEGER),
     ]
     target_socket_definitions = [
-        SocketDef(name="trg_int", socket_type=SocketType.INTEGER, linkable=False),
+        SocketDef(name="trg_int", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.WIDGET),
     ]
 
     def process(self):
@@ -34,7 +34,7 @@ class FloatNode(EntityNode):
         SocketDef(name="src_float", socket_type=SocketType.FLOAT),
     ]
     target_socket_definitions = [
-        SocketDef(name="trg_float", socket_type=SocketType.FLOAT, linkable=False),
+        SocketDef(name="trg_float", socket_type=SocketType.FLOAT, display_state=SocketDisplayState.LINK_WIDGET),
     ]
 
     def process(self):
@@ -51,11 +51,11 @@ class StringNode(EntityNode):
         SocketDef(name="src_text", socket_type=SocketType.STRING),
     ]
     target_socket_definitions = [
-        SocketDef(name="trg_text", socket_type=SocketType.STRING, linkable=False),
+        SocketDef(name="trg_text", socket_type=SocketType.STRING, display_state=SocketDisplayState.WIDGET)
     ]
 
     def process(self):
-        self.target_sockets["trg_stext"].value = self.source_sockets["src_text"].value
+        self.target_sockets["trg_text"].value = self.source_sockets["src_text"].value
         return self.target_sockets["trg_text"].value
 
 
@@ -67,7 +67,7 @@ class LargeTextNode(EntityNode):
         SocketDef(name="src_text", socket_type=SocketType.LARGE_STRING),
     ]
     target_socket_definitions = [
-        SocketDef(name="trg_text", socket_type=SocketType.STRING, linkable=False),  # Output regular string
+        SocketDef(name="trg_text", socket_type=SocketType.STRING, display_state=SocketDisplayState.WIDGET)
     ]
 
     def process(self):
@@ -83,8 +83,8 @@ class AddNode(EntityNode):
         SocketDef(name="result", socket_type=SocketType.INTEGER),
     ]
     target_socket_definitions = [
-        SocketDef(name="a", socket_type=SocketType.INTEGER),
-        SocketDef(name="b", socket_type=SocketType.INTEGER),
+        SocketDef(name="a", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.ALL),
+        SocketDef(name="b", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.ALL),
     ]
 
     def process(self):
@@ -123,8 +123,8 @@ class MultiplyNode(EntityNode):
         SocketDef(name="result", socket_type=SocketType.FLOAT),
     ]
     target_socket_definitions = [
-        SocketDef(name="a", socket_type=SocketType.FLOAT),
-        SocketDef(name="b", socket_type=SocketType.INTEGER),
+        SocketDef(name="a", socket_type=SocketType.FLOAT, display_state=SocketDisplayState.ALL),
+        SocketDef(name="b", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.ALL),
     ]
 
     def process(self):
@@ -223,17 +223,17 @@ def create_sample_graph():
     print("!!!!!")
 
     # Add nodes to graph
-    # graph.add_node(int_node)
-    # graph.add_node(float_node)
-    # graph.add_node(multiply_node)
+    graph.add_node(int_node)
+    graph.add_node(float_node)
+    graph.add_node(multiply_node)
     graph.add_node(string_node1)
     graph.add_node(string_node2)
     graph.add_node(concat_node)
-    # graph.add_node(large_text_node1)  # Add to graph
+    graph.add_node(large_text_node1)  # Add to graph
 
     # Set initial values for the nodes
-    # int_node.source_sockets["trg_int"].value = 5
-    # float_node.source_sockets["trg_float"].value = 2.5
+    int_node.target_sockets["trg_int"].value = 5
+    float_node.target_sockets["trg_float"].value = 2.5
     string_node1.target_sockets["trg_text"].value = "Hello, "
     string_node2.target_sockets["trg_text"].value = "World!"
 
@@ -273,7 +273,7 @@ def create_sample_graph():
 if __name__ == "__main__":
     # Create and run the application with our custom graph and node registry
     graph = create_sample_graph()
-    app = EdonApplication(custom_node_registry, log_level="DEBUG")
+    app = EdonApplication(custom_node_registry, log_level="TRACE")
     app.load_graph(graph)
 
     # Set our custom graph and node registry using property setters

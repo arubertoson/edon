@@ -13,11 +13,20 @@ handles the instantiation of these sockets.
 
 """
 
+from enum import Enum, auto
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from edon.socket import EntitySocket, SocketRole, SocketType
+
+
+class SocketDisplayState(Enum):
+    ALL = auto()
+    LINK_LABEL = auto()
+    LINK_WIDGET = auto()
+    LABEL = auto()
+    WIDGET = auto()
 
 
 @dataclass
@@ -30,7 +39,7 @@ class SocketDef:
     name: str
     socket_type: SocketType
     default: Any = None
-    linkable: bool = True
+    display_state: SocketDisplayState = SocketDisplayState.LINK_LABEL
 
     @property
     def python_type(self) -> type[Any]:
@@ -46,7 +55,7 @@ class SocketDef:
         return (
             f"SocketDef(name='{self.name}', socket_type='{self.socket_type.name}', "
             f"python_type={self.python_type.__name__}, "
-            f"linkable={self.linkable}, default={self.default!r})"
+            f"display_state={self.display_state.name}, default={self.default!r})"
         )
 
 
@@ -187,9 +196,9 @@ class EntityNode:
         )
 
         if role == SocketRole.SOURCE:
-            self.source_sockets[socket_def.name] = socket_instance
+            self.source_sockets[socket_instance.name] = socket_instance
         else:
-            self.target_sockets[socket_def.name] = socket_instance
+            self.target_sockets[socket_instance.name] = socket_instance
         return socket_instance
 
     def process(self):

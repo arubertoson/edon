@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QGraphicsSceneMouseEvent,
 )
 
+from edon.node import SocketDisplayState
 from edon.graph import SocketAddress
 from edon.socket import SocketRole
 from edon_ui import theme
@@ -74,12 +75,45 @@ class SocketComponents:
     link: "SocketLinkItem"
     label: SocketTextComponent
     widget: SocketComponent
+    display_state: SocketDisplayState
+
+    def __post_init__(self):
+        self.transition_to(self.display_state)
+
+    def height(self) -> float:
+        return sum([_.get_required_component_height() for _ in self.visible() if _ is not self.link])
+
+    def width(self) -> float:
+        return max([_.get_required_component_width() for _ in self.visible() if _ is not self.link])
+
+    def transition_to(self, state: SocketDisplayState) -> None:
+        match state:
+            case SocketDisplayState.ALL:
+                self.link.show()
+                self.label.show()
+                self.widget.show()
+            case SocketDisplayState.LINK_LABEL:
+                self.link.show()
+                self.label.show()
+                self.widget.hide()
+            case SocketDisplayState.LINK_WIDGET:
+                self.link.show()
+                self.label.hide()
+                self.widget.show()
+            case SocketDisplayState.LABEL:
+                self.label.show()
+                self.link.hide()
+                self.widget.hide()
+            case SocketDisplayState.WIDGET:
+                self.link.hide()
+                self.label.hide()
+                self.widget.show()
 
     def __iter__(self) -> Iterator[SocketComponent]:
         return iter([self.link, self.label, self.widget])
 
-    def visible_components(self) -> list[SocketComponent]:
-        return [c for c in [self.link, self.label, self.widget] if c.isVisible()]
+    def visible(self) -> list[SocketComponent]:
+        return [c for c in self if c.isVisible()]
 
 
 def _layout_target_socket(components: SocketComponents, padding: float = theme.SOCKET_HORIZONTAL_PADDING) -> None:
@@ -94,6 +128,8 @@ def _layout_target_socket(components: SocketComponents, padding: float = theme.S
     link, link_visble = components.link, components.link.isVisible()
 
     assert label_visble or widget_visble, "CORRUPTION: At least one of label and widget needs to be visible."
+
+    logger.error(f"VISIBLE: {label_visble}::{widget_visble}::{link_visble}")
 
     primary_content_height = 0.0
     if label_visble:
@@ -296,8 +332,8 @@ class SocketItem(QGraphicsObject):
         self.node_entity_id = node_entity_id
 
         self.components = components
-        for item_candidate in self.components:
-            item_candidate.setParentItem(self)
+        for item in self.components:
+            item.setParentItem(self)
 
         alignment = Qt.AlignmentFlag.AlignLeft
         if self.role == SocketRole.SOURCE:
@@ -348,7 +384,7 @@ class SocketItem(QGraphicsObject):
         self._calculate_bounding_rect()
 
         if self.role == SocketRole.TARGET:
-            _layout_target_socket(self.components, available_width, theme.SOCKET_HORIZONTAL_PADDING)
+            _layout_target_socket(self.components, theme.SOCKET_HORIZONTAL_PADDING)
         else:
             _layout_source_socket(self.components, available_width, theme.SOCKET_HORIZONTAL_PADDING)
 
@@ -371,11 +407,9 @@ class SocketItem(QGraphicsObject):
             return
 
         if linked:
-            # Socket is in a "read-only" state and receives its value
-            # from a source socket.
-            self.components.widget.hide()
+            self.components.transition_to(SocketDisplayState.LINK_LABEL)
         else:
-            self.components.widget.show()
+            self.components.transition_to(self.components.display_state)
 
         self._calculate_bounding_rect()  # Recalculate bounds as widget visibility changed
         self.layoutChanged.emit()  # Notify parent (NodeItem) that layout might need update
@@ -387,8 +421,8 @@ class SocketItem(QGraphicsObject):
         """
         self.prepareGeometryChange()
 
-        components = self.components.visible_components()
+        components = self.components.visible()
         assert components, f"CORRUPTION: Node should always have at least one component. {self.components}"
 
-        self._width = max(c.get_required_component_width() for c in components)
-        self._height = sum(c.get_required_component_height() for c in components)
+        self._width = self.components.width()
+        self._height = self.components.height()

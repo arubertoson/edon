@@ -57,7 +57,9 @@ class GraphController:
         self.data: GraphUIDataRegistry = GraphUIDataRegistry()
         self.node_registry: NodeRegistryMap = dict(node_type_registry or {})
 
-        logger.info("GraphController initialized with an empty entity graph. UI scene will be set later.")
+        logger.info(
+            "GraphController initialized with an empty entity graph. UI scene will be set later."
+        )
 
     @property
     def scene(self) -> "GraphicsScene":
@@ -67,7 +69,9 @@ class GraphController:
 
     @scene.setter
     def scene(self, scene: "GraphicsScene") -> None:
-        logger.debug(f"GraphController: UI scene set to {scene}. Populating scene from graph data.")
+        logger.debug(
+            f"GraphController: UI scene set to {scene}. Populating scene from graph data."
+        )
 
         self._scene = scene
 
@@ -94,7 +98,9 @@ class GraphController:
         self.data = GraphUIDataRegistry()
         # self._registration_order.clear() # _registration_order is not a member
 
-        logger.debug(f"Cleared {len(edge_items_to_remove)} edges and {len(node_items_to_remove)} nodes")
+        logger.debug(
+            f"Cleared {len(edge_items_to_remove)} edges and {len(node_items_to_remove)} nodes"
+        )
 
     def load_graph(self, entity_graph: EntityGraph) -> None:
         """
@@ -125,7 +131,9 @@ class GraphController:
         self.entity_graph = EntityGraph()  # Reset to a new empty graph
         self._scene._update_scene_content_display()
 
-    def _register_node_internal(self, entity_node: EntityNode, scene_position: QPointF) -> NodeItem:
+    def _register_node_internal(
+        self, entity_node: EntityNode, scene_position: QPointF
+    ) -> NodeItem:
         """
         Creates a NodeItem for an EntityNode that is ALREADY in self.entity_graph.
 
@@ -199,14 +207,21 @@ class GraphController:
         processed_edge_keys: set[EdgeKey] = set()
         for source_node_id, source_entity_node in self.entity_graph.nodes.items():
             # We treat this as a DAG, using the source to establish connection to targets.
-            for source_socket_name, source_entity_socket in source_entity_node.source_sockets.items():
+            for (
+                source_socket_name,
+                source_entity_socket,
+            ) in source_entity_node.source_sockets.items():
                 for linked_target_entity_socket in source_entity_socket.links:
                     target_node_id = linked_target_entity_socket.node.id
                     target_socket_name = linked_target_entity_socket.name
 
                     edge_key = EdgeKey(
-                        source=SocketAddress(node_id=source_node_id, socket_name=source_socket_name),
-                        target=SocketAddress(node_id=target_node_id, socket_name=target_socket_name),
+                        source=SocketAddress(
+                            node_id=source_node_id, socket_name=source_socket_name
+                        ),
+                        target=SocketAddress(
+                            node_id=target_node_id, socket_name=target_socket_name
+                        ),
                     )
                     if edge_key not in processed_edge_keys:
                         self._register_edge_internal(edge_key)
@@ -264,14 +279,18 @@ class GraphController:
 
     def handle_ui_node_deletion_request(self, entity_node_ids: Sequence[str]) -> None:
         """Processes a UI request to delete one or more specified nodes."""
-        logger.debug(f"GraphController: Received handle_ui_node_deletion_request for IDs: {entity_node_ids}")
+        logger.debug(
+            f"GraphController: Received handle_ui_node_deletion_request for IDs: {entity_node_ids}"
+        )
 
         for node_id in entity_node_ids:
             self.request_remove_node(node_id)
 
     def handle_ui_edge_deletion_request(self, edge_items: Sequence[EdgeItem]) -> None:
         """Processes a UI request to delete one or more specified edges."""
-        logger.debug(f"GraphController: Received handle_ui_edge_deletion_request for {len(edge_items)} edge(s).")
+        logger.debug(
+            f"GraphController: Received handle_ui_edge_deletion_request for {len(edge_items)} edge(s)."
+        )
 
         for edge_item in edge_items:
             self.request_remove_edge(edge_item.edge_key)
@@ -324,7 +343,9 @@ class GraphController:
         # However, EntityGraph.link_sockets itself might return reasons for failure that are not
         # strictly corruption (e.g. max connections reached if that was a soft rule).
         # For now, let's assume if link_sockets fails, it's a state that shouldn't have been reached.
-        assert link_success, f"CORRUPTION: EntityGraph.link_sockets failed for {edge_key} with reason {_}"
+        assert link_success, (
+            f"CORRUPTION: EntityGraph.link_sockets failed for {edge_key} with reason {_}"
+        )
         # The following line is unreachable due to the assertion above but makes linters happy.
         raise AssertionError("Unreachable code after link_sockets failure assertion")
 
@@ -337,7 +358,9 @@ class GraphController:
 
         # Unregister from UI registry; this will assert if node_id is not found.
         # It returns the node_item, and lists of socket_items and edge_items that were part of this node.
-        node_item_to_remove, _removed_socket_items, removed_edge_items = self.data.unregister_node(entity_node_id)
+        node_item_to_remove, _removed_socket_items, removed_edge_items = self.data.unregister_node(
+            entity_node_id
+        )
 
         # XXX: should  `remove_node` handle removing edges as well or is that part of business logic?
         # currently the data layer and the entity graph is handling the edge cleanup when we remove a
@@ -362,8 +385,12 @@ class GraphController:
 
         # XXX: This should be handled by assertions in the `entity_graph`, not by upstream checks.
         # Unlink sockets in the entity graph first. Refactor necessary.
-        disconnection_success, reason = self.entity_graph.unlink_sockets(edge_key.source, edge_key.target)
-        assert disconnection_success, f"CORRUPTION: Entity disconnection FAILED for {edge_key}. Reason: {reason}."
+        disconnection_success, reason = self.entity_graph.unlink_sockets(
+            edge_key.source, edge_key.target
+        )
+        assert disconnection_success, (
+            f"CORRUPTION: Entity disconnection FAILED for {edge_key}. Reason: {reason}."
+        )
 
         edge_item = self.data.unregister_edge(edge_key)
         self.scene.remove_edge(edge_item)
@@ -402,7 +429,9 @@ class GraphController:
             self.handle_ui_edge_deletion_request(linked_edges)
 
             is_lifted = True
-            logger.debug(f"Lifting edge from {clicked_socket_addr}, original source: {actual_source_addr}")
+            logger.debug(
+                f"Lifting edge from {clicked_socket_addr}, original source: {actual_source_addr}"
+            )
         else:
             actual_source_addr = clicked_socket_addr
             actual_source_socket_item = socket_item
@@ -415,8 +444,12 @@ class GraphController:
             source_socket_addr=actual_source_addr,
             source_socket_item=actual_source_socket_item,
             is_lifted_edge=is_lifted,
-            valid_targets={addr: self.data.socket_item_for_address(addr) for addr in valid_targets},
-            invalid_targets={addr: self.data.socket_item_for_address(addr) for addr in invalid_targets},
+            valid_targets={
+                addr: self.data.socket_item_for_address(addr) for addr in valid_targets
+            },
+            invalid_targets={
+                addr: self.data.socket_item_for_address(addr) for addr in invalid_targets
+            },
         )
 
     def partition_socket_drop_targets(
@@ -432,29 +465,60 @@ class GraphController:
         drag_origin_socket_item = self.data.socket_item_for_address(drag_origin_socket_addr)
         drag_origin_role = drag_origin_socket_item.role
 
-        # Based on the drag origin's role, determine what kind of sockets to look for on partner nodes.
-        # If dragging from a SOURCE, look for TARGET sockets on other nodes.
-        # If dragging from a TARGET (reverse drag), look for SOURCE sockets on other nodes.
-        target_role = SocketRole.TARGET
-        socket_collection = "target_sockets"
-        if drag_origin_role == target_role:
+        # Based on the drag origin's role, determine the roles and corresponding socket
+        # collection names on other nodes.
+        potential_link_partners_collection_name: (
+            str  # Sockets to check with can_form_link (opposite role to origin)
+        )
+        same_role_as_origin_collection_name: (
+            str  # Sockets inherently invalid (same role as origin)
+        )
+        target_role: SocketRole  # The role a socket must have to potentially link with drag_origin
+
+        if drag_origin_role == SocketRole.SOURCE:
+            target_role = SocketRole.TARGET
+            potential_link_partners_collection_name = "target_sockets"
+            same_role_as_origin_collection_name = "source_sockets"
+        else:  # drag_origin_role == SocketRole.TARGET
             target_role = SocketRole.SOURCE
-            socket_collection = "source_sockets"
+            potential_link_partners_collection_name = "source_sockets"
+            same_role_as_origin_collection_name = "target_sockets"
 
         logger.debug(
             f"Drag from {drag_origin_socket_addr} (role: {drag_origin_role}). "
-            f"Looking for partner sockets with role: {target_role}."
+            f"Potential link partners must have role: {target_role} (collection: '{potential_link_partners_collection_name}'). "
+            f"Sockets with role {drag_origin_role} (collection: '{same_role_as_origin_collection_name}') are inherently invalid."
         )
+        # The assertion `assert not drag_origin_role == target_role` is implicitly covered by the logic
+        # above, as drag_origin_role and target_role are now defined to be opposites.
 
-        # We need to iterate through the entire graph node for this functionality.
+        # Iterate through each node in the graph to categorize its sockets.
         for entity_node in self.entity_graph.nodes.values():
-            # To avoid having to deal with both source and target sockets depending on the role of the
-            # socket we can focus on either source or targets, not both.
-            socket_iter: list[EntitySocket] = getattr(entity_node, socket_collection).values()
+            # 1. Add sockets with the same role as drag_origin to unvalid_targets.
+            #    These are inherently incompatible for forming a new link.
+            #    dict.values() returns a view (Iterable).
+            sockets_with_same_role_view: Iterable[EntitySocket] = getattr(
+                entity_node, same_role_as_origin_collection_name
+            ).values()
+
+            current_node_inherently_invalid_addrs: set[SocketAddress] = set()
+            for s in sockets_with_same_role_view:
+                addr = SocketAddress(node_id=entity_node.id, socket_name=s.name)
+                current_node_inherently_invalid_addrs.add(addr)
+                logger.trace(
+                    f"  Marking {addr} as invalid (role incompatibility: same as drag origin role {drag_origin_role})."
+                )
+            unvalid_targets.update(current_node_inherently_invalid_addrs)
+
+            # 2. Check sockets with the opposite role (potential_link_partners) using can_form_link.
+            #    These are candidates for valid_targets or unvalid_targets based on detailed rules.
+            potential_partner_sockets_view: Iterable[EntitySocket] = getattr(
+                entity_node, potential_link_partners_collection_name
+            ).values()
 
             # We are working on theoretical links, this means that we do have to create addresses and
             # from each sockets to our origin address that we are currently dragging.
-            for entity_socket_link_candidate in socket_iter:
+            for entity_socket_link_candidate in potential_partner_sockets_view:
                 link_candidate_addr = SocketAddress(
                     node_id=entity_node.id, socket_name=entity_socket_link_candidate.name
                 )
@@ -484,7 +548,12 @@ class GraphController:
                 # Overwrite logic: if the socket receiving the link is a TARGET socket
                 # and it's already connected, temporarily remove its existing links
                 # to check if the new link can be formed (simulating replacement).
-                if entity_socket_receiving_link.role == SocketRole.TARGET and bool(entity_socket_receiving_link.links):
+                if entity_socket_receiving_link.role == SocketRole.TARGET and bool(
+                    entity_socket_receiving_link.links
+                ):
+                    # XXX: This feels like a dangerous operation, we are changing the state of the graph
+                    # to validate a connection. We need to handle this differently. There is a theritical
+                    # hey, "could we make this connection", and "can we make this connection."
                     original_links = list(entity_socket_receiving_link.links)
                     entity_socket_receiving_link.links.clear()
 
@@ -501,6 +570,10 @@ class GraphController:
 
                 if can_form:
                     valid_targets.add(link_candidate_addr)
+                    logger.trace(
+                        f"  EntityGraph: Can form edge from {prospective_source_addr} "
+                        f"to {prospective_target_addr}: {reason}"
+                    )
                 else:
                     unvalid_targets.add(link_candidate_addr)
                     logger.trace(

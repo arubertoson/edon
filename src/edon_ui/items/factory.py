@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QGraphicsItem
 from edon.graph import SocketRole
 from edon_ui import theme
 from edon_ui.items.node import NodeItem
-from edon_ui.items.socket import SocketComponent, SocketItem, SocketLinkItem
+from edon_ui.items.socket import SocketComponent, SocketItem, SocketLinkItem, SocketComponents
 from edon_ui.widgets import (
     SOCKET_WIDGET_COMPONENT_FACTORIES,
     SocketLabel,
@@ -19,7 +19,7 @@ from edon_ui.widgets import (
 )
 
 if TYPE_CHECKING:
-    from edon.node import EntityNode, SocketDef
+    from edon.node import EntityNode, SocketDef, SocketDisplayState
     from edon.socket import EntitySocket, SocketType
 
 
@@ -27,7 +27,7 @@ def create_socket_widget_component(
     entity_socket: "EntitySocket",
     node_id: str,
     initial_value: Any | None = None,
-) -> SocketComponent | None:
+) -> SocketComponent:
     """
     Constructs a socket widget component for a specified entity socket.
 
@@ -40,18 +40,15 @@ def create_socket_widget_component(
     socket_name = entity_socket.name
 
     factory_func = SOCKET_WIDGET_COMPONENT_FACTORIES.get(type_info)
-    logger.debug(f"Tried to fetch {type_info} factory from {SOCKET_WIDGET_COMPONENT_FACTORIES} registry.")
+    assert factory_func is not None, (
+        f"CORRUPTION: `factory_func` needs to exists in {SOCKET_WIDGET_COMPONENT_FACTORIES}"
+    )
 
-    if factory_func is not None:
-        component_adaptor = factory_func(
-            initial_value=initial_value,
-            node_id=node_id,
-            socket_name=socket_name,
-        )
-
-        return component_adaptor
-    else:
-        logger.warning(f"Warning: No widget factory found for data_type {type_info} of socket {socket_name}")
+    return factory_func(
+        initial_value=initial_value,
+        node_id=node_id,
+        socket_name=socket_name,
+    )
 
 
 def create_socket_item(
@@ -63,36 +60,31 @@ def create_socket_item(
     """Factory for creating a socket row with the correct composition."""
     logger.debug(f"Creating socket item for {socket_def}::{socket_role}")
 
-    linkable: bool = socket_def.linkable
+    display_state: "SocketDisplayState" = socket_def.display_state
     socket_type: "SocketType" = socket_def.socket_type
     initial_socket_value: Any = entity_socket.value
 
-    label_component: SocketTextAdaptor | None = None
-    socket_component: SocketLinkItem | None = None
-    widget_component: SocketComponent | None = None
+    socket_component = SocketLinkItem(None, visual_type_key=socket_type.description)
+    label_component = SocketTextAdaptor(
+        text_item=SocketLabel(
+            text=socket_type.python_type.__name__,
+            target_layout_height=theme.SOCKET_ROW_HEIGHT,
+        )
+    )
+    widget_component = create_socket_widget_component(entity_socket, node_id, initial_value=initial_socket_value)
 
-    if socket_role:
-        if linkable:
-            socket_component = SocketLinkItem(None, visual_type_key=socket_type.description)
-            label_component = SocketTextAdaptor(
-                text_item=SocketLabel(
-                    text=socket_type.python_type.__name__,
-                    target_layout_height=theme.SOCKET_ROW_HEIGHT,
-                )
-            )
-
-        if socket_role == SocketRole.TARGET:
-            widget_component = create_socket_widget_component(
-                entity_socket, node_id, initial_value=initial_socket_value
-            )
+    assert socket_component and label_component and widget_component, "CORRUPTION: All components needs to exists."
 
     return SocketItem(
-        label=label_component,
-        socket=socket_component,
-        widget=widget_component,
         role=socket_role,
         entity_name=entity_socket.name,
         node_entity_id=node_id,
+        components=SocketComponents(
+            link=socket_component,
+            label=label_component,
+            widget=widget_component,
+            display_state=display_state,
+        ),
     )
 
 

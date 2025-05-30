@@ -276,8 +276,8 @@ class GraphicsScene(QGraphicsScene):
         # We let the SocketItem know that it's linked to trigger read-only/editable
         # socket widgets
         # edge.target_socket_item is now a SocketItem directly
-        # socket_item: SocketItem = edge.target_socket_item
-        # socket_item.set_link_state(True)
+        socket_item: SocketItem = edge.target_socket_item
+        socket_item.transition_to(True)
 
         # The GraphController is responsible for updating the SocketItem's link state
         # via the GraphUIDataRegistry before this method is called to add the visual edge.
@@ -290,9 +290,9 @@ class GraphicsScene(QGraphicsScene):
         """
         # The GraphController is responsible for updating the SocketItem's link state
         # via the GraphUIDataRegistry before this method is called to remove the visual edge.
+        socket_item: SocketItem = edge.target_socket_item
+        socket_item.transition_to(False)
 
-        # socket_item: SocketItem = edge.target_socket_item
-        # socket_item.set_link_state(False)
         super().removeItem(edge)
 
     def is_dragging_edge(self) -> bool:

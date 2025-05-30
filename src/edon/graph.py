@@ -166,6 +166,7 @@ class EntityGraph:
             raise AssertionError(f"Invalid expected_role: {expected_role}")
 
         socket = socket_collection.get(socket_addr.socket_name)
+        assert socket, f"CORRUPTION: failed lookup for {SocketAddress}, in {node}"
         if not socket:
             return None, node, GraphObjectErrorReason.SOCKET_NOT_FOUND
 
@@ -210,13 +211,9 @@ class EntityGraph:
         self, prospective_source_addr: SocketAddress, prospective_target_addr: SocketAddress
     ) -> tuple[bool, SocketLinkErrorReason | GraphObjectErrorReason | None]:
         """Determines if a new directed edge can be validly formed."""
-        source_socket, source_node, error = self._get_socket_and_node(prospective_source_addr, SocketRole.SOURCE)
-        if error:
-            return False, error
-
-        target_socket, target_node, error = self._get_socket_and_node(prospective_target_addr, SocketRole.TARGET)
-        if error:
-            return False, error
+        source_socket, source_node, src_error = self._get_socket_and_node(prospective_source_addr, SocketRole.SOURCE)
+        target_socket, target_node, trg_error = self._get_socket_and_node(prospective_target_addr, SocketRole.TARGET)
+        assert src_error is None and trg_error is None, "CORRUPTION: unable to get existing entities."
 
         # Check 1: Basic link compatibility (type, role, self-connection etc.)
         can_link, reason = target_socket.can_link_to(source_socket)

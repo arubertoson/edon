@@ -139,9 +139,6 @@ class EntitySocket:
         source = self if self.role == SocketRole.TARGET else target
         target = target if self.role == SocketRole.TARGET else self
 
-        source_py_type = source.data_type
-        target_py_type = target.data_type
-
         # Check for type compatibility, allowing Any or matching/subclass relationships.
         types_are_compatible = False
         if source.data_type == Any or target.data_type == Any:
