@@ -28,16 +28,6 @@ class ExecutionEngine:
     def _topological_sort(self, graph: EntityGraph) -> list[EntityNode]:
         """
         Performs a topological sort of the nodes in the graph using Kahn's algorithm.
-
-        Args:
-            graph: The EntityGraph instance to sort.
-
-        Returns:
-            A list of EntityNode objects in a valid execution order.
-
-        Raises:
-            RuntimeError: If a cycle is detected in the graph or if the graph is
-                          inconsistent (e.g., not all nodes processed).
         """
         # Initialize in-degree count for all nodes in the graph.
         # The in-degree of a node is the number of incoming edges.
@@ -46,7 +36,7 @@ class ExecutionEngine:
         # Calculate initial in-degrees for all nodes.
         # Iterate through each node and its output connections to identify dependencies.
         for u_node_id, u_node in graph.nodes.items():
-            for output_socket in u_node.target_sockets.values():
+            for output_socket in u_node.target_sockets:
                 for connected_input_socket in output_socket.links:
                     v_node = connected_input_socket.node
                     # If the connected node (v_node) is part of the current graph, increment its in-degree.
@@ -66,7 +56,9 @@ class ExecutionEngine:
             # Ensure the node ID from the queue is actually in the graph before accessing.
             # This is a robustness check, though unlikely to fail in a stable graph state.
             if u_node_id not in graph.nodes:
-                logger.warning(f"Node ID '{u_node_id}' from sort queue not in graph.nodes. Skipping.")
+                logger.warning(
+                    f"Node ID '{u_node_id}' from sort queue not in graph.nodes. Skipping."
+                )
                 continue
 
             u_node = graph.nodes[u_node_id]
@@ -74,7 +66,7 @@ class ExecutionEngine:
 
             # For each outgoing connection from the processed node (u_node):
             # Decrement the in-degree of the connected (dependent) node (v_node).
-            for output_socket in u_node.target_sockets.values():
+            for output_socket in u_node.target_sockets:
                 for connected_input_socket in output_socket.links:
                     v_node = connected_input_socket.node
                     if v_node and v_node.id in in_degree:
@@ -97,8 +89,12 @@ class ExecutionEngine:
             unprocessed_nodes_ids = set(graph.nodes.keys()) - set(n.id for n in execution_order)
 
             # Combine and get names for a more informative message
-            all_problem_ids = problematic_nodes_ids + list(unprocessed_nodes_ids - set(problematic_nodes_ids))
-            problem_node_names = [graph.nodes[nid].name for nid in all_problem_ids if nid in graph.nodes]
+            all_problem_ids = problematic_nodes_ids + list(
+                unprocessed_nodes_ids - set(problematic_nodes_ids)
+            )
+            problem_node_names = [
+                graph.nodes[nid].name for nid in all_problem_ids if nid in graph.nodes
+            ]
 
             if not problem_node_names and len(execution_order) < len(graph.nodes):
                 # This case might indicate nodes that were never dependencies and had no outputs,
@@ -125,13 +121,6 @@ class ExecutionEngine:
         2. Iterating through the sorted nodes and calling their `process()` method.
 
         Logs information about the execution flow and errors.
-
-        Args:
-            graph: The EntityGraph instance to execute.
-
-        Raises:
-            RuntimeError: If the graph cannot be topologically sorted (e.g., due to cycles),
-                          re-raised from `_topological_sort`.
         """
         if not graph.nodes:
             logger.info("Graph is empty. Nothing to execute.")

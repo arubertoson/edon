@@ -89,7 +89,9 @@ class GraphUIDataRegistry:
         node_id = node_item.entity_id
 
         # Prevent double registration which indicates logic errors
-        assert node_id not in self._node_items, f"CORRUPTION: Attempting to register already-registered node {node_id}"
+        assert node_id not in self._node_items, (
+            f"CORRUPTION: Attempting to register already-registered node {node_id}"
+        )
 
         # Collect socket items and validate they're not already registered
         all_socket_items = node_item.source_sockets + node_item.target_sockets
@@ -146,15 +148,21 @@ class GraphUIDataRegistry:
             self._assert_invariants()
 
         except Exception as e:
-            logger.critical(f"FATAL: Edge registration failed for {edge_key}, state corrupted: {e}")
+            logger.critical(
+                f"FATAL: Edge registration failed for {edge_key}, state corrupted: {e}"
+            )
             self._dump_debug_state()
             raise RuntimeError(f"Registry corruption during edge registration: {e}") from e
 
-    def unregister_node(self, node_id: str) -> tuple["NodeItem", list["SocketItem"], list["EdgeItem"]]:
+    def unregister_node(
+        self, node_id: str
+    ) -> tuple["NodeItem", list["SocketItem"], list["EdgeItem"]]:
         """Removes a node and cascades to all dependent sockets and edges."""
 
         # Node must exist for unregistration
-        assert node_id in self._node_items, f"CORRUPTION: Cannot unregister non-existent node {node_id}"
+        assert node_id in self._node_items, (
+            f"CORRUPTION: Cannot unregister non-existent node {node_id}"
+        )
 
         node_item = self._node_items[node_id]
 
@@ -204,7 +212,9 @@ class GraphUIDataRegistry:
         the edge's references from its connected sockets and ensures registry invariants
         are maintained.
         """
-        assert edge_key in self._edge_items, f"CORRUPTION: Attempting to unregister non-existent edge {edge_key}"
+        assert edge_key in self._edge_items, (
+            f"CORRUPTION: Attempting to unregister non-existent edge {edge_key}"
+        )
 
         edge_item = self._edge_items.pop(edge_key)
 
@@ -229,7 +239,9 @@ class GraphUIDataRegistry:
 
     def _unregister_socket_internal(self, socket_addr: "SocketAddress") -> "SocketItem":
         """Removes a socket and validates no edges are still associated."""
-        assert socket_addr in self._socket_items, f"CORRUPTION: Socket {socket_addr} not registered"
+        assert socket_addr in self._socket_items, (
+            f"CORRUPTION: Socket {socket_addr} not registered"
+        )
         assert not self._socket_to_edge_keys[socket_addr], (
             f"CORRUPTION: Attempting to unregister socket {socket_addr} with remaining edge associations: {self._socket_to_edge_keys[socket_addr]}"
         )
@@ -249,7 +261,9 @@ class GraphUIDataRegistry:
 
     def edge_items_for_socket(self, socket_addr: "SocketAddress") -> set["EdgeItem"]:
         """Retrieves all edge items connected to the specified socket."""
-        assert socket_addr in self._socket_items, f"CORRUPTION: Requested edges for non-existent socket {socket_addr}"
+        assert socket_addr in self._socket_items, (
+            f"CORRUPTION: Requested edges for non-existent socket {socket_addr}"
+        )
 
         edge_keys = self._socket_to_edge_keys[socket_addr]
         edge_items = set()
@@ -276,11 +290,17 @@ class GraphUIDataRegistry:
         logger.critical(f"Nodes: {len(self._node_items)} registered")
         logger.critical(f"Edges: {len(self._edge_items)} registered")
         logger.critical(f"Sockets: {len(self._socket_items)} registered")
-        logger.critical(f"Socket-Edge associations: {len(self._socket_to_edge_keys)} sockets with edges")
-        logger.critical(f"Registration order: {self._registration_order[-10:]}")  # Recent operations only
+        logger.critical(
+            f"Socket-Edge associations: {len(self._socket_to_edge_keys)} sockets with edges"
+        )
+        logger.critical(
+            f"Registration order: {self._registration_order[-10:]}"
+        )  # Recent operations only
 
         # Identify specific corruption patterns
-        orphaned_sockets = [addr for addr in self._socket_to_edge_keys if addr not in self._socket_items]
+        orphaned_sockets = [
+            addr for addr in self._socket_to_edge_keys if addr not in self._socket_items
+        ]
         if orphaned_sockets:
             logger.critical(f"ORPHANED SOCKET ASSOCIATIONS: {orphaned_sockets}")
 
@@ -298,15 +318,23 @@ class GraphUIDataRegistry:
             source_node = entity_graph.get_node(edge_key.source.node_id)
             target_node = entity_graph.get_node(edge_key.target.node_id)
 
-            assert source_node is not None, f"CORRUPTION: Edge {edge_key} references non-existent source node"
-            assert target_node is not None, f"CORRUPTION: Edge {edge_key} references non-existent target node"
+            assert source_node is not None, (
+                f"CORRUPTION: Edge {edge_key} references non-existent source node"
+            )
+            assert target_node is not None, (
+                f"CORRUPTION: Edge {edge_key} references non-existent target node"
+            )
 
             # Verify the logical socket connection exists
-            source_socket = source_node.source_sockets.get(edge_key.source.socket_name)
-            target_socket = target_node.target_sockets.get(edge_key.target.socket_name)
+            source_socket = source_node.source_sockets.get(edge_key.source.name)
+            target_socket = target_node.target_sockets.get(edge_key.target.name)
 
-            assert source_socket is not None, f"CORRUPTION: Edge {edge_key} references non-existent source socket"
-            assert target_socket is not None, f"CORRUPTION: Edge {edge_key} references non-existent target socket"
+            assert source_socket is not None, (
+                f"CORRUPTION: Edge {edge_key} references non-existent source socket"
+            )
+            assert target_socket is not None, (
+                f"CORRUPTION: Edge {edge_key} references non-existent target socket"
+            )
             assert target_socket in source_socket.links, (
                 f"CORRUPTION: UI edge {edge_key} exists but entity sockets not linked"
             )

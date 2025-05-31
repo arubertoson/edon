@@ -77,7 +77,9 @@ class EdonApplication:
 
         # Node registry is passed, but graph data is loaded explicitly later if provided.
         self._node_registry: dict[str, type[EntityNode]] = node_registry or {}
-        self._graph_controller: GraphController = GraphController(node_type_registry=self._node_registry)
+        self._graph_controller: GraphController = GraphController(
+            node_type_registry=self._node_registry
+        )
 
         # Scene is created with the controller. It will be initially empty.
         scene = GraphicsScene(None)
@@ -109,7 +111,7 @@ class EdonApplication:
         Clears the current graph and returns to empty workspace.
         """
         logger.info("Application clearing current graph")
-        self._graph_controller.clear_graph()
+        self.load_graph(EntityGraph())
 
     @property
     def entity_graph(self) -> EntityGraph:
@@ -171,7 +173,9 @@ class EdonApplication:
             self.command_registry.register(cmd_def)
 
         # Create key mapping from command defaults
-        self.key_mapping = KeyMapping.from_command_defaults(self.command_registry.get_all_commands())
+        self.key_mapping = KeyMapping.from_command_defaults(
+            self.command_registry.get_all_commands()
+        )
 
         # Create key processor for handling input events
         self._key_processor: KeyProcessor = KeyProcessor(self.command_registry, self.key_mapping)

@@ -105,29 +105,21 @@ class GraphController:
         Replaces the current graph and rebuilds the entire UI representation.
 
         This method provides a clean slate approach: it clears all existing UI elements,
-        replaces the entity graph, and rebuilds the UI from the new graph data.
-        Ideal for file loading, graph replacement, or resetting the workspace.
+        creates a fresh empty entity graph, and populates both the graph and UI
+        from the given graph data.
         """
         logger.info(f"Loading new graph with {len(entity_graph.nodes)} nodes")
 
-        assert self._scene is not None, "Scene must be set before loading a graph."
+        # Reset All Sources
+        self.data = GraphUIDataRegistry()
+        self.entity_graph = EntityGraph()
+        self.scene.clear()
 
-        self._clear_all_ui()
-        self.entity_graph = entity_graph
-        self._populate_scene_from_graph_data()
-        self._scene._update_scene_content_display()  # Ensure empty scene text is updated
+        # Create Scene state from the given entity_graph
+        self._populate_scene_from_graph_data(source_graph=entity_graph)
+        self.scene._update_scene_content_display()
 
         logger.info("Graph loading completed successfully")
-
-    def clear_graph(self) -> None:
-        """
-        Clears the current graph and all UI elements, returning to empty state.
-        """
-        logger.info("Clearing current graph and UI")
-        assert self._scene is not None, "Scene must be set before clearing the graph."
-        self._clear_all_ui()
-        self.entity_graph = EntityGraph()  # Reset to a new empty graph
-        self._scene._update_scene_content_display()
 
     def _register_node_internal(
         self, entity_node: EntityNode, scene_position: QPointF
@@ -176,50 +168,35 @@ class GraphController:
 
         return edge_item
 
-    def _populate_scene_from_graph_data(self) -> None:
+    def _populate_scene_from_graph_data(self, source_graph: EntityGraph | None = None) -> None:
         """
         Populates the GraphicsScene with NodeItems and EdgeItems based on the
-        current EntityGraph using internal registration methods.
-        This is called by set_scene() after the scene is linked.
+        given source graph (or current EntityGraph if None).
         """
-        logger.debug("GraphController: Populating UI scene from entity graph data.")
+        graph_to_read = source_graph if source_graph is not None else self.entity_graph
 
-        # XXX: Layout logic should not exist here, we should have positions from a saved serialization.
-        # Basic layout logic (can be made more sophisticated), consider a dependency injection
-        # for layout functionality.
+        logger.debug(
+            f"GraphController: Populating UI scene from {'external' if source_graph else 'current'} entity graph data."
+        )
+
+        # XXX: Temporary solution, we will track layout info in the serialization.
         default_x, default_y = 50.0, 50.0
-        # Use getattr for theme attributes to provide defaults if theme doesn't have them
         spacing_x = getattr(theme, "NODE_MIN_WIDTH", 150.0) + 50.0
         spacing_y = getattr(theme, "NODE_MIN_HEIGHT", 100.0) + 50.0
         nodes_per_row = 5
 
-        for i, (_, entity_node) in enumerate(self.entity_graph.nodes.items()):
+        # Add all nodes using existing request method
+        for i, (_, entity_node) in enumerate(graph_to_read.nodes.items()):
             pos_x = default_x + (i % nodes_per_row) * spacing_x
             pos_y = default_y + (i // nodes_per_row) * spacing_y
-            self._register_node_internal(entity_node, QPointF(pos_x, pos_y))
 
-        processed_edge_keys: set[EdgeKey] = set()
-        for source_node_id, source_entity_node in self.entity_graph.nodes.items():
-            # We treat this as a DAG, using the source to establish connection to targets.
-            for (
-                source_socket_name,
-                source_entity_socket,
-            ) in source_entity_node.source_sockets.items():
-                for linked_target_entity_socket in source_entity_socket.links:
-                    target_node_id = linked_target_entity_socket.node.id
-                    target_socket_name = linked_target_entity_socket.name
+            # We are working with existing entity_nodes, request_add_node will create the
+            # entity node, we simply want to register it.
+            self._register_node_internal(entity_node, scene_position=QPointF(pos_x, pos_y))
 
-                    edge_key = EdgeKey(
-                        source=SocketAddress(
-                            node_id=source_node_id, socket_name=source_socket_name
-                        ),
-                        target=SocketAddress(
-                            node_id=target_node_id, socket_name=target_socket_name
-                        ),
-                    )
-                    if edge_key not in processed_edge_keys:
-                        self._register_edge_internal(edge_key)
-                        processed_edge_keys.add(edge_key)
+        # Add all edges using existing request method
+        for edge_key in graph_to_read.edges:
+            self.request_add_edge(edge_key)
 
         self.scene._update_scene_content_display()
 
@@ -265,7 +242,7 @@ class GraphController:
         edge_items = self.data.edge_items_for_socket(target_socket_addr)
         if edge_items:
             logger.debug(
-                f"Target socket {target_socket_addr.node_id}::{target_socket_addr.socket_name} already has a link, removing existing."
+                f"Target socket {target_socket_addr.node_id}::{target_socket_addr.name} already has a link, removing existing."
             )
             self.handle_ui_edge_deletion_request(list(edge_items))
 
@@ -296,16 +273,15 @@ class GraphController:
         **node_specific_kwargs,
     ) -> NodeItem:
         """
-        Creates a new entity node and adds it to both the entity graph and UI.
+        Creates a new entity node or uses an existing one, adding it to both
+        the entity graph and UI.
 
-        This is the primary method for adding new nodes during user interaction.
-        It follows the pattern: create entity → add to graph → register UI.
+        This is the primary method for adding nodes during user interaction
+        or when populating from existing graph data.
         """
         logger.debug(f"Creating new node of type '{node_entity_class}' at {scene_position}")
 
         new_entity_node = node_entity_class(**node_specific_kwargs)
-
-        # Then register its UI representation
         node_item = self._register_node_internal(new_entity_node, scene_position)
 
         return node_item
@@ -316,31 +292,12 @@ class GraphController:
         """
         logger.debug(f"GraphController: Requesting to create edge: {edge_key}")
 
-        link_success, _ = self.entity_graph.link_sockets(
-            edge_key.source,
-            edge_key.target,
+        link_success, reason = self.entity_graph.link_sockets(edge_key)
+        assert link_success, (
+            f"CORRUPTION: EntityGraph.link_sockets failed for {edge_key} with reason {reason}"
         )
 
-        if link_success:
-            logger.debug(f"EntityGraph link successful for {edge_key}.")
-            # If link_success is true, _register_edge_internal is guaranteed to return an EdgeItem
-            # or GraphUIDataRegistry would have asserted if socket items were not found.
-            edge_item = self._register_edge_internal(edge_key)
-            assert edge_item is not None, (
-                "CORRUPTION: _register_edge_internal returned None unexpectedly after successful link"
-            )  # Should be unreachable
-            return edge_item
-        # If link_success is false, it implies a condition that should ideally be caught
-        # by can_form_link checks before attempting to link.
-        # For tiger style, we might assert here if we expect `can_form_link` to prevent this.
-        # However, EntityGraph.link_sockets itself might return reasons for failure that are not
-        # strictly corruption (e.g. max connections reached if that was a soft rule).
-        # For now, let's assume if link_sockets fails, it's a state that shouldn't have been reached.
-        assert link_success, (
-            f"CORRUPTION: EntityGraph.link_sockets failed for {edge_key} with reason {_}"
-        )
-        # The following line is unreachable due to the assertion above but makes linters happy.
-        raise AssertionError("Unreachable code after link_sockets failure assertion")
+        return self._register_edge_internal(edge_key)
 
     def request_remove_node(self, entity_node_id: str) -> None:
         """
@@ -364,7 +321,7 @@ class GraphController:
             # This might attempt to unlink sockets that are already unlinked if
             # entity_graph.remove_node below also handles unlinking.
             # However, entity_graph.unlink_sockets should be idempotent or handle this.
-            self.entity_graph.unlink_sockets(edge_item.edge_key.source, edge_item.edge_key.target)
+            self.entity_graph.unlink_sockets(edge_item.edge_key)
             self.scene.remove_edge(edge_item)
 
         self.entity_graph.remove_node(entity_node_id)
@@ -378,10 +335,8 @@ class GraphController:
 
         # XXX: This should be handled by assertions in the `entity_graph`, not by upstream checks.
         # Unlink sockets in the entity graph first. Refactor necessary.
-        disconnection_success, reason = self.entity_graph.unlink_sockets(
-            edge_key.source, edge_key.target
-        )
-        assert disconnection_success, (
+        success, reason = self.entity_graph.unlink_sockets(edge_key)
+        assert success, (
             f"CORRUPTION: Entity disconnection FAILED for {edge_key}. Reason: {reason}."
         )
 

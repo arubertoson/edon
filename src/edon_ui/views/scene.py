@@ -136,7 +136,9 @@ class EmptySceneTextItem(QGraphicsItem):
     def boundingRect(self) -> QRectF:
         return self._cached_bounding_rect
 
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+    def paint(
+        self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None
+    ) -> None:
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
         overall_br = self.boundingRect()  # This is already centered around (0,0)
@@ -154,7 +156,9 @@ class EmptySceneTextItem(QGraphicsItem):
 
         # Create a drawing rectangle for line1 that spans the full width of the item
         # Qt.AlignCenter will then center the text within this drawing_rect1.
-        drawing_rect1 = QRectF(overall_br.left(), y1_pos, overall_br.width(), line1_metrics_rect.height())
+        drawing_rect1 = QRectF(
+            overall_br.left(), y1_pos, overall_br.width(), line1_metrics_rect.height()
+        )
         painter.drawText(drawing_rect1, Qt.AlignmentFlag.AlignCenter, self.line1_text)
 
         # --- Draw Line 2 ---
@@ -167,7 +171,9 @@ class EmptySceneTextItem(QGraphicsItem):
         # Positioned after line1 and spacing
         y2_pos = y1_pos + line1_metrics_rect.height() + self.line_spacing_px
 
-        drawing_rect2 = QRectF(overall_br.left(), y2_pos, overall_br.width(), line2_metrics_rect.height())
+        drawing_rect2 = QRectF(
+            overall_br.left(), y2_pos, overall_br.width(), line2_metrics_rect.height()
+        )
         painter.drawText(drawing_rect2, Qt.AlignmentFlag.AlignCenter, self.line2_text)
 
     def _get_line_metrics(self, text, font):
@@ -214,7 +220,10 @@ class GraphicsScene(QGraphicsScene):
 
         self.active_area_size = 2000  # Initial size, can be smaller if preferred
         self.setSceneRect(
-            -self.active_area_size / 2, -self.active_area_size / 2, self.active_area_size, self.active_area_size
+            -self.active_area_size / 2,
+            -self.active_area_size / 2,
+            self.active_area_size,
+            self.active_area_size,
         )
         self.setBackgroundBrush(QBrush(theme.SCENE_BACKGROUND))
 
@@ -232,13 +241,21 @@ class GraphicsScene(QGraphicsScene):
 
     @property
     def controller(self) -> "GraphController":
-        assert self._controller is not None, "CORRUPTION: Scene needs a controller before operationg."
+        assert self._controller is not None, (
+            "CORRUPTION: Scene needs a controller before operationg."
+        )
 
         return self._controller
 
     @controller.setter
     def controller(self, controller: "GraphController") -> None:
         self._controller = controller
+
+    def clear(self) -> None:
+        super().clear()
+        self.empty_scene_text = EmptySceneTextItem()
+        self.empty_scene_text.setVisible(False)
+        super().addItem(self.empty_scene_text)
 
     def add_node(self, node: NodeItem):
         node.node_position_update_signal.connect(self._update_edges_for_node)
@@ -298,7 +315,9 @@ class GraphicsScene(QGraphicsScene):
     def is_dragging_edge(self) -> bool:
         return self._drag_context is not None
 
-    def initiate_dragging_edge(self, clicked_socket_address: SocketAddress, drag_start_scene_pos: QPointF):
+    def initiate_dragging_edge(
+        self, clicked_socket_address: SocketAddress, drag_start_scene_pos: QPointF
+    ):
         """
         Initiates an edge drag operation from the specified socket.
 
@@ -315,7 +334,10 @@ class GraphicsScene(QGraphicsScene):
 
         # Create the drag context and update the visuals on potential target sockets.
         self._drag_context = DragContext(
-            temp_edge, drag_info.source_socket_item, drag_info.valid_targets, drag_info.invalid_targets
+            temp_edge,
+            drag_info.source_socket_item,
+            drag_info.valid_targets,
+            drag_info.invalid_targets,
         )
         self._drag_context.apply_target_socket_visuals()
 
@@ -346,7 +368,10 @@ class GraphicsScene(QGraphicsScene):
             return
 
         target_socket_item = self._get_socket_at_pos(event_scene_pos)
-        if target_socket_item and target_socket_item.socket_address in self._drag_context.valid_targets:
+        if (
+            target_socket_item
+            and target_socket_item.socket_address in self._drag_context.valid_targets
+        ):
             source_addr = self._drag_context.source_socket_item.socket_address
             target_addr = target_socket_item.socket_address
 
@@ -365,7 +390,9 @@ class GraphicsScene(QGraphicsScene):
         # XXX: We should keep an eye on this function as it could potentially be recursed and cause a crash/lock.
         # If that happens we need to look into temporarily disconnecting the signal and reconnecting it.
         current_selected_items = self.selectedItems()
-        nodes_are_present_in_selection = any(isinstance(item, NodeItem) for item in current_selected_items)
+        nodes_are_present_in_selection = any(
+            isinstance(item, NodeItem) for item in current_selected_items
+        )
 
         if nodes_are_present_in_selection:
             # If any node is selected, iterate through a copy of the selected items and deselect any EdgeItem.
