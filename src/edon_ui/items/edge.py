@@ -10,7 +10,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsPathItem, QStyleOptionGraphicsItem, QWidget
 
-from edon.graph import EdgeKey
+from edon.types import EdgeKey
 from edon.socket import SocketRole
 from edon_ui import theme
 from edon_ui.items.socket import SocketItem
@@ -33,7 +33,9 @@ def straight_line_path_calculator(
     return path
 
 
-def bezier_path_calculator(p1: QPointF, p2: QPointF, active: bool, starting_socket_role: SocketRole) -> QPainterPath:
+def bezier_path_calculator(
+    p1: QPointF, p2: QPointF, active: bool, starting_socket_role: SocketRole
+) -> QPainterPath:
     """
     Calculates a cubic Bezier curve QPainterPath between two points.
 
@@ -119,10 +121,14 @@ class DraggingEdgeItem(QGraphicsPathItem):
         self._update_internal_path()
 
     def _update_internal_path(self) -> None:
-        self._source_pos = self.source_socket_item.link_item.scenePos()  # Use link_item for position
+        self._source_pos = (
+            self.source_socket_item.link_item.scenePos()
+        )  # Use link_item for position
         # Access role directly from the SocketItem
         starting_role = self.source_socket_item.role
-        path = self._path_calculator(self._source_pos, self._current_target_pos, True, starting_role)
+        path = self._path_calculator(
+            self._source_pos, self._current_target_pos, True, starting_role
+        )
         self.setPath(path)
 
     def update_target_position(self, new_mouse_scene_pos: QPointF) -> None:
@@ -132,7 +138,9 @@ class DraggingEdgeItem(QGraphicsPathItem):
             self._current_target_pos = new_mouse_scene_pos
             self._update_internal_path()
 
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+    def paint(
+        self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None
+    ) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(self._pen)
         painter.drawPath(self.path())
@@ -184,8 +192,8 @@ class EdgeItem(QGraphicsPathItem):
     def edge_key(self) -> EdgeKey:
         if not self._edge_key:
             # Access socket_address directly from SocketItem
-            source_socket_addr = self.source_socket_item.socket_address
-            target_socket_addr = self.target_socket_item.socket_address
+            source_socket_addr = self.source_socket_item.address
+            target_socket_addr = self.target_socket_item.address
             self._edge_key = EdgeKey(source_socket_addr, target_socket_addr)
         return self._edge_key
 
@@ -209,10 +217,14 @@ class EdgeItem(QGraphicsPathItem):
 
         # An EdgeItem is always static when it simply "exists", meaning, it's inactive and it starts
         # from it's source role. The role is taken directly from the source SocketItem.
-        path = self._path_calculator(self._source_pos, self._target_pos, False, self.source_socket_item.role)
+        path = self._path_calculator(
+            self._source_pos, self._target_pos, False, self.source_socket_item.role
+        )
         self.setPath(path)
 
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+    def paint(
+        self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None
+    ) -> None:
         if self.isSelected():
             pen = self._pen_selected
         else:

@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from edon.graph import EdgeKey, EntityGraph, SocketAddress
+from edon.graph import EntityGraph
+from edon.types import SocketAddress, EdgeKey
 
 if TYPE_CHECKING:
     from edon_ui.items.edge import EdgeItem
@@ -95,7 +96,7 @@ class GraphUIDataRegistry:
 
         # Collect socket items and validate they're not already registered
         all_socket_items = node_item.source_sockets + node_item.target_sockets
-        socket_addresses = [item.socket_address for item in all_socket_items if item is not None]
+        socket_addresses = [item.address for item in all_socket_items if item is not None]
 
         for socket_addr in socket_addresses:
             assert socket_addr not in self._socket_items, (
@@ -107,7 +108,7 @@ class GraphUIDataRegistry:
             self._node_items[node_id] = node_item
             for socket_item in all_socket_items:
                 if socket_item is not None:
-                    self._socket_items[socket_item.socket_address] = socket_item
+                    self._socket_items[socket_item.address] = socket_item
 
             self._registration_order.append(f"NODE:{node_id}")
             logger.debug(f"Registered node {node_id} with {len(socket_addresses)} sockets")
@@ -190,9 +191,9 @@ class GraphUIDataRegistry:
             del self._node_items[node_id]
             self._registration_order.append(f"UNREGISTER_NODE:{node_id}")
 
-            logger.debug(
-                f"Cascade unregistered node {node_id} ({len(removed_edges)} edges, {len(removed_sockets)} sockets)"
-            )
+            # logger.debug(
+            #     f"Cascade unregistered node {node_id} ({len(removed_edges)} edges, {len(removed_sockets)} sockets)"
+            # )
 
             # Validate consistency after cascade operation
             self._assert_invariants()
@@ -326,8 +327,8 @@ class GraphUIDataRegistry:
             )
 
             # Verify the logical socket connection exists
-            source_socket = source_node.source_sockets.get(edge_key.source.name)
-            target_socket = target_node.target_sockets.get(edge_key.target.name)
+            source_socket = source_node.sockets[edge_key.source.name]
+            target_socket = target_node.sockets[edge_key.target.name]
 
             assert source_socket is not None, (
                 f"CORRUPTION: Edge {edge_key} references non-existent source socket"

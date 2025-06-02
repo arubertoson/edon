@@ -20,9 +20,7 @@ from PySide6.QtWidgets import (
     QGraphicsSceneMouseEvent,
 )
 
-from edon.node import SocketDisplayState
-from edon.graph import SocketAddress
-from edon.socket import SocketRole
+from edon.types import SocketAddress, SocketDisplayState, SocketRole
 from edon_ui import theme
 
 if TYPE_CHECKING:
@@ -81,10 +79,14 @@ class SocketComponents:
         self.transition_to(self.display_state)
 
     def height(self) -> float:
-        return sum([_.get_required_component_height() for _ in self.visible() if _ is not self.link])
+        return sum(
+            [_.get_required_component_height() for _ in self.visible() if _ is not self.link]
+        )
 
     def width(self) -> float:
-        return max([_.get_required_component_width() for _ in self.visible() if _ is not self.link])
+        return max(
+            [_.get_required_component_width() for _ in self.visible() if _ is not self.link]
+        )
 
     def transition_to(self, state: SocketDisplayState) -> None:
         match state:
@@ -116,7 +118,9 @@ class SocketComponents:
         return [c for c in self if c.isVisible()]
 
 
-def _layout_target_socket(components: SocketComponents, padding: float = theme.SOCKET_HORIZONTAL_PADDING) -> None:
+def _layout_target_socket(
+    components: SocketComponents, padding: float = theme.SOCKET_HORIZONTAL_PADDING
+) -> None:
     """Layout components for TARGET role: [circle][padding][content]
     Content (label/widget) is stacked vertically and starts at x=0.
     Circle is positioned to the left of content, vertically centered with the primary content component.
@@ -127,7 +131,9 @@ def _layout_target_socket(components: SocketComponents, padding: float = theme.S
     widget, widget_visble = components.widget, components.widget.isVisible()
     link, link_visble = components.link, components.link.isVisible()
 
-    assert label_visble or widget_visble, "CORRUPTION: At least one of label and widget needs to be visible."
+    assert label_visble or widget_visble, (
+        "CORRUPTION: At least one of label and widget needs to be visible."
+    )
 
     logger.error(f"VISIBLE: {label_visble}::{widget_visble}::{link_visble}")
 
@@ -152,7 +158,9 @@ def _layout_target_socket(components: SocketComponents, padding: float = theme.S
 
 
 def _layout_source_socket(
-    components: SocketComponents, available_width: float, padding: float = theme.SOCKET_HORIZONTAL_PADDING
+    components: SocketComponents,
+    available_width: float,
+    padding: float = theme.SOCKET_HORIZONTAL_PADDING,
 ) -> None:
     """Layout components for SOURCE role: [content][padding][circle]
     Content (label/widget) is stacked vertically and right-aligned within available_width.
@@ -164,7 +172,9 @@ def _layout_source_socket(
     widget, widget_visble = components.widget, components.widget.isVisible()
     link, link_visble = components.link, components.link.isVisible()
 
-    assert label_visble or widget_visble, "CORRUPTION: At least one of label and widget needs to be visible."
+    assert label_visble or widget_visble, (
+        "CORRUPTION: At least one of label and widget needs to be visible."
+    )
 
     primary_content_height = 0.0
     if label_visble:
@@ -355,11 +365,17 @@ class SocketItem(QGraphicsObject):
     def _scene(self) -> "GraphicsScene":
         return cast("GraphicsScene", self.scene())
 
+    @property
+    def address(self) -> SocketAddress:
+        if not self._address:
+            self._address = SocketAddress(self.node_entity_id, self.entity_name, self.role)
+        return self._address
+
     def handle_link_press(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handles mouse press events forwarded from the SocketLinkItem."""
-        logger.debug(f"SocketItem link in {self.socket_address} pressed at {event.scenePos()}")
+        logger.debug(f"SocketItem link in {self.address} pressed at {event.scenePos()}")
 
-        self._scene.initiate_dragging_edge(self.socket_address, event.scenePos())
+        self._scene.initiate_dragging_edge(self.address, event.scenePos())
 
     def handle_link_move(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handles mouse move events forwarded from the SocketLinkItem during a drag."""
@@ -369,15 +385,11 @@ class SocketItem(QGraphicsObject):
 
     def handle_link_release(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handles mouse release events forwarded from the SocketLinkItem."""
-        logger.debug(f"SocketItem link '{self.node_entity_id}::{self.entity_name}' released at {event.scenePos()}")
+        logger.debug(
+            f"SocketItem link '{self.node_entity_id}::{self.entity_name}' released at {event.scenePos()}"
+        )
 
         self._scene.finalize_dragging_edge(event.scenePos())
-
-    @property
-    def socket_address(self) -> SocketAddress:
-        if not self._address:
-            self._address = SocketAddress(self.node_entity_id, self.entity_name)
-        return self._address
 
     def update_layout(self, available_width: float) -> None:
         """Updates the layout of socket components based on role and available width."""
@@ -386,7 +398,9 @@ class SocketItem(QGraphicsObject):
         if self.role == SocketRole.TARGET:
             _layout_target_socket(self.components, theme.SOCKET_HORIZONTAL_PADDING)
         else:
-            _layout_source_socket(self.components, available_width, theme.SOCKET_HORIZONTAL_PADDING)
+            _layout_source_socket(
+                self.components, available_width, theme.SOCKET_HORIZONTAL_PADDING
+            )
 
         self.update()
 
@@ -422,7 +436,9 @@ class SocketItem(QGraphicsObject):
         self.prepareGeometryChange()
 
         components = self.components.visible()
-        assert components, f"CORRUPTION: Node should always have at least one component. {self.components}"
+        assert components, (
+            f"CORRUPTION: Node should always have at least one component. {self.components}"
+        )
 
         self._width = self.components.width()
         self._height = self.components.height()

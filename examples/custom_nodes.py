@@ -1,7 +1,8 @@
 from loguru import logger
 
 from edon.graph import EntityGraph
-from edon.node import EntityNode, SocketDef, SocketDisplayState
+from edon.node import EntityNode
+from edon.types import SocketDisplayState, SocketDef
 from edon_ui.app import EdonApplication  # Import EdonApplication instead of main
 from edon_ui.widgets.factories import SocketType  # Import the new enum
 
@@ -17,7 +18,9 @@ class IntegerNode(EntityNode):
         SocketDef(name="src_int", socket_type=SocketType.INTEGER),
     ]
     target_socket_definitions = [
-        SocketDef(name="trg_int", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.WIDGET),
+        SocketDef(
+            name="trg_int", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.WIDGET
+        ),
     ]
 
     def process(self):
@@ -34,7 +37,11 @@ class FloatNode(EntityNode):
         SocketDef(name="src_float", socket_type=SocketType.FLOAT),
     ]
     target_socket_definitions = [
-        SocketDef(name="trg_float", socket_type=SocketType.FLOAT, display_state=SocketDisplayState.LINK_WIDGET),
+        SocketDef(
+            name="trg_float",
+            socket_type=SocketType.FLOAT,
+            display_state=SocketDisplayState.LINK_WIDGET,
+        ),
     ]
 
     def process(self):
@@ -51,7 +58,9 @@ class StringNode(EntityNode):
         SocketDef(name="src_text", socket_type=SocketType.STRING),
     ]
     target_socket_definitions = [
-        SocketDef(name="trg_text", socket_type=SocketType.STRING, display_state=SocketDisplayState.WIDGET)
+        SocketDef(
+            name="trg_text", socket_type=SocketType.STRING, display_state=SocketDisplayState.WIDGET
+        )
     ]
 
     def process(self):
@@ -67,7 +76,9 @@ class LargeTextNode(EntityNode):
         SocketDef(name="src_text", socket_type=SocketType.LARGE_STRING),
     ]
     target_socket_definitions = [
-        SocketDef(name="trg_text", socket_type=SocketType.STRING, display_state=SocketDisplayState.WIDGET)
+        SocketDef(
+            name="trg_text", socket_type=SocketType.STRING, display_state=SocketDisplayState.WIDGET
+        )
     ]
 
     def process(self):
@@ -232,10 +243,10 @@ def create_sample_graph():
     graph.add_node(large_text_node1)  # Add to graph
 
     # Set initial values for the nodes
-    int_node.target_sockets["trg_int"].value = 5
-    float_node.target_sockets["trg_float"].value = 2.5
-    string_node1.target_sockets["trg_text"].value = "Hello, "
-    string_node2.target_sockets["trg_text"].value = "World!"
+    int_node.sockets["trg_int"].value = 5
+    float_node.sockets["trg_float"].value = 2.5
+    string_node1.sockets["trg_text"].value = "Hello, "
+    string_node2.sockets["trg_text"].value = "World!"
 
     # large_text_node1.source_sockets[
     # "trg_large_text"

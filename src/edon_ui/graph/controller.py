@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING, Type
 from loguru import logger
 from PySide6.QtCore import QPointF
 
-from edon.graph import EdgeKey, EntityGraph, SocketAddress, SocketRole
+from edon.graph import EntityGraph
+from edon.types import SocketAddress, SocketRole, EdgeKey
 from edon.node import EntityNode
 from edon_ui import theme
 from edon_ui.graph.registry import GraphUIDataRegistry
@@ -335,10 +336,7 @@ class GraphController:
 
         # XXX: This should be handled by assertions in the `entity_graph`, not by upstream checks.
         # Unlink sockets in the entity graph first. Refactor necessary.
-        success, reason = self.entity_graph.unlink_sockets(edge_key)
-        assert success, (
-            f"CORRUPTION: Entity disconnection FAILED for {edge_key}. Reason: {reason}."
-        )
+        self.entity_graph.unlink_sockets(edge_key)
 
         edge_item = self.data.unregister_edge(edge_key)
         self.scene.remove_edge(edge_item)
@@ -370,7 +368,7 @@ class GraphController:
 
             lifted_edge = linked_edges[0]
             actual_source_socket_item = lifted_edge.source_socket_item
-            actual_source_addr = actual_source_socket_item.socket_address
+            actual_source_addr = actual_source_socket_item.address
 
             # We need to clean up the edge that we lifted, it will be replaced
             # by a temporary edge and managed as a new object.

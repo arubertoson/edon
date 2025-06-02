@@ -11,13 +11,13 @@ from edon.types import SocketDef, SocketType
 
 
 @pytest.fixture
-def basic_socket_def_source() -> SocketDef:
+def basic_socket_def_output() -> SocketDef:
     """Provides a basic SocketDef for an output socket."""
     return SocketDef(name="output1", socket_type=SocketType.STRING, default="hello")
 
 
 @pytest.fixture
-def basic_socket_def_target() -> SocketDef:
+def basic_socket_def_input() -> SocketDef:
     """Provides a basic SocketDef for an input socket."""
     return SocketDef(name="input1", socket_type=SocketType.INTEGER, default=0)
 
@@ -51,12 +51,11 @@ class MinimalNode(EntityNode):
 
 
 def test_entity_node_default_initialization():
-    """Test EntityNode initialization with no arguments (relying on defaults)."""
     node = EntityNode()
     assert (
         node.name is None
-    )  # Direct EntityNode instantiation has no default name resolution from class
-    assert node.node_type is None  # Same as above
+    )
+    assert node.node_type is None
     assert isinstance(node.id, str)
     assert len(node.id) == 36  # Standard UUID4 length
     assert node.sockets == {}
@@ -65,10 +64,9 @@ def test_entity_node_default_initialization():
 
 
 def test_entity_node_minimal_subclass_initialization():
-    """Test EntityNode subclass initialization with no specific overrides."""
     node = MinimalNode()
-    assert node.name == "Minimal"  # Derived from class name
-    assert node.node_type == "minimal"  # Derived from class name
+    assert node.name == "Minimal"
+    assert node.node_type == "minimal"
     assert isinstance(node.id, str)
     assert node.sockets == {}
     assert node.source_sockets == []
@@ -78,7 +76,6 @@ def test_entity_node_minimal_subclass_initialization():
 def test_entity_node_initialization_with_instance_params(
     basic_socket_def_input: SocketDef, basic_socket_def_output: SocketDef
 ):
-    """Test EntityNode initialization with instance-level parameters."""
     node_name = "MyInstanceNode"
     node_type_str = "custom.instance.node"
     source_defs = [basic_socket_def_input]

@@ -76,7 +76,7 @@ class DragContext:
 
         # We check whether the target item is in the `DragContext` valid targets and highlight
         # the object if it is.
-        if item and item.socket_address in self.valid_targets:
+        if item and item.address in self.valid_targets:
             item.set_drop_target_highlight(True)
             self.highlighted_socket = item
 
@@ -368,12 +368,9 @@ class GraphicsScene(QGraphicsScene):
             return
 
         target_socket_item = self._get_socket_at_pos(event_scene_pos)
-        if (
-            target_socket_item
-            and target_socket_item.socket_address in self._drag_context.valid_targets
-        ):
-            source_addr = self._drag_context.source_socket_item.socket_address
-            target_addr = target_socket_item.socket_address
+        if target_socket_item and target_socket_item.address in self._drag_context.valid_targets:
+            source_addr = self._drag_context.source_socket_item.address
+            target_addr = target_socket_item.address
 
             # Handle role swapping for reverse connections
             if self._drag_context.source_socket_item.role == SocketRole.TARGET:
@@ -542,7 +539,7 @@ class GraphicsScene(QGraphicsScene):
 
         for socket_item in node.source_sockets + node.target_sockets:
             # find_edge_items_at_socket is a method on GraphController, which uses its data registry
-            edges = self.controller.find_edge_items_at_socket(socket_item.socket_address)
+            edges = self.controller.find_edge_items_at_socket(socket_item.address)
             for edge in edges:
                 edge.update_path()
 

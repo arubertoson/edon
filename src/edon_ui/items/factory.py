@@ -71,9 +71,13 @@ def create_socket_item(
             target_layout_height=theme.SOCKET_ROW_HEIGHT,
         )
     )
-    widget_component = create_socket_widget_component(entity_socket, node_id, initial_value=initial_socket_value)
+    widget_component = create_socket_widget_component(
+        entity_socket, node_id, initial_value=initial_socket_value
+    )
 
-    assert socket_component and label_component and widget_component, "CORRUPTION: All components needs to exists."
+    assert socket_component and label_component and widget_component, (
+        "CORRUPTION: All components needs to exists."
+    )
 
     return SocketItem(
         role=socket_role,
@@ -108,7 +112,7 @@ def create_node_item(
     assert source_defs and target_defs, "CORRUPTION: EntityNode.*_socket_definitions are None."
 
     target_sockets_ui: list[SocketItem] = []
-    for entity_socket in entity_node.target_sockets.values():
+    for entity_socket in entity_node.target_sockets:
         socket_def = _get_socketdef(target_defs, entity_socket.name)
         assert socket_def is not None, (
             f"CORRUPTION: No `SocketDef` for target entity: {entity_socket}. Available Defs: {target_defs}"
@@ -123,7 +127,7 @@ def create_node_item(
         target_sockets_ui.append(row)
 
     source_sockets_ui: list[SocketItem] = []
-    for entity_socket in entity_node.source_sockets.values():
+    for entity_socket in entity_node.source_sockets:
         socket_def = _get_socketdef(source_defs, entity_socket.name)
         assert socket_def is not None, (
             f"CORRUPTION: No `SocketDef` for source entity: {entity_socket}. Available Defs: {source_defs}"
