@@ -10,8 +10,9 @@ objects.
 from __future__ import annotations
 
 from collections.abc import MutableMapping
+from ctypes import LibraryLoader
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from edon.logging import logger
 from edon.errors import GraphObjectErrorReason, SocketLinkErrorReason
@@ -62,13 +63,93 @@ class EntityGraph:
             f"CORRUPTION: Node ID {node_id} to remove doesn't exist in the graph"
         )
 
-        for sock_to_unlink in node_to_remove.sockets.values():
-            linked_sockets_copy = list(sock_to_unlink.links)
-            for other_sock in sock_to_unlink.links:
-                sock_to_unlink.unlink_from(other_sock)
+        # Remove all edges connected to this node's sockets
+        edges_to_remove = set()
+        for edge in self.edges:
+            if edge.source.node_id == node_id or edge.target.node_id == node_id:
+                edges_to_remove.add(edge)
+
+        for edge in edges_to_remove:
+            self.edges.discard(edge)
 
     def get_node(self, node_id: str) -> EntityNode:
         return self.nodes[node_id]
+
+    def get_socket_links(self, socket_addr: SocketAddress) -> list[SocketAddress]:
+        """Get all socket addresses linked to the given socket."""
+        linked_addresses: list[SocketAddress] = []
+
+        for edge in self.edges:
+            if edge.source == socket_addr:
+                linked_addresses.append(edge.target)
+            elif edge.target == socket_addr:
+                linked_addresses.append(edge.source)
+
+        return linked_addresses
+
+    def get_source_socket_for_target(
+        self, target_socket_address: SocketAddress
+    ) -> EntitySocket | None:
+        """
+        Retrieves the source EntitySocket connected to the given target socket address.
+        Assumes a target socket is connected to at most one source socket.
+        """
+        assert target_socket_address.role == SocketRole.TARGET, (
+            f"CORRUPTION: can only be called by socket with target role, not {target_socket_address}"
+        )
+
+        linked_source_socket = self.get_socket_links(target_socket_address)
+        if not linked_source_socket:
+            return None
+
+        source_address = linked_source_socket[0]
+
+        return self.get_node(source_address.node_id).sockets[source_address.name]
+
+    def is_socket_linked(self, socket_addr: SocketAddress) -> bool:
+        """Check if socket has any connections."""
+        return len(self.get_socket_links(socket_addr)) > 0
+
+    def can_link_sockets_internal(
+        self, source_addr: SocketAddress, target_addr: SocketAddress
+    ) -> tuple[bool, SocketLinkErrorReason | None]:
+        """
+        Internal socket validation logic moved from EntitySocket.can_link_to.
+
+        Determines if two sockets can connect based on compatibility rules.
+        """
+        if source_addr == target_addr:
+            return False, SocketLinkErrorReason.CANNOT_LINK_TO_SELF
+        if source_addr.role == target_addr.role:
+            return False, SocketLinkErrorReason.DIRECTIONS_NOT_OPPOSITE
+        if source_addr.node_id == target_addr.node_id:
+            return False, SocketLinkErrorReason.SAME_PARENT_NODE
+
+        # Check if already linked
+        if source_addr in self.get_socket_links(target_addr):
+            return False, SocketLinkErrorReason.ALREADY_LINKED
+
+        # Determine which socket is source and which is target for type checking
+        actual_source = source_addr if source_addr.role == SocketRole.SOURCE else target_addr
+        actual_target = target_addr if source_addr.role == SocketRole.SOURCE else source_addr
+
+        source_socket = self.get_node(actual_source.node_id).sockets[actual_source.name]
+        target_socket = self.get_node(actual_target.node_id).sockets[actual_target.name]
+
+        # Check for type compatibility, allowing Any or matching/subclass relationships.
+        types_are_compatible = False
+        if source_socket.data_type == Any or target_socket.data_type == Any:
+            types_are_compatible = True
+        elif isinstance(source_socket.data_type, type) and isinstance(
+            target_socket.data_type, type
+        ):
+            if issubclass(source_socket.data_type, target_socket.data_type):
+                types_are_compatible = True
+
+        if not types_are_compatible:
+            return False, SocketLinkErrorReason.TYPE_MISMATCH
+
+        return True, None
 
     def _is_reachable(self, start_node_id: str, end_node_id: str) -> bool:
         """Determines if a directed path exists from a start node to an end node.
@@ -111,12 +192,11 @@ class EntityGraph:
             # Explore outgoing edges: from source sockets of current_node
             # to target sockets of neighbor_nodes.
             for source_socket in current_node.source_sockets:
-                logger.debug(f"SOURCE SOCKET: {source_socket}")
-                for linked_target_socket in source_socket.links:
-                    logger.debug(f"TARGET SOCKET: {linked_target_socket}")
+                links = self.get_socket_links(source_socket.address)
+                for linked_target_socket in links:
                     # linked_target_socket is a socket on another node.
                     # Its parent node is the neighbor in the graph.
-                    neighbor_node = linked_target_socket.node
+                    neighbor_node = self.get_node(linked_target_socket.node_id)
                     if neighbor_node.id not in visited:
                         stack.append(neighbor_node.id)
                         # Optimization: if neighbor_node.id == end_node_id, could return True here.
@@ -146,39 +226,33 @@ class EntityGraph:
         source_socket, source_node = self._get_socket_and_node(edge_key.source)
         target_socket, target_node = self._get_socket_and_node(edge_key.target)
 
-        if source_socket in target_socket.links:
+        # Check if already linked
+        if edge_key in self.edges:
             return False, SocketLinkErrorReason.ALREADY_LINKED
 
+        # Check for cycles
         if self._is_reachable(target_node.id, source_node.id):
             return False, SocketLinkErrorReason.CYCLE_DETECTED
 
-        socket_linked_successfully, reason = source_socket.link_to(target_socket)
-
-        if not socket_linked_successfully:
+        # Validate socket compatibility
+        socket_compatible, reason = self.can_link_sockets_internal(
+            edge_key.source, edge_key.target
+        )
+        if not socket_compatible:
             return False, reason
 
+        # Add the edge
         self.edges.add(edge_key)
         logger.debug(f"Graph linked sockets: {source_socket.address} -> {target_socket.address}")
 
         return True, None
 
-        # Perform direct linking, we've already passed validation checks.
-        source_socket.links.append(target_socket)
-        target_socket.links.append(source_socket)
-        self.edges.add(edge_key)
-
-        return True, None
-
     def unlink_sockets(self, edge_key: EdgeKey) -> None:
         """Removes a specific link between a source socket and a target socket."""
-        source_socket, _ = self._get_socket_and_node(edge_key.source)
-        target_socket, _ = self._get_socket_and_node(edge_key.target)
-
-        assert source_socket in target_socket.links and edge_key in self.edges, (
+        assert edge_key in self.edges, (
             f"CORRUPTION: Can't unlink an edge that doesn't exist, `{edge_key}`"
         )
 
-        target_socket.unlink_from(source_socket)
         self.edges.discard(edge_key)
 
     def can_form_link(
@@ -201,7 +275,7 @@ class EntityGraph:
             return False, SocketLinkErrorReason.CYCLE_DETECTED
 
         # Validates basic link compatibility (type, role, self-connection etc.)
-        can_link, reason = source_socket.can_link_to(target_socket)
+        can_link, reason = self.can_link_sockets_internal(source_socket, target_socket)
         if not can_link:
             return False, reason
 

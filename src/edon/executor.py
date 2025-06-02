@@ -10,6 +10,9 @@ execution of an `EntityGraph`. The core functionality involves:
 
 The engine ensures that graphs with cycles are not executed and provides
 logging for the execution flow and any errors encountered.
+
+Enhanced to support recursive execution of sub-graphs with depth tracking
+and context management.
 """
 
 from collections import deque
@@ -17,13 +20,27 @@ from loguru import logger
 
 from edon.node import EntityNode
 from edon.graph import EntityGraph
+from edon.types import current_graph_context, current_execution_engine_context
 
 
 class ExecutionEngine:
     """
     Handles the execution of a node graph, including topological sorting
     and node processing.
+
+    Supports recursive execution of sub-graphs with configurable depth limits
+    to prevent infinite recursion.
     """
+
+    def __init__(self, max_depth: int = 10):
+        """Initialize the execution engine.
+
+        Args:
+            max_depth: Maximum allowed nesting depth for sub-graph execution.
+                      Prevents infinite recursion in malformed sub-graphs.
+        """
+        self.max_depth = max_depth
+        self._current_depth = 0
 
     def _topological_sort(self, graph: EntityGraph) -> list[EntityNode]:
         """
@@ -34,14 +51,13 @@ class ExecutionEngine:
         in_degree: dict[str, int] = {node_id: 0 for node_id in graph.nodes}
 
         # Calculate initial in-degrees for all nodes.
-        # Iterate through each node and its output connections to identify dependencies.
-        for u_node_id, u_node in graph.nodes.items():
-            for output_socket in u_node.target_sockets:
-                for connected_input_socket in output_socket.links:
-                    v_node = connected_input_socket.node
-                    # If the connected node (v_node) is part of the current graph, increment its in-degree.
-                    if v_node and v_node.id in in_degree:
-                        in_degree[v_node.id] += 1
+        # Use graph edges to determine dependencies instead of socket.links
+        for edge in graph.edges:
+            # In a directed edge from source to target, target depends on source
+            # So target has incoming degree from source
+            target_node_id = edge.target.node_id
+            if target_node_id in in_degree:
+                in_degree[target_node_id] += 1
 
         # Initialize a queue with all nodes that have an in-degree of 0.
         # These are the source nodes of the graph (nodes with no incoming dependencies).
@@ -66,15 +82,15 @@ class ExecutionEngine:
 
             # For each outgoing connection from the processed node (u_node):
             # Decrement the in-degree of the connected (dependent) node (v_node).
-            for output_socket in u_node.target_sockets:
-                for connected_input_socket in output_socket.links:
-                    v_node = connected_input_socket.node
-                    if v_node and v_node.id in in_degree:
-                        in_degree[v_node.id] -= 1
+            for edge in graph.edges:
+                if edge.source.node_id == u_node_id:
+                    v_node_id = edge.target.node_id
+                    if v_node_id in in_degree:
+                        in_degree[v_node_id] -= 1
                         # If a dependent node's in-degree drops to 0, it means all its
                         # prerequisites are met, so it can be added to the queue for processing.
-                        if in_degree[v_node.id] == 0:
-                            queue.append(v_node.id)
+                        if in_degree[v_node_id] == 0:
+                            queue.append(v_node_id)
 
         # After the loop, if the number of nodes in the execution order
         # does not match the total number of nodes in the graph, it indicates a cycle
@@ -112,7 +128,7 @@ class ExecutionEngine:
 
         return execution_order
 
-    def execute_graph(self, graph: EntityGraph):
+    def execute_graph(self, graph: EntityGraph, context: str = "root") -> None:
         """
         Executes the provided graph by processing its nodes in topological order.
 
@@ -120,23 +136,82 @@ class ExecutionEngine:
         1. Performing a topological sort of the graph nodes.
         2. Iterating through the sorted nodes and calling their `process()` method.
 
-        Logs information about the execution flow and errors.
+        Supports recursive execution of sub-graphs with depth tracking.
+
+        Args:
+            graph: The EntityGraph to execute
+            context: Description of the execution context for logging
+
+        Raises:
+            RuntimeError: If maximum nesting depth is exceeded or graph has cycles
         """
+        if self._current_depth >= self.max_depth:
+            raise RuntimeError(
+                f"Maximum sub-graph nesting depth ({self.max_depth}) exceeded. "
+                f"Current context: {context}"
+            )
+
         if not graph.nodes:
-            logger.info("Graph is empty. Nothing to execute.")
+            logger.info(
+                f"Graph is empty at depth {self._current_depth} ({context}). Nothing to execute."
+            )
             return
 
-        logger.info("Starting graph execution...")
+        logger.info(f"Starting graph execution at depth {self._current_depth} ({context})...")
+
+        # Set the active engine context
+        engine_token = current_execution_engine_context.set(self)
+        graph_token = current_graph_context.set(graph)
+
         try:
             execution_order = self._topological_sort(graph)
+            logger.info(f"Execution order at {context}: {[node.name for node in execution_order]}")
+
+            for node in execution_order:
+                logger.debug(
+                    f"Processing node: {node.name} (ID: {node.id}) at depth {self._current_depth}"
+                )
+
+                # Check if this is a SubGraphNode and handle recursion
+                if self._is_subgraph_node(node):
+                    self._execute_subgraph_node(node)
+                else:
+                    node.process()
+        # Ensure this catch is broad enough or specific to critical execution errors
+        # For now, catching RuntimeError from _topological_sort or other unexpected issues
+        # Re-raising to allow higher-level handling if necessary
         except RuntimeError as e:
-            logger.error(f"Failed to prepare graph for execution: {e}")
+            logger.error(f"Failed to execute graph at {context}: {e}")
             raise
+        finally:
+            current_graph_context.reset(graph_token)
+            current_execution_engine_context.reset(engine_token)
 
-        logger.info(f"Execution order: {[node.name for node in execution_order]}")
+        logger.info(f"Graph execution complete at depth {self._current_depth} ({context}).")
 
-        for node in execution_order:
-            logger.debug(f"Processing node: {node.name} (ID: {node.id})")
-            node.process()
+    def _is_subgraph_node(self, node: EntityNode) -> bool:
+        """Check if a node is a SubGraphNode without importing to avoid circular imports."""
+        return node.__class__.__name__ == "SubGraphNode"
 
-        logger.info("Graph execution complete.")
+    def _execute_subgraph_node(self, subgraph_node: EntityNode) -> None:
+        """Execute a sub-graph node with proper context management.
+
+        This method manages the execution depth and delegates to the SubGraphNode's
+        process method, which will call back into this engine for the internal graph.
+        """
+        self._current_depth += 1
+        try:
+            logger.debug(
+                f"Entering sub-graph '{subgraph_node.name}' at depth {self._current_depth}"
+            )
+            subgraph_node.process()
+            logger.debug(
+                f"Exiting sub-graph '{subgraph_node.name}' at depth {self._current_depth}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Error in sub-graph '{subgraph_node.name}' at depth {self._current_depth}: {e}"
+            )
+            raise
+        finally:
+            self._current_depth -= 1

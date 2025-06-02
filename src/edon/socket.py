@@ -12,10 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from loguru import logger
-
-from edon.errors import SocketLinkErrorReason
-from edon.types import SocketAddress, SocketRole, SocketType
+from edon.types import SocketAddress, SocketRole, SocketType, current_graph_context
 
 if TYPE_CHECKING:
     from edon.node import EntityNode
@@ -24,18 +21,21 @@ if TYPE_CHECKING:
 @dataclass
 class EntitySocket:
     """
-    Represents a connection point on a Node for data input or output.
+    Pure data representation of a socket connection point on a Node.
+
+    This class only holds data and computed properties. All connection
+    management and validation logic is handled by EntityGraph.
     """
 
     name: str
     role: SocketRole
     node: EntityNode
     type_info: SocketType
-    value: Any | None = None
-    links: list[EntitySocket] = field(default_factory=list)
+    default_value: Any | None = None
+    _value: Any | None = field(init=False)
 
     def __post_init__(self) -> None:
-        self._address: SocketAddress | None = None
+        self._value = self.default_value
 
     @property
     def data_type(self) -> type[Any]:
@@ -44,77 +44,30 @@ class EntitySocket:
 
     @property
     def address(self) -> SocketAddress:
-        if self._address is None:
-            self._address = SocketAddress(self.node.id, self.name, self.role)
-        return self._address
+        """Computed socket address for this socket."""
+        return SocketAddress(self.node.id, self.name, self.role)
 
-    def is_linked(self) -> bool:
-        """Checks if the socket is connected to any other socket.
+    @property
+    def value(self) -> Any:
+        # SOURCE sockets are the one we are pulling from, we are not pushing.
+        if self.role == SocketRole.SOURCE:
+            return self._value
 
-        Returns:
-            True if the socket has one or more connections, False otherwise.
-        """
-        return bool(self.links)
+        # Without a proper graph context set we can't figure out our links, a socket
+        # needs this context to find it's partner.
+        active_graph = current_graph_context.get()
+        if active_graph:
+            # If we don't find a link here, it just means that the socket doesn't have any
+            # links, and we can return the default value, if set.
+            source_socket = active_graph.get_source_socket_for_target(self.address)
+            if source_socket is not None:
+                return source_socket._value
 
-    def can_link_to(self, target: EntitySocket) -> tuple[bool, SocketLinkErrorReason | None]:
-        """
-        Determines if this socket can connect to another socket based on a set of rules.
-        """
-        if self == target:
-            return False, SocketLinkErrorReason.CANNOT_LINK_TO_SELF
-        if self.role == target.role:
-            return False, SocketLinkErrorReason.DIRECTIONS_NOT_OPPOSITE
-        if self.node == target.node:
-            return False, SocketLinkErrorReason.SAME_PARENT_NODE
-        if target in self.links and self in target.links:
-            return True, SocketLinkErrorReason.ALREADY_LINKED
+        return self._value
 
-        # Determine which socket is output and which is input for type checking
-        source = self if self.role == SocketRole.TARGET else target
-        target = target if self.role == SocketRole.TARGET else self
-
-        # Check for type compatibility, allowing Any or matching/subclass relationships.
-        types_are_compatible = False
-        if source.data_type == Any or target.data_type == Any:
-            types_are_compatible = True
-        elif isinstance(source.data_type, type) and isinstance(target.data_type, type):
-            if issubclass(source.data_type, target.data_type):
-                types_are_compatible = True
-
-        if not types_are_compatible:
-            return False, SocketLinkErrorReason.TYPE_MISMATCH
-
-        return True, None
-
-    def link_to(self, target: EntitySocket) -> tuple[bool, SocketLinkErrorReason | None]:
-        """
-        Link this socket to another socket if compatible, ensuring a bidirectional link.
-
-        This method first checks if the target is linkable using the internal rule set.
-        If compatible, it adds the other socket to its link list and itself to the
-        target's list. The method is idempotent: if already connected, it returns success
-        without changes.
-        """
-        can_link_flag, reason = self.can_link_to(target)
-        if not can_link_flag or (can_link_flag and reason):  # Either can't link or already linked
-            return False, reason
-
-        self.links.append(target)
-        target.links.append(self)
-
-        logger.debug(f"Socket '{self.name}' successfully linked to '{target.name}'")
-        return True, None
-
-    def unlink_from(self, target: EntitySocket) -> None:
-        """
-        Removes a connection to another socket, ensuring the link is broken bidirectionally.
-        """
-        assert self in target.links and target in self.links, (
-            f"CORRUPTION: Trying to unlink sockets that doesn't have a link {self.address}::{target.address}"
-        )
-
-        self.links.remove(target)
-        target.links.remove(self)
+    @value.setter
+    def value(self, value: Any) -> None:
+        self._value = value
 
     def __repr__(self) -> str:
         parent_node_repr = self.node.name
@@ -124,6 +77,5 @@ class EntitySocket:
 
         return (
             f"Socket(name='{self.name}', direction={self.role.name}, "
-            f"data_type={data_type_repr}, parent_node='{parent_node_repr}', "
-            f"connections_count={len(self.links)})"
+            f"data_type={data_type_repr}, parent_node='{parent_node_repr}')"
         )

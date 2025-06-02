@@ -50,70 +50,40 @@ class EntityNode:
     sockets: dict[str, EntitySocket] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
-        """Finalizes node initialization after dataclass setup.
-
-        This method resolves the node's actual name, type, and socket definitions
-        by considering instance attributes, then class attributes, and finally
-        applying defaults. It then creates the socket instances.
-        """
         cls: type[Self] = self.__class__
 
-        # 1. Resolve 'name'
-        # Priority: Instance __init__ > Subclass.name > Derived from Subclass.__name__
-        # For base EntityNode: Instance __init__ > None (remains None if not passed)
-        if self.name is None:  # Only if not provided via __init__
-            resolved_name_attr = getattr(cls, "name", None)
-            if resolved_name_attr is not None:
-                self.name = resolved_name_attr
-            elif cls is not EntityNode:  # For subclasses without a 'name' class attribute
-                derived_name = cls.__name__.replace("Node", "")
-                # Keep derived_name even if "Node" wasn't present (e.g., "Minimal")
-                self.name = derived_name
-            # If cls is EntityNode and self.name was None (not passed to __init__), it remains None.
+        # Resolve 'name': Instance > Class > Derived (for subclasses) > None
+        if self.name is None:
+            self.name = getattr(cls, "name", None)
+            if self.name is None and cls is not EntityNode:
+                self.name = cls.__name__.replace("Node", "")
 
-        # 2. Resolve 'node_type'
-        # Priority: Instance __init__ > Subclass.node_type > Derived from Subclass.__name__ (lower)
-        # For base EntityNode: Instance __init__ > None (remains None if not passed)
-        if self.node_type is None:  # Only if not provided via __init__
-            resolved_node_type_attr = getattr(cls, "node_type", None)
-            if resolved_node_type_attr is not None:
-                self.node_type = resolved_node_type_attr
-            elif cls is not EntityNode:  # For subclasses without a 'node_type' class attribute
-                derived_node_type = cls.__name__.lower().replace("node", "")
-                self.node_type = derived_node_type
-            # If cls is EntityNode and self.node_type was None, it remains None.
+        # Resolve 'node_type': Instance > Class > Derived (for subclasses) > None
+        if self.node_type is None:
+            self.node_type = getattr(cls, "node_type", None)
+            if self.node_type is None and cls is not EntityNode:
+                self.node_type = cls.__name__.lower().replace("Node", "")
 
-        # 3. Resolve 'source_socket_definitions'
-        # Priority: Instance __init__ (can be []) > Subclass.source_socket_definitions (can be []) > Default []
-        resolved_source_defs: list[SocketDef]
-        if self.source_socket_definitions is not None:  # Instance value takes precedence
-            resolved_source_defs = self.source_socket_definitions
-        else:  # Not set on instance, try class attribute
-            class_s_defs = getattr(
-                cls, "source_socket_definitions", None
-            )  # Get actual class attribute
-            resolved_source_defs = (
-                class_s_defs if class_s_defs is not None else []
-            )  # Default to [] if class attr is None or missing
+        # Resolve 'source_socket_definitions': Instance > Class > Default []
+        source_definitions: list[SocketDef]
+        if self.source_socket_definitions is not None:
+            source_definitions = self.source_socket_definitions
+        else:
+            class_s_defs = getattr(cls, "source_socket_definitions", None)
+            source_definitions = class_s_defs if class_s_defs is not None else []
 
-        # 4. Resolve 'target_socket_definitions'
-        # Priority: Instance __init__ (can be []) > Subclass.target_socket_definitions (can be []) > Default []
-        resolved_target_defs: list[SocketDef]
-        if self.target_socket_definitions is not None:  # Instance value takes precedence
-            resolved_target_defs = self.target_socket_definitions
-        else:  # Not set on instance, try class attribute
-            class_t_defs = getattr(
-                cls, "target_socket_definitions", None
-            )  # Get actual class attribute
-            resolved_target_defs = (
-                class_t_defs if class_t_defs is not None else []
-            )  # Default to [] if class attr is None or missing
+        # Resolve 'target_socket_definitions': Instance > Class > Default []
+        target_definitions: list[SocketDef]
+        if self.target_socket_definitions is not None:
+            target_definitions = self.target_socket_definitions
+        else:
+            class_t_defs = getattr(cls, "target_socket_definitions", None)
+            target_definitions = class_t_defs if class_t_defs is not None else []
 
-        # --- Create Sockets ---
-        # Iterate using the final resolved definitions determined above.
-        for sock_def in resolved_target_defs:  # These are now guaranteed to be lists
+        # Create sockets using the resolved definitions
+        for sock_def in target_definitions:
             self._add_socket_internal(sock_def, SocketRole.TARGET)
-        for sock_def in resolved_source_defs:
+        for sock_def in source_definitions:
             self._add_socket_internal(sock_def, SocketRole.SOURCE)
 
     def _add_socket_internal(
@@ -136,7 +106,7 @@ class EntityNode:
             role=role,
             node=self,
             type_info=socket_def.socket_type,
-            value=socket_def.default,
+            default_value=socket_def.default,
         )
 
         self.sockets[socket_def.name] = socket_instance

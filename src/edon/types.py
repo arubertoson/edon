@@ -1,6 +1,20 @@
-from typing import Any, Protocol
+from __future__ import annotations
+
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any, Protocol
 from dataclasses import dataclass
 from enum import Enum, auto
+
+if TYPE_CHECKING:
+    from edon.graph import EntityGraph
+    from edon.executor import ExecutionEngine
+
+current_graph_context: ContextVar[EntityGraph | None] = ContextVar(
+    "current_graph_context", default=None
+)
+current_execution_engine_context: ContextVar[ExecutionEngine | None] = ContextVar(
+    "current_execution_engine_context", default=None
+)
 
 
 class SocketRole(Enum):
