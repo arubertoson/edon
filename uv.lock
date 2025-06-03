@@ -3,6 +3,15 @@ revision = 1
 requires-python = ">=3.13"
 
 [[package]]
+name = "attrs"
+version = "25.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/b0/1367933a8532ee6ff8d63537de4f1177af4bff9f3e829baf7331f595bb24/attrs-25.3.0.tar.gz", hash = "sha256:75d7cefc7fb576747b2c81b4442d4d4a1ce0900973527c011d1030fd3bf4af1b", size = 812032 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/06/bb80f5f86020c4551da315d78b3ab75e8228f89f0162f2c3a819e407941a/attrs-25.3.0-py3-none-any.whl", hash = "sha256:427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3", size = 63815 },
+]
+
+[[package]]
 name = "basedpyright"
 version = "1.29.1"
 source = { registry = "https://pypi.org/simple" }
@@ -36,7 +45,9 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
+    { name = "hypothesis" },
     { name = "pytest" },
+    { name = "pytest-qt" },
     { name = "ruff" },
     { name = "ty" },
 ]
@@ -51,9 +62,24 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.29.1" },
+    { name = "hypothesis", specifier = ">=6.133.2" },
     { name = "pytest", specifier = ">=8.3.5" },
+    { name = "pytest-qt", specifier = ">=4.4.0" },
     { name = "ruff", specifier = ">=0.11.10" },
     { name = "ty", specifier = ">=0.0.1a6" },
+]
+
+[[package]]
+name = "hypothesis"
+version = "6.133.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "sortedcontainers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/06/7e/b725f4fc7f297e983657ebd76cb648c73882d52f6f988366f7f7d97745a8/hypothesis-6.133.2.tar.gz", hash = "sha256:7b378d3cefbb3507925d46e5875a6e75ef60f66bf7d3b8d71ad94b5b1805835a", size = 445181 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/75/f1843c4985bc86e106474fc1f22d18676707f156686267220180b20562ce/hypothesis-6.133.2-py3-none-any.whl", hash = "sha256:b8099fd6385f45432da1ab80698f94f6e463be0f5a54faf8fdb38824e55156ae", size = 509967 },
 ]
 
 [[package]]
@@ -176,6 +202,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-qt"
+version = "4.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pluggy" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/53/2c/6a477108342bbe1f5a81a2c54c86c3efadc35f6ad47c76f00c75764a0f7c/pytest-qt-4.4.0.tar.gz", hash = "sha256:76896142a940a4285339008d6928a36d4be74afec7e634577e842c9cc5c56844", size = 125443 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/51/6cc5b9c1ecdcd78e6cde97e03d05f5a4ace8f720c5ce0f26f9dce474a0da/pytest_qt-4.4.0-py3-none-any.whl", hash = "sha256:001ed2f8641764b394cf286dc8a4203e40eaf9fff75bf0bfe5103f7f8d0c591d", size = 36286 },
+]
+
+[[package]]
 name = "qtawesome"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -234,6 +273,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0d/59/6a91aad272fe89bf2293b7864fb6e926822c93a2f6192611528c6945196d/shiboken6-6.9.0-cp39-abi3-manylinux_2_39_aarch64.whl", hash = "sha256:b61579b90bf9c53ecc174085a69429166dfe57a0b8b894f933d1281af9df6568", size = 202809 },
     { url = "https://files.pythonhosted.org/packages/e2/6e/cf00d723ab141132fb6d35ba8faf109cbc0ee83412016343600abb423149/shiboken6-6.9.0-cp39-abi3-win_amd64.whl", hash = "sha256:121ea290ed1afa5ad6abf690b377612693436292b69c61b0f8e10b1f0850f935", size = 1153132 },
     { url = "https://files.pythonhosted.org/packages/b5/01/d59babab05786c99ebabdd152864ea3d4c500160979952c620eec68b1ff2/shiboken6-6.9.0-cp39-abi3-win_arm64.whl", hash = "sha256:24f53857458881b54798d7e35704611d07f6b6885bcdf80f13a4c8bb485b8df2", size = 1831261 },
+]
+
+[[package]]
+name = "sortedcontainers"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575 },
 ]
 
 [[package]]

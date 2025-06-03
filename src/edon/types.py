@@ -24,7 +24,7 @@ class SocketRole(Enum):
     TARGET = 2
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True)
 class SocketAddress:
     """Represents a unique socket endpoint within the graph, identifying an entity socket.
 

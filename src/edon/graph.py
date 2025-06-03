@@ -72,6 +72,12 @@ class EntityGraph:
         for edge in edges_to_remove:
             self.edges.discard(edge)
 
+        # Let's assert that we don't have any references to the node in our edges left
+        for edge in self.edges:
+            assert not edge.source.node_id == node_id and not edge.target.node_id == node_id, (
+                f"CORRUPTION: Edge {edge} still references remove node {node_id} after cleanup"
+            )
+
     def get_node(self, node_id: str) -> EntityNode:
         return self.nodes[node_id]
 
@@ -124,17 +130,11 @@ class EntityGraph:
             return False, SocketLinkErrorReason.DIRECTIONS_NOT_OPPOSITE
         if source_addr.node_id == target_addr.node_id:
             return False, SocketLinkErrorReason.SAME_PARENT_NODE
-
-        # Check if already linked
         if source_addr in self.get_socket_links(target_addr):
             return False, SocketLinkErrorReason.ALREADY_LINKED
 
-        # Determine which socket is source and which is target for type checking
-        actual_source = source_addr if source_addr.role == SocketRole.SOURCE else target_addr
-        actual_target = target_addr if source_addr.role == SocketRole.SOURCE else source_addr
-
-        source_socket = self.get_node(actual_source.node_id).sockets[actual_source.name]
-        target_socket = self.get_node(actual_target.node_id).sockets[actual_target.name]
+        source_socket = self.get_node(source_addr.node_id).sockets[source_addr.name]
+        target_socket = self.get_node(target_addr.node_id).sockets[target_addr.name]
 
         # Check for type compatibility, allowing Any or matching/subclass relationships.
         types_are_compatible = False
@@ -175,7 +175,6 @@ class EntityGraph:
                 # which is true. In the context of cycle detection, this call
                 # is made with start_node_id != end_node_id (target_node.id, source_node.id),
                 # because self-links are caught by EntitySocket.can_link_to.
-                logger.debug("Returning same node")
                 return True
 
             if current_node_id in visited:
@@ -186,8 +185,6 @@ class EntityGraph:
             if not current_node:
                 # This can happen if start_node_id or an intermediate node_id is not in the graph.
                 continue
-
-            logger.debug(f"CURRENT NODE: {current_node}")
 
             # Explore outgoing edges: from source sockets of current_node
             # to target sockets of neighbor_nodes.
@@ -202,7 +199,6 @@ class EntityGraph:
                         # Optimization: if neighbor_node.id == end_node_id, could return True here.
                         # However, handling it at the pop() stage is also correct and standard.
 
-        logger.debug("FOUND NOTHING!")
         return False
 
     def _get_socket_and_node(self, socket_addr: SocketAddress) -> tuple[EntitySocket, EntityNode]:
@@ -262,22 +258,15 @@ class EntityGraph:
         source_socket, source_node = self._get_socket_and_node(prospective_source_addr)
         target_socket, target_node = self._get_socket_and_node(prospective_target_addr)
 
-        # If target socket has existing links it's a valid drop target. But we don't
-        # want to recreate the connection if it's not necessary which is why we
-        # pass the error along, the requester can react and stop any further
-        # unnecessary execution. But if we are just checking validity it would
-        # still give us the correct response.
-        if source_socket in target_socket.links:
-            return False, SocketLinkErrorReason.ALREADY_LINKED
+        can_link, reason = self.can_link_sockets_internal(
+            source_socket.address, target_socket.address
+        )
+        if not can_link:
+            return False, reason
 
         # Check for cycles: A cycle is formed if the target node can already reach the source node.
         if self._is_reachable(target_node.id, source_node.id):
             return False, SocketLinkErrorReason.CYCLE_DETECTED
-
-        # Validates basic link compatibility (type, role, self-connection etc.)
-        can_link, reason = self.can_link_sockets_internal(source_socket, target_socket)
-        if not can_link:
-            return False, reason
 
         return True, None
 

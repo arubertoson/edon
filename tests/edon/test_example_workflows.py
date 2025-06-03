@@ -290,25 +290,26 @@ class TestSubGraphWorkflows:
         
         # Level 2: Create a "DoubleAdd" sub-graph that uses AddTwo
         double_add_internal = EntityGraph()
+
+        # Prepare the internal graph and mappings for add_two_instance
+        inner_node_for_instance = AddNode()
+        instance_internal_graph = EntityGraph()
+        instance_internal_graph.add_node(inner_node_for_instance)
+
+        instance_proxy_targets = {
+            "a": SocketAddress(inner_node_for_instance.id, "a", SocketRole.TARGET),
+            "b": SocketAddress(inner_node_for_instance.id, "b", SocketRole.TARGET)
+        }
+        instance_proxy_sources = {
+            "result": SocketAddress(inner_node_for_instance.id, "result", SocketRole.SOURCE)
+        }
+
         add_two_instance = SubGraphNode(
             name="InnerAddTwo",
-            internal_graph=add_internal.copy() if hasattr(add_internal, 'copy') else EntityGraph(),
-            proxy_target_mappings=add_two_subgraph.proxy_target_mappings.copy(),
-            proxy_source_mappings=add_two_subgraph.proxy_source_mappings.copy()
+            internal_graph=instance_internal_graph,
+            proxy_target_mappings=instance_proxy_targets,
+            proxy_source_mappings=instance_proxy_sources
         )
-        # For simplicity, create a fresh AddNode for the inner sub-graph
-        inner_add = AddNode()
-        double_add_internal.add_node(inner_add)
-        add_two_instance.internal_graph = EntityGraph()
-        add_two_instance.internal_graph.add_node(inner_add)
-        add_two_instance.proxy_target_mappings = {
-            "a": SocketAddress(inner_add.id, "a", SocketRole.TARGET),
-            "b": SocketAddress(inner_add.id, "b", SocketRole.TARGET)
-        }
-        add_two_instance.proxy_source_mappings = {
-            "result": SocketAddress(inner_add.id, "result", SocketRole.SOURCE)
-        }
-        add_two_instance._create_proxy_sockets()
         
         multiply_node = MultiplyNode()
         double_add_internal.add_node(add_two_instance)

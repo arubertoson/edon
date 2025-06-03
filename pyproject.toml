@@ -21,10 +21,16 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "basedpyright>=1.29.1",
+    "hypothesis>=6.133.2",
     "pytest>=8.3.5",
+    "pytest-qt>=4.4.0",
     "ruff>=0.11.10",
     "ty>=0.0.1a6",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/edon", "src/edon_ui"]
