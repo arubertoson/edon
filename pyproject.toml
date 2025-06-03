@@ -8,6 +8,7 @@ dependencies = [
     "loguru>=0.7.3",
     "pyside6>=6.9.0",
     "qtawesome>=1.4.0",
+    "thefuzz[speedup]>=0.22.1",
 ]
 
 [tool.ruff]

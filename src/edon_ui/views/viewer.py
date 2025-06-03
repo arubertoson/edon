@@ -1,12 +1,16 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
 from PySide6.QtCore import QEvent, Qt, Slot
 from PySide6.QtGui import QInputEvent, QKeyEvent, QMouseEvent, QPainter, QWheelEvent
-from PySide6.QtWidgets import QApplication, QGraphicsProxyWidget, QGraphicsView
+from PySide6.QtWidgets import QApplication, QGraphicsProxyWidget, QGraphicsView, QMainWindow
 
-from ..context_menu import AppContextMenu
+from edon_ui.context_menu import AppContextMenu
+from edon_ui.views.scene import GraphicsScene
+from edon_ui.views.window import MainWindow
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QGraphicsItem, QMainWindow
@@ -14,17 +18,16 @@ if TYPE_CHECKING:
     from edon.graph import EntityGraph
     from edon_ui.commands.key_processor import KeyProcessor
     from edon_ui.graph.controller import GraphController
-    from edon_ui.views.scene import GraphicsScene
 
 
 @dataclass
 class EditorContext:
-    view: "GraphicsView"
-    scene: "GraphicsScene"
-    window: "QMainWindow"
-    manager: "GraphController"
-    entity_graph: "EntityGraph"
-    selected_items: list["QGraphicsItem"]
+    view: GraphicsView
+    scene: GraphicsScene
+    window: QMainWindow
+    controller: GraphController
+    entity_graph: EntityGraph
+    selected_items: list[QGraphicsItem]
     event: QInputEvent | None = None
     params: dict[str, Any] = field(default_factory=dict)
 
@@ -36,7 +39,7 @@ class GraphicsView(QGraphicsView):
         super().__init__(scene, parent)
         logger.info(f"GraphicsView initialized with scene: {scene}")
 
-        self.key_processor: "KeyProcessor | None" = None
+        self.key_processor: KeyProcessor | None = None
 
         # Rendering and transformation
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -58,11 +61,12 @@ class GraphicsView(QGraphicsView):
         self._zoom_factor = 1.1
         self._interaction_enabled = True
 
-        self.scene().scene_node_count_changed.connect(self._update_view_behavior)
+        scene = cast(GraphicsScene, self.scene())
+        scene.scene_node_count_changed.connect(self._update_view_behavior)
 
     @Slot(int)
     def _update_view_behavior(self, num_scene_items: int) -> None:
-        current_scene = self.scene()
+        current_scene = cast(GraphicsScene, self.scene())
 
         has_scene_elements = bool(num_scene_items)
         self.setInteractive(has_scene_elements)
@@ -99,7 +103,9 @@ class GraphicsView(QGraphicsView):
         min_padding = 200.0
         padding_w = max(min_padding, padding_w)
         padding_h = max(min_padding, padding_h)
-        padded_visible_rect = visible_rect_in_scene_coords.adjusted(-padding_w, -padding_h, padding_w, padding_h)
+        padded_visible_rect = visible_rect_in_scene_coords.adjusted(
+            -padding_w, -padding_h, padding_w, padding_h
+        )
 
         # Unite the current sceneRect with the padded visible rect to ensure the scene boundaries
         # encompass both the existing scene area and the newly visible area.
@@ -110,13 +116,15 @@ class GraphicsView(QGraphicsView):
             current_scene.setSceneRect(new_scene_rect)
 
     def provide_context(self, event: QInputEvent | None = None) -> EditorContext:
+        scene = cast(GraphicsScene, self.scene())
+        window = cast(QMainWindow, self.window())
         return EditorContext(
             view=self,
-            scene=self.scene(),
-            window=self.window(),
-            manager=self.scene().controller,
-            entity_graph=self.scene().controller.entity_graph,
-            selected_items=self.scene().selectedItems(),
+            scene=scene,
+            window=window,
+            controller=scene.controller,
+            entity_graph=scene.controller.entity_graph,
+            selected_items=scene.selectedItems(),
             event=event,
             params={},
         )
@@ -134,7 +142,9 @@ class GraphicsView(QGraphicsView):
         event_type_str = "KeyPress" if event.type() == QEvent.Type.KeyPress else "KeyRelease"
         scene_focus_item = self.scene().focusItem() if self.scene() else None
 
-        logger.trace(f"GV.{event_type_str}: key={event.key()}, text='{event.text()}'. SceneFocus: {scene_focus_item}")
+        logger.trace(
+            f"GV.{event_type_str}: key={event.key()}, text='{event.text()}'. SceneFocus: {scene_focus_item}"
+        )
 
         # Event routing logic:
         # If the scene's focus item is a QGraphicsProxyWidget (such as a socket or embedded widget),
@@ -149,7 +159,9 @@ class GraphicsView(QGraphicsView):
         # In both cases, after delegating to the base implementation, we return to prevent further processing.
         # This structure keeps the event routing logic clear and maintainable.
         if isinstance(scene_focus_item, QGraphicsProxyWidget):
-            logger.debug(f"GV.{event_type_str}: Scene-focused proxy widget ({scene_focus_item}) processing.")
+            logger.debug(
+                f"GV.{event_type_str}: Scene-focused proxy widget ({scene_focus_item}) processing."
+            )
             if event.type() == QEvent.Type.KeyPress:
                 super().keyPressEvent(event)
             else:
@@ -204,7 +216,7 @@ class GraphicsView(QGraphicsView):
         )
 
         # XXX: This should also be a command.
-        main_window = self.window()
+        main_window = cast(MainWindow, self.window())
         if (
             event.button() == Qt.MouseButton.LeftButton
             and main_window
@@ -233,7 +245,7 @@ class GraphicsView(QGraphicsView):
         # XXX: Same as with panning, moving the window should possibly be a command.
         # as long as we provide the correct context this should work.
         elif event.button() == Qt.MouseButton.RightButton:
-            logger.trace("  Right mouse: Initiating context menu/move sequence.")
+            logger.trace("Right mouse: Initiating context menu/move sequence.")
             self._right_click_pos = event.globalPosition().toPoint()
             self._right_click_moved = False
             event.accept()
@@ -244,14 +256,16 @@ class GraphicsView(QGraphicsView):
             event.ignore()
             return
 
-        logger.trace("  GV.mousePress: Passing to super() for item interaction / rubber band.")
+        logger.trace("GV.mousePress: Passing to super() for item interaction / rubber band.")
         super().mousePressEvent(event)
         logger.trace(
             f"  GV.mousePress: After super(), event.accepted={event.isAccepted()}, AppFocus: {QApplication.focusWidget()}, SceneFocus: {self.scene().focusItem() if self.scene() else None}"
         )
 
         if not event.isAccepted():
-            if self.key_processor and self.key_processor._process_event_for_command_sequence(event, self):
+            if self.key_processor and self.key_processor._process_event_for_command_sequence(
+                event, self
+            ):
                 logger.debug("  GV.mousePress: Event accepted by key_processor.")
                 event.accept()
             else:
@@ -274,7 +288,7 @@ class GraphicsView(QGraphicsView):
         elif event.button() == Qt.MouseButton.RightButton:
             if self._right_click_pos and not self._right_click_moved:
                 logger.debug("  Right mouse release (no drag): Showing context menu.")
-                menu = AppContextMenu(self, position=event.globalPos(), main_window=self.window(), view=self)
+                menu = AppContextMenu(cast(QMainWindow, self.window()), event.globalPos(), self)
                 menu.exec(event.globalPos())
             else:
                 logger.trace("  Right mouse release (dragged or no initial pos): Resetting state.")
@@ -296,7 +310,9 @@ class GraphicsView(QGraphicsView):
 
         # Priority 4: Key processor (if event not already accepted by items/view actions)
         if not event.isAccepted():
-            if self.key_processor and self.key_processor._process_event_for_command_sequence(event, self):
+            if self.key_processor and self.key_processor._process_event_for_command_sequence(
+                event, self
+            ):
                 logger.debug("  GV.mouseRelease: Event accepted by key_processor.")
                 event.accept()
             else:
@@ -321,7 +337,8 @@ class GraphicsView(QGraphicsView):
             current_pos = event.globalPosition().toPoint()
             delta = current_pos - self._right_click_pos
             if (
-                abs(delta.x()) > self.RIGHT_CLICK_MOVE_THRESHOLD or abs(delta.y()) > self.RIGHT_CLICK_MOVE_THRESHOLD
+                abs(delta.x()) > self.RIGHT_CLICK_MOVE_THRESHOLD
+                or abs(delta.y()) > self.RIGHT_CLICK_MOVE_THRESHOLD
             ) and not self._right_click_moved:
                 self._right_click_moved = True
                 if self.window() and self.window().windowHandle():

@@ -10,6 +10,7 @@ from edon_ui.commands.actions.basic_actions import (
     delete_selection_action,
     help_action,
     window_toggle_maximize_action,
+    action_show_node_spawner,
 )
 from edon_ui.commands.core import Command
 
@@ -53,5 +54,13 @@ ALL_COMMAND_DEFINITIONS: list[Command] = [
         description="Delete selected items (nodes and edges).",
         action=delete_selection_action,
         default_hotkey_sequence=_parse_hotkey_sequence("D"),
+    ),
+    Command(
+        id="graph.show_node_spawner",
+        label="Add Node...",
+        category="Graph",
+        description="Opens a panel to search and add new nodes to the graph.",
+        action=action_show_node_spawner,
+        default_hotkey_sequence=_parse_hotkey_sequence("Shift+A"),
     ),
 ]

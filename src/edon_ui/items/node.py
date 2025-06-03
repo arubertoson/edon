@@ -32,8 +32,6 @@ class NodeItem(QGraphicsObject):
     def __init__(
         self,
         title: str | None,
-        x: float,
-        y: float,
         node_entity_id: str,
         target_sockets: list["SocketItem"] | None = None,
         source_sockets: list["SocketItem"] | None = None,
@@ -47,7 +45,6 @@ class NodeItem(QGraphicsObject):
         self._min_width_param = width
         self._min_height_param = height
 
-        self.setPos(x, y)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
@@ -111,7 +108,9 @@ class NodeItem(QGraphicsObject):
             row_item.update_layout(content_area_width_for_rows)
             # Position the row considering the node's left padding
             row_item.setPos(0, current_row_top_y)
-            current_row_top_y += row_item.boundingRect().height() + theme.SOCKET_VERTICAL_ITEM_PADDING
+            current_row_top_y += (
+                row_item.boundingRect().height() + theme.SOCKET_VERTICAL_ITEM_PADDING
+            )
 
         # Target sockets
         for idx, row_item in enumerate(self.target_sockets):
@@ -158,7 +157,9 @@ class NodeItem(QGraphicsObject):
 
         return super().itemChange(change, value)
 
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+    def paint(
+        self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None
+    ) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
@@ -189,8 +190,12 @@ class NodeItem(QGraphicsObject):
         )  # Don't adjust bottom for fill
 
         title_fill_path = QPainterPath()
-        title_fill_path.moveTo(fill_title_rect.left() + theme.NODE_BORDER_RADIUS - half_border, fill_title_rect.top())
-        title_fill_path.lineTo(fill_title_rect.right() - theme.NODE_BORDER_RADIUS + half_border, fill_title_rect.top())
+        title_fill_path.moveTo(
+            fill_title_rect.left() + theme.NODE_BORDER_RADIUS - half_border, fill_title_rect.top()
+        )
+        title_fill_path.lineTo(
+            fill_title_rect.right() - theme.NODE_BORDER_RADIUS + half_border, fill_title_rect.top()
+        )
         title_fill_path.arcTo(
             QRectF(
                 fill_title_rect.right() - 2 * theme.NODE_BORDER_RADIUS + half_border,
@@ -204,7 +209,9 @@ class NodeItem(QGraphicsObject):
         title_fill_path.lineTo(
             fill_title_rect.right(), fill_title_rect.bottom()
         )  # Straight down to bottom of title bar rect
-        title_fill_path.lineTo(fill_title_rect.left(), fill_title_rect.bottom())  # Straight across bottom
+        title_fill_path.lineTo(
+            fill_title_rect.left(), fill_title_rect.bottom()
+        )  # Straight across bottom
         title_fill_path.arcTo(
             QRectF(
                 fill_title_rect.left(),

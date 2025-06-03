@@ -101,8 +101,6 @@ def _get_socketdef(socket_defs: list["SocketDef"], name: str) -> "SocketDef | No
 
 def create_node_item(
     entity_node: "EntityNode",
-    x: float,
-    y: float,
 ) -> NodeItem:
     logger.debug(f"Creating {entity_node.node_type} node from factory.")
 
@@ -143,8 +141,6 @@ def create_node_item(
 
     return NodeItem(
         title=entity_node.name,
-        x=x,
-        y=y,
         node_entity_id=entity_node.id,
         target_sockets=target_sockets_ui,
         source_sockets=source_sockets_ui,

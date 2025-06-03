@@ -16,10 +16,10 @@ from edon.logging import setup_logging
 from edon.node import EntityNode
 from edon_ui import theme
 from edon_ui.commands import (
-    ALL_COMMAND_DEFINITIONS,
     CommandRegistry,
     KeyMapping,
     KeyProcessor,
+    default_command_registry,
 )
 from edon_ui.graph import GraphController
 from edon_ui.views import GraphicsScene, GraphicsView, MainWindow
@@ -89,7 +89,7 @@ class EdonApplication:
 
         # Initialize public API components
         self.main_window: MainWindow = MainWindow(self._graphics_view)
-        self.command_registry: CommandRegistry = CommandRegistry()
+        self.command_registry: CommandRegistry = default_command_registry
         self.key_mapping: KeyMapping = KeyMapping()
 
         self._setup_command_system()
@@ -167,10 +167,6 @@ class EdonApplication:
         dispatch corresponding actions.
         """
         logger.debug("Setting up command system... CommandRegistry, KeyMapping and KeyProcessor")
-
-        # Register all built-in commands
-        for cmd_def in ALL_COMMAND_DEFINITIONS:
-            self.command_registry.register(cmd_def)
 
         # Create key mapping from command defaults
         self.key_mapping = KeyMapping.from_command_defaults(

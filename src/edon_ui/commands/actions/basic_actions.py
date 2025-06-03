@@ -2,10 +2,14 @@
 
 from loguru import logger
 
+from PySide6.QtCore import QPointF
+from PySide6.QtGui import QMouseEvent, QCursor
+
 # XXX: Editor Context should probably be a protocol.
 from edon_ui.views.viewer import EditorContext
 from edon_ui.items.node import NodeItem
 from edon_ui.items.edge import EdgeItem
+from edon_ui.widgets.node_spawner import NodeSpawningPanel
 
 
 def close_action(context: EditorContext) -> bool:
@@ -81,7 +85,9 @@ def delete_selection_action(context: EditorContext) -> bool:
         False if the context was invalid or an error occurred during deletion requests.
     """
     if not context or not hasattr(context, "selected_items") or not hasattr(context, "manager"):
-        logger.warning("Delete selection action: Invalid context (missing selected_items or manager).")
+        logger.warning(
+            "Delete selection action: Invalid context (missing selected_items or manager)."
+        )
         return False
 
     node_items = [item for item in context.selected_items if isinstance(item, NodeItem)]
@@ -91,12 +97,14 @@ def delete_selection_action(context: EditorContext) -> bool:
         logger.info("Delete selection action: Nothing selected to delete.")
         return False
 
-    logger.info(f"Executing delete_selection_action: Deleting {len(node_items)} nodes and {len(edge_items)} edges.")
+    logger.info(
+        f"Executing delete_selection_action: Deleting {len(node_items)} nodes and {len(edge_items)} edges."
+    )
 
     if node_items:
         node_ids = [node.entity_id for node in node_items]
         try:
-            context.manager.handle_ui_node_deletion_request(node_ids)
+            context.controller.handle_ui_node_deletion_request(node_ids)
             logger.debug(f"Requested deletion of nodes: {node_ids}")
         except Exception as e:
             logger.error(f"Error during node deletion request: {e}")
@@ -109,9 +117,44 @@ def delete_selection_action(context: EditorContext) -> bool:
                 for edge in edge_items
             ]
             logger.debug(f"Requesting deletion of edges: {edge_ids_for_log}")
-            context.manager.handle_ui_edge_deletion_request(edge_items)
+            context.controller.handle_ui_edge_deletion_request(edge_items)
         except Exception as e:
             logger.error(f"Error during edge deletion request: {e}")
             return False
 
+    return True
+
+
+def action_show_node_spawner(context: EditorContext) -> bool:
+    """
+    Action to show the NodeSpawningPanel.
+    The panel is positioned based on mouse event or current cursor position.
+    The node spawn position is derived from this.
+    """
+    logger.debug("Executing action: Show Node Spawner")
+    graph_controller = context.controller
+    view = context.view
+
+    # Determine global position for the panel itself
+    global_pos_for_panel: QPointF
+    if context.event and isinstance(context.event, QMouseEvent):
+        global_pos_for_panel = context.event.globalPosition()
+        logger.trace(f"Node spawner panel position from MouseEvent: {global_pos_for_panel}")
+    else:
+        # Fallback for hotkey invocation or non-mouse event: use current mouse cursor position
+        cursor_pos = QCursor.pos()
+        global_pos_for_panel = QPointF(cursor_pos)
+        logger.trace(f"Node spawner panel position from QCursor: {global_pos_for_panel}")
+
+    # Determine scene position for the node to be spawned
+    # QGraphicsView.mapFromGlobal() expects QPoint, mapToScene() expects QPoint or QPolygon etc.
+    view_pos = view.mapFromGlobal(global_pos_for_panel.toPoint())
+    scene_pos_for_node = view.mapToScene(view_pos)
+    logger.trace(f"Node spawn position in scene coordinates: {scene_pos_for_node}")
+
+    # Ensure the panel is parented to the view or main window to manage its lifecycle and positioning
+    # Using view as parent makes sense for a view-specific popup.
+    # The panel is WA_DeleteOnClose, so it will clean itself up.
+    panel = NodeSpawningPanel(graph_controller, scene_pos_for_node, parent=view)
+    panel.show_panel(global_pos_for_panel)
     return True

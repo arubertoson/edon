@@ -9,15 +9,15 @@ This module provides the GraphController class, which is responsible for:
 
 """
 
-from collections.abc import Mapping, Sequence, MutableMapping
+from collections.abc import Mapping, MutableMapping, Sequence
 from typing import TYPE_CHECKING, Type
 
 from loguru import logger
 from PySide6.QtCore import QPointF
 
 from edon.graph import EntityGraph
-from edon.types import SocketAddress, SocketRole, EdgeKey
 from edon.node import EntityNode
+from edon.types import EdgeKey, SocketAddress, SocketRole
 from edon_ui import theme
 from edon_ui.graph.registry import GraphUIDataRegistry
 from edon_ui.items.edge import EdgeItem
@@ -136,8 +136,6 @@ class GraphController:
 
         node_item = create_node_item(
             entity_node,
-            scene_position.x(),
-            scene_position.y(),
         )
 
         # Register with scene and data layer
@@ -201,7 +199,7 @@ class GraphController:
 
         self.scene._update_scene_content_display()
 
-    def handle_ui_node_creation_request(self, node_type_hint: str, scene_pos: QPointF) -> None:
+    def handle_ui_node_creation_request(self, node_type_hint: str, scene_pos: QPointF) -> NodeItem:
         """
         Slot to handle the new_node_requested_at_scene_pos signal from the UI (e.g., GraphicsView).
         It determines the entity node class to create based on the hint and then
@@ -216,10 +214,9 @@ class GraphController:
             f"CORRUPTION: Node type hint '{node_type_hint}' not found in registry. Cannot create node."
         )
 
-        self.request_add_node(
+        return self.request_add_node(
             node_entity_class=node_class_to_create,
-            scene_position=scene_pos,
-            **{"title": node_class_to_create.node_type},
+            mouse_position=scene_pos,
         )
 
     def handle_ui_edge_link_request(
@@ -270,7 +267,7 @@ class GraphController:
     def request_add_node(
         self,
         node_entity_class: type[EntityNode],
-        scene_position: QPointF,
+        mouse_position: QPointF,
         **node_specific_kwargs,
     ) -> NodeItem:
         """
@@ -280,10 +277,10 @@ class GraphController:
         This is the primary method for adding nodes during user interaction
         or when populating from existing graph data.
         """
-        logger.debug(f"Creating new node of type '{node_entity_class}' at {scene_position}")
+        logger.debug(f"Creating new node of type '{node_entity_class}' at {mouse_position}")
 
         new_entity_node = node_entity_class(**node_specific_kwargs)
-        node_item = self._register_node_internal(new_entity_node, scene_position)
+        node_item = self._register_node_internal(new_entity_node, mouse_position)
 
         return node_item
 
