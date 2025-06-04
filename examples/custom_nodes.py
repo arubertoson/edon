@@ -2,7 +2,13 @@ from loguru import logger
 
 from edon.graph import EntityGraph
 from edon.node import EntityNode
-from edon.types import SocketDisplayState, SocketDef
+from edon.subgraph.node import SubGraphNode  # Import SubGraphNode
+from edon.types import (
+    SocketDisplayState,
+    SocketDef,
+    SocketAddress,
+    SocketRole,
+)  # Import SocketAddress, SocketRole
 from edon_ui.app import EdonApplication  # Import EdonApplication instead of main
 from edon_ui.widgets.factories import SocketType  # Import the new enum
 
@@ -12,26 +18,27 @@ from edon_ui.widgets.factories import SocketType  # Import the new enum
 class IntegerNode(EntityNode):
     """A node that outputs a single integer value (defined declaratively)."""
 
-    # Class attributes define the node's properties and sockets
     node_type = "constant.int"
     source_socket_definitions = [
         SocketDef(name="src_int", socket_type=SocketType.INTEGER),
     ]
     target_socket_definitions = [
         SocketDef(
-            name="trg_int", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.WIDGET
+            name="trg_int",
+            socket_type=SocketType.INTEGER,
+            display_state=SocketDisplayState.WIDGET,
+            default=0,
         ),
     ]
 
     def process(self):
-        self.target_sockets["trg_int"].value = self.source_sockets["src_int"].value
-        return self.target_sockets["trg_int"].value
+        self.sockets["src_int"].value = self.sockets["trg_int"].value
+        logger.debug(f"IntegerNode ({self.name}) processed value: {self.sockets['trg_int'].value}")
 
 
 class FloatNode(EntityNode):
     """A node that outputs a single float value (defined declaratively)."""
 
-    # Class attributes define the node's properties and sockets
     node_type = "constant.float"
     source_socket_definitions = [
         SocketDef(name="src_float", socket_type=SocketType.FLOAT),
@@ -41,31 +48,33 @@ class FloatNode(EntityNode):
             name="trg_float",
             socket_type=SocketType.FLOAT,
             display_state=SocketDisplayState.LINK_WIDGET,
+            default=0.0,
         ),
     ]
 
     def process(self):
-        self.target_sockets["trg_float"].value = self.source_sockets["src_float"].value
-        return self.target_sockets["trg_float"].value
+        self.sockets["src_float"].value = self.sockets["trg_float"].value
+        logger.debug(f"FloatNode ({self.name}) processed value: {self.sockets['trg_int'].value}")
 
 
 class StringNode(EntityNode):
     """A node that outputs a single string value (defined declaratively)."""
 
-    # Class attributes define the node's properties and sockets
     node_type = "string.text"
-    source_socket_definitions = [
+    source_socket_definitions = [  # Output
         SocketDef(name="src_text", socket_type=SocketType.STRING),
     ]
-    target_socket_definitions = [
+    target_socket_definitions = [  # Input
         SocketDef(
-            name="trg_text", socket_type=SocketType.STRING, display_state=SocketDisplayState.WIDGET
+            name="trg_text",
+            socket_type=SocketType.STRING,
+            display_state=SocketDisplayState.WIDGET,
+            default="",
         )
     ]
 
     def process(self):
-        self.target_sockets["trg_text"].value = self.source_sockets["src_text"].value
-        return self.target_sockets["trg_text"].value
+        self.sockets["src_text"].value = self.sockets["trg_text"].value
 
 
 class LargeTextNode(EntityNode):
@@ -73,133 +82,102 @@ class LargeTextNode(EntityNode):
 
     node_type = "text.large_input"
     source_socket_definitions = [
-        SocketDef(name="src_text", socket_type=SocketType.LARGE_STRING),
+        SocketDef(name="src_text", socket_type=SocketType.STRING),
     ]
     target_socket_definitions = [
         SocketDef(
-            name="trg_text", socket_type=SocketType.STRING, display_state=SocketDisplayState.WIDGET
+            name="trg_text",
+            socket_type=SocketType.LARGE_STRING,
+            display_state=SocketDisplayState.WIDGET,
+            default="",
         )
     ]
 
     def process(self):
-        self.target_sockets["trg_text"].value = self.source_sockets["src_text"].value
-        return self.target_sockets["trg_text"].value
+        self.sockets["src_text"].value = self.sockets["trg_text"].value
 
 
 class AddNode(EntityNode):
     """A node that adds two integer inputs and outputs the result (declaratively)."""
 
     node_type = "math.add"
-    source_socket_definitions = [
+    source_socket_definitions = [  # Output
         SocketDef(name="result", socket_type=SocketType.INTEGER),
     ]
-    target_socket_definitions = [
-        SocketDef(name="a", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.ALL),
-        SocketDef(name="b", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.ALL),
+    target_socket_definitions = [  # Inputs
+        SocketDef(
+            name="a",
+            socket_type=SocketType.INTEGER,
+            display_state=SocketDisplayState.ALL,
+            default=0,
+        ),
+        SocketDef(
+            name="b",
+            socket_type=SocketType.INTEGER,
+            display_state=SocketDisplayState.ALL,
+            default=0,
+        ),
     ]
 
     def process(self):
-        # Access sockets created by the base class based on definitions
-        a_socket = self.source_sockets["a"]
-        b_socket = self.source_sockets["b"]
+        a_val = self.sockets["a"].value
+        b_val = self.sockets["b"].value
+        result = a_val + b_val
 
-        # Get input values (assuming defaults or connections provide them)
-        # Sockets should have a default value (e.g., None or 0) upon creation
-        # or the graph executor handles pulling values from connections.
-        a_value = 0
-        b_value = 0
-
-        if a_socket.is_linked():
-            connected_socket = a_socket.links[0]
-            a_value = connected_socket.value if connected_socket.value is not None else 0
-        elif a_socket.value is not None:
-            a_value = a_socket.value  # Use default value if not connected
-
-        if b_socket.is_linked():
-            connected_socket = b_socket.links[0]
-            b_value = connected_socket.value if connected_socket.value is not None else 0
-        elif b_socket.value is not None:
-            b_value = b_socket.value  # Use default value if not connected
-
-        result = a_value + b_value
-        self.target_sockets["result"].value = result
-        logger.debug(f"AddNode ({self.name}): {a_value} + {b_value} = {result}")
+        self.sockets["result"].value = result
+        logger.debug(f"AddNode ({self.name}): {a_val} + {b_val} = {result}")
 
 
 class MultiplyNode(EntityNode):
     """A node that multiplies a float and an integer and outputs the result (declaratively)."""
 
     node_type = "math.multiply"
-    source_socket_definitions = [
+    source_socket_definitions = [  # Output
         SocketDef(name="result", socket_type=SocketType.FLOAT),
     ]
-    target_socket_definitions = [
-        SocketDef(name="a", socket_type=SocketType.FLOAT, display_state=SocketDisplayState.ALL),
-        SocketDef(name="b", socket_type=SocketType.INTEGER, display_state=SocketDisplayState.ALL),
+    target_socket_definitions = [  # Inputs
+        SocketDef(
+            name="a",
+            socket_type=SocketType.FLOAT,
+            display_state=SocketDisplayState.ALL,
+            default=0.0,
+        ),
+        SocketDef(
+            name="b",
+            socket_type=SocketType.INTEGER,
+            display_state=SocketDisplayState.ALL,
+            default=0,
+        ),
     ]
 
     def process(self):
-        # Access sockets created by the base class based on definitions
-        a_socket = self.source_sockets["a"]
-        b_socket = self.source_sockets["b"]
+        a_val = self.sockets["a"].value
+        b_val = self.sockets["b"].value
+        result = a_val * b_val
 
-        # Get input values
-        a_value = 0.0
-        b_value = 0
-
-        if a_socket.is_linked():
-            connected_socket = a_socket.links[0]
-            a_value = connected_socket.value if connected_socket.value is not None else 0.0
-        elif a_socket.value is not None:
-            a_value = a_socket.value  # Use default value if not connected
-
-        if b_socket.is_linked():
-            connected_socket = b_socket.links[0]
-            b_value = connected_socket.value if connected_socket.value is not None else 0
-        elif b_socket.value is not None:
-            b_value = b_socket.value  # Use default value if not connected
-
-        result = a_value * b_value
-        self.target_sockets["result"].value = result
-        logger.debug(f"MultiplyNode ({self.name}): {a_value} * {b_value} = {result}")
+        self.sockets["result"].value = result
+        logger.debug(f"MultiplyNode ({self.name}): {a_val} * {b_val} = {result}")
 
 
 class ConcatNode(EntityNode):
     """A node that concatenates two string inputs and outputs the result (declaratively)."""
 
     node_type = "string.concat"
-    source_socket_definitions = [
+    source_socket_definitions = [  # Output
         SocketDef(name="result", socket_type=SocketType.STRING),
     ]
-    target_socket_definitions = [
-        SocketDef(name="a", socket_type=SocketType.STRING),
-        SocketDef(name="b", socket_type=SocketType.STRING),
+    target_socket_definitions = [  # Inputs
+        SocketDef(name="a", socket_type=SocketType.STRING, default=""),
+        SocketDef(name="b", socket_type=SocketType.STRING, default=""),
     ]
 
     def process(self):
-        # Access sockets created by the base class based on definitions
-        a_socket = self.source_sockets["a"]
-        b_socket = self.source_sockets["b"]
+        a_val = self.sockets["a"].value
+        b_val = self.sockets["b"].value
+        result = a_val + b_val
 
-        # Get input values
-        a_value = ""
-        b_value = ""
-
-        if a_socket.is_linked():
-            connected_socket = a_socket.links[0]
-            a_value = connected_socket.value if connected_socket.value is not None else ""
-        elif a_socket.value is not None:
-            a_value = a_socket.value  # Use default value if not connected
-
-        if b_socket.is_linked():
-            connected_socket = b_socket.links[0]
-            b_value = connected_socket.value if connected_socket.value is not None else ""
-        elif b_socket.value is not None:
-            b_value = b_socket.value  # Use default value if not connected
-
-        result = a_value + b_value
-        self.target_sockets["result"].value = result
-        logger.debug(f"ConcatNode ({self.name}): '{a_value}' + '{b_value}' = '{result}'")
+        self.sockets["result"].value = result
+        logger.debug(f"ConcatNode ({self.name}): '{a_val}' + '{b_val}' = '{result}'")
 
 
 # --- Register custom nodes ---
@@ -211,7 +189,8 @@ custom_node_registry = {
     "AddNode": AddNode,
     "MultiplyNode": MultiplyNode,
     "ConcatNode": ConcatNode,
-    "LargeTextNode": LargeTextNode,  # Register LargeTextNode
+    "LargeTextNode": LargeTextNode,
+    "SubGraphNode": SubGraphNode,  # Add SubGraphNode to the registry
 }
 
 
@@ -220,18 +199,45 @@ def create_sample_graph():
     graph = EntityGraph()
 
     # Create nodes - __init__ is handled by @dataclass and EntityNode.__post_init__
-    int_node = IntegerNode()
-    float_node = FloatNode()
-    multiply_node = MultiplyNode()
+    # Giving explicit names to help with debugging and identification in UI
+    int_node = IntegerNode(name="MyInt")
+    float_node = FloatNode(name="MyFloat")
+    multiply_node = MultiplyNode(name="MyMultiplier")
 
     # Create string nodes
-    string_node1 = StringNode()
-    string_node2 = StringNode()
-    concat_node = ConcatNode()
-    large_text_node1 = LargeTextNode()  # Create an instance
+    string_node1 = StringNode(name="Str1")
+    string_node2 = StringNode(name="Str2")
+    concat_node = ConcatNode(name="MyConcatenator")
+    large_text_node1 = LargeTextNode(name="MyLargeText")
 
-    logger.debug(f"Node rpl: {string_node1}")
-    print("!!!!!")
+    # Create a SubGraphNode
+    sub_graph_node = SubGraphNode(name="MyFirstSubGraph")
+
+    # To make the SubGraphNode display sockets, we need to define some proxy sockets.
+    # We can do this by adding internal nodes and then exposing their sockets.
+    # Example: Create an internal AddNode and expose its input and output.
+    internal_adder = AddNode(name="InternalAdder")  # This node needs inputs and outputs defined
+    sub_graph_node.internal_graph.add_node(internal_adder)
+
+    # Expose 'a' and 'b' from internal_adder as inputs to the sub_graph_node
+    # Ensure 'a' and 'b' are target sockets on AddNode
+    sub_graph_node.add_proxy_socket(
+        proxy_name="sub_input_A",
+        internal_addr=SocketAddress(internal_adder.id, "a", SocketRole.TARGET),
+        is_input=True,
+    )
+    sub_graph_node.add_proxy_socket(
+        proxy_name="sub_input_B",
+        internal_addr=SocketAddress(internal_adder.id, "b", SocketRole.TARGET),
+        is_input=True,
+    )
+    # Expose 'result' from internal_adder as an output from the sub_graph_node
+    # Ensure 'result' is a source socket on AddNode
+    sub_graph_node.add_proxy_socket(
+        proxy_name="sub_output_Sum",
+        internal_addr=SocketAddress(internal_adder.id, "result", SocketRole.SOURCE),
+        is_input=False,
+    )
 
     # Add nodes to graph
     graph.add_node(int_node)
@@ -240,17 +246,28 @@ def create_sample_graph():
     graph.add_node(string_node1)
     graph.add_node(string_node2)
     graph.add_node(concat_node)
-    graph.add_node(large_text_node1)  # Add to graph
+    graph.add_node(large_text_node1)
+    graph.add_node(sub_graph_node)  # Add the sub-graph node to the main graph
 
     # Set initial values for the nodes
+    # Accessing sockets via self.sockets dictionary is generally safer if names are guaranteed unique
+    # For EntityNode, target_sockets and source_sockets are dictionaries.
     int_node.sockets["trg_int"].value = 5
     float_node.sockets["trg_float"].value = 2.5
     string_node1.sockets["trg_text"].value = "Hello, "
     string_node2.sockets["trg_text"].value = "World!"
+    # For LargeTextNode, the input socket was renamed to 'trg_text'
+    large_text_node1.sockets["trg_text"].value = "Initial large text for the popup."
 
-    # large_text_node1.source_sockets[
-    # "trg_large_text"
-    # ].value = "This is some initial large text.\nIt can span multiple lines."
+    # Set values for the SubGraphNode's internal adder via its exposed inputs (optional for testing)
+    # This would typically happen through connections or parameter setting.
+    # For UI testing, the proxy sockets should appear.
+    # Example: Set the value of the proxy socket on the SubGraphNode itself
+    if "sub_input_A" in sub_graph_node.sockets:  # Sockets on SubGraphNode are its proxy sockets
+        sub_graph_node.sockets["sub_input_A"].value = 10
+    if "sub_input_B" in sub_graph_node.sockets:
+        sub_graph_node.sockets["sub_input_B"].value = 20
+    # The internal_adder.process() would then use these values if the sub-graph is processed.
 
     # Connect float_node and int_node to multiply_node
     # success1, reason1 = graph.connect_sockets(
@@ -284,12 +301,8 @@ def create_sample_graph():
 if __name__ == "__main__":
     # Create and run the application with our custom graph and node registry
     graph = create_sample_graph()
-    app = EdonApplication(custom_node_registry, log_level="TRACE")
+    app = EdonApplication(custom_node_registry, log_level="TRACE")  # Use TRACE for detailed logs
     app.load_graph(graph)
-
-    # Set our custom graph and node registry using property setters
-    # app.entity_graph = create_sample_graph()
-    # app.node_registry = custom_node_registry
 
     # Run the application
     import sys

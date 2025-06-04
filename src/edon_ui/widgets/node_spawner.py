@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QLineEdit, QListWidget, QVBoxLayout, QWidget
 from thefuzz import fuzz
 
 if TYPE_CHECKING:
-    from edon_ui.graph.controller import GraphController
+    from edon_ui.graph.controller import WorkspaceController
 
 
 class NodeSpawningPanel(QWidget):
@@ -25,7 +25,7 @@ class NodeSpawningPanel(QWidget):
 
     def __init__(
         self,
-        graph_controller: GraphController,
+        graph_controller: WorkspaceController,
         spawn_position: QPointF,
         parent: QWidget | None = None,
     ):

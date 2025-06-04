@@ -21,6 +21,7 @@ ACCENT_ERROR = QColor("#E74C3C")  # Red
 
 # --- Node Specific (derived from image and palette) ---
 NODE_BACKGROUND = QColor("#4A4A4A")
+SUBGRAPH_NODE_BACKGROUND = QColor("#3E505B") # Distinct background for SubGraphNode instances
 NODE_BORDER_DEFAULT = NODE_BACKGROUND.lighter(110)  # Subtle darker border
 NODE_BORDER_SELECTED = QColor("#5F9FDF")  # A distinct blue for selection
 NODE_BORDER_RADIUS = 4.0

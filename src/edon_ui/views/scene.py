@@ -6,6 +6,8 @@ helper classes for managing edge dragging operations (`DragPrepInfo`, `DragConte
 and for displaying instructional text when the scene is empty (`EmptySceneTextItem`).
 """
 
+from __future__ import annotations
+
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -31,7 +33,7 @@ from edon_ui.items.socket import SocketItem, SocketLinkItem
 if TYPE_CHECKING:
     from PySide6.QtCore import QObject
 
-    from edon_ui.graph import GraphController
+    from edon_ui.graph import WorkspaceController
 
 
 @dataclass
@@ -212,10 +214,10 @@ class GraphicsScene(QGraphicsScene):
 
     scene_node_count_changed = Signal(int)
 
-    def __init__(self, parent: "QObject | None" = None):
+    def __init__(self, controller: WorkspaceController, parent: QObject | None = None):
         super().__init__(parent)
 
-        self._controller: "GraphController | None"
+        self._controller = controller
         self._drag_context: DragContext | None = None
 
         self.active_area_size = 2000  # Initial size, can be smaller if preferred
@@ -240,7 +242,7 @@ class GraphicsScene(QGraphicsScene):
         self.selectionChanged.connect(self._handle_selection_changed)
 
     @property
-    def controller(self) -> "GraphController":
+    def controller(self) -> WorkspaceController:
         assert self._controller is not None, (
             "CORRUPTION: Scene needs a controller before operationg."
         )
@@ -248,7 +250,7 @@ class GraphicsScene(QGraphicsScene):
         return self._controller
 
     @controller.setter
-    def controller(self, controller: "GraphController") -> None:
+    def controller(self, controller: WorkspaceController) -> None:
         self._controller = controller
 
     def clear(self) -> None:

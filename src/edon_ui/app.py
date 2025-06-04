@@ -21,7 +21,7 @@ from edon_ui.commands import (
     KeyProcessor,
     default_command_registry,
 )
-from edon_ui.graph import GraphController
+from edon_ui.graph import WorkspaceController
 from edon_ui.views import GraphicsScene, GraphicsView, MainWindow
 
 
@@ -75,22 +75,16 @@ class EdonApplication:
         self._qt_app: QApplication = self._create_qt_application()
         self._qt_app.setStyleSheet(theme.APPLICATION_STYLESHEET)
 
-        # Node registry is passed, but graph data is loaded explicitly later if provided.
+        # We're setting up the controller with it's view and node registry
         self._node_registry: dict[str, type[EntityNode]] = node_registry or {}
-        self._graph_controller: GraphController = GraphController(
-            node_type_registry=self._node_registry
+        self._controller = WorkspaceController(
+            node_type_registry=self._node_registry,
         )
 
-        # Scene is created with the controller. It will be initially empty.
-        scene = GraphicsScene(None)
-        scene.controller = self._graph_controller
-        self._graph_controller.scene = scene
-        self._graphics_view: GraphicsView = GraphicsView(scene)
-
         # Initialize public API components
-        self.main_window: MainWindow = MainWindow(self._graphics_view)
+        self.main_window = MainWindow(self._controller.view)
         self.command_registry: CommandRegistry = default_command_registry
-        self.key_mapping: KeyMapping = KeyMapping()
+        self.key_mapping = KeyMapping()
 
         self._setup_command_system()
 
@@ -104,7 +98,7 @@ class EdonApplication:
         importing graphs, or replacing the current workspace content.
         """
         logger.info(f"Application loading new graph with {len(entity_graph.nodes)} nodes")
-        self._graph_controller.load_graph(entity_graph)
+        self._controller.load_graph(entity_graph)
 
     def clear_graph(self) -> None:
         """
@@ -116,7 +110,7 @@ class EdonApplication:
     @property
     def entity_graph(self) -> EntityGraph:
         """Access to the current entity graph for serialization or inspection."""
-        return self._graph_controller.entity_graph
+        return self._controller.graph
 
     @entity_graph.setter
     def entity_graph(self, value: EntityGraph) -> None:
@@ -137,8 +131,8 @@ class EdonApplication:
         """
         self._node_registry = value
         # Update the controller's copy of the node registry
-        self._graph_controller.node_registry.clear()
-        self._graph_controller.node_registry.update(value)
+        self._controller.node_registry.clear()
+        self._controller.node_registry.update(value)
         logger.info(f"Node registry updated in controller with {len(value)} node types")
 
     def _setup_logging(self, log_level: str) -> None:
@@ -175,7 +169,7 @@ class EdonApplication:
 
         # Create key processor for handling input events
         self._key_processor: KeyProcessor = KeyProcessor(self.command_registry, self.key_mapping)
-        self._graphics_view.key_processor = self._key_processor
+        self._controller.view.key_processor = self._key_processor
 
     def run(self) -> int:
         """Shows the main window and starts the Qt application event loop.

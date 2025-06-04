@@ -4,6 +4,8 @@ This module provides the QGraphicsObject subclass that handles rendering,
 interaction, and layout for individual nodes within the graphics scene.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -33,8 +35,8 @@ class NodeItem(QGraphicsObject):
         self,
         title: str | None,
         node_entity_id: str,
-        target_sockets: list["SocketItem"] | None = None,
-        source_sockets: list["SocketItem"] | None = None,
+        target_sockets: list[SocketItem] | None = None,
+        source_sockets: list[SocketItem] | None = None,
         width: float = theme.NODE_MIN_WIDTH,
         height: float = theme.NODE_MIN_HEIGHT,
     ) -> None:
@@ -232,6 +234,100 @@ class NodeItem(QGraphicsObject):
         # Ensure title_text_item is correctly positioned.
         # The initial positioning in __init__ might not be perfect after font metrics.
         # For truly centered text in a custom-drawn rounded rect, manual calculation is best.
+        self.title_text_item.setDefaultTextColor(theme.NODE_TITLE_TEXT)
+        self.title_text_item.setFont(theme.FONT_NODE_TITLE)
+
+        # Center the QGraphicsTextItem within the title bar rect
+        title_text_rect = self.title_text_item.boundingRect()
+        title_text_x = (self._width - title_text_rect.width()) / 2
+        title_text_y = (theme.NODE_TITLE_HEIGHT - title_text_rect.height()) / 2
+        self.title_text_item.setPos(title_text_x, title_text_y)
+
+
+class SubGraphNodeItem(NodeItem):
+    """A visual node item for SubGraphNodes, with distinct styling."""
+
+    def __init__(
+        self,
+        title: str | None,
+        node_entity_id: str,
+        target_sockets: list[SocketItem] | None = None,
+        source_sockets: list[SocketItem] | None = None,
+        width: float = theme.NODE_MIN_WIDTH,
+        height: float = theme.NODE_MIN_HEIGHT,
+    ) -> None:
+        super().__init__(title, node_entity_id, target_sockets, source_sockets, width, height)
+
+    def paint(
+        self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None
+    ) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+        # Main node body
+        node_rect = self.boundingRect()
+        # Use SUBGRAPH_NODE_BACKGROUND for the main body
+        painter.setBrush(QBrush(theme.SUBGRAPH_NODE_BACKGROUND))  # Changed line
+
+        # Border (same as NodeItem)
+        border_width = theme.NODE_BORDER_WIDTH_DEFAULT
+        if self.isSelected():
+            pen = QPen(theme.NODE_BORDER_SELECTED, theme.NODE_BORDER_WIDTH_SELECTED)
+            border_width = theme.NODE_BORDER_WIDTH_SELECTED
+        else:
+            pen = QPen(theme.NODE_BORDER_DEFAULT, theme.NODE_BORDER_WIDTH_DEFAULT)
+        painter.setPen(pen)
+        painter.drawRoundedRect(node_rect, theme.NODE_BORDER_RADIUS, theme.NODE_BORDER_RADIUS)
+
+        # Title Bar area (copied from NodeItem.paint)
+        # Create a path for the title bar with rounded top corners
+        title_bar_rect = QRectF(0, 0, node_rect.width(), theme.NODE_TITLE_HEIGHT)
+        # Adjust for half border width to be inside the main border line
+        half_border = border_width / 2.0
+        fill_title_rect = title_bar_rect.adjusted(
+            half_border, half_border, -half_border, 0
+        )  # Don't adjust bottom for fill
+
+        title_fill_path = QPainterPath()
+        title_fill_path.moveTo(
+            fill_title_rect.left() + theme.NODE_BORDER_RADIUS - half_border, fill_title_rect.top()
+        )
+        title_fill_path.lineTo(
+            fill_title_rect.right() - theme.NODE_BORDER_RADIUS + half_border, fill_title_rect.top()
+        )
+        title_fill_path.arcTo(
+            QRectF(
+                fill_title_rect.right() - 2 * theme.NODE_BORDER_RADIUS + half_border,
+                fill_title_rect.top(),
+                2 * theme.NODE_BORDER_RADIUS - half_border,  # arc width
+                2 * theme.NODE_BORDER_RADIUS - half_border,  # arc height
+            ),
+            90,
+            -90,
+        )
+        title_fill_path.lineTo(
+            fill_title_rect.right(), fill_title_rect.bottom()
+        )  # Straight down to bottom of title bar rect
+        title_fill_path.lineTo(
+            fill_title_rect.left(), fill_title_rect.bottom()
+        )  # Straight across bottom
+        title_fill_path.arcTo(
+            QRectF(
+                fill_title_rect.left(),
+                fill_title_rect.top(),
+                2 * theme.NODE_BORDER_RADIUS - half_border,
+                2 * theme.NODE_BORDER_RADIUS - half_border,
+            ),
+            180,
+            -90,
+        )
+        title_fill_path.closeSubpath()
+
+        painter.setBrush(QBrush(theme.NODE_TITLE_BACKGROUND))  # Title background remains the same
+        painter.setPen(Qt.PenStyle.NoPen)  # No border for the fill path itself
+        painter.drawPath(title_fill_path)
+
+        # Position and draw title text (same as NodeItem)
         self.title_text_item.setDefaultTextColor(theme.NODE_TITLE_TEXT)
         self.title_text_item.setFont(theme.FONT_NODE_TITLE)
 

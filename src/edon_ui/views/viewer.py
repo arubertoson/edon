@@ -13,11 +13,11 @@ from edon_ui.views.scene import GraphicsScene
 from edon_ui.views.window import MainWindow
 
 if TYPE_CHECKING:
-    from PySide6.QtWidgets import QGraphicsItem, QMainWindow
+    from PySide6.QtWidgets import QGraphicsItem, QMainWindow, QGraphicsScene
 
     from edon.graph import EntityGraph
     from edon_ui.commands.key_processor import KeyProcessor
-    from edon_ui.graph.controller import GraphController
+    from edon_ui.graph.controller import WorkspaceController
 
 
 @dataclass
@@ -25,7 +25,7 @@ class EditorContext:
     view: GraphicsView
     scene: GraphicsScene
     window: QMainWindow
-    controller: GraphController
+    controller: WorkspaceController
     entity_graph: EntityGraph
     selected_items: list[QGraphicsItem]
     event: QInputEvent | None = None
@@ -35,10 +35,8 @@ class EditorContext:
 class GraphicsView(QGraphicsView):
     RIGHT_CLICK_MOVE_THRESHOLD = 5
 
-    def __init__(self, scene, parent=None):
-        super().__init__(scene, parent)
-        logger.info(f"GraphicsView initialized with scene: {scene}")
-
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.key_processor: KeyProcessor | None = None
 
         # Rendering and transformation
@@ -62,7 +60,11 @@ class GraphicsView(QGraphicsView):
         self._interaction_enabled = True
 
         scene = cast(GraphicsScene, self.scene())
-        scene.scene_node_count_changed.connect(self._update_view_behavior)
+
+    def setScene(self, scene: QGraphicsScene | None) -> None:
+        super().setScene(scene)
+        if scene is not None:
+            cast(GraphicsScene, scene).scene_node_count_changed.connect(self._update_view_behavior)
 
     @Slot(int)
     def _update_view_behavior(self, num_scene_items: int) -> None:
@@ -123,7 +125,7 @@ class GraphicsView(QGraphicsView):
             scene=scene,
             window=window,
             controller=scene.controller,
-            entity_graph=scene.controller.entity_graph,
+            entity_graph=scene.controller.graph,
             selected_items=scene.selectedItems(),
             event=event,
             params={},

@@ -3,8 +3,8 @@
 This package implements a comprehensive graphics system.
 """
 
-from edon_ui.graph.controller import GraphController
+from edon_ui.graph.controller import WorkspaceController
 
 __all__ = [
-    "GraphController",
+    "WorkspaceController",
 ]

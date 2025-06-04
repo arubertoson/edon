@@ -2,7 +2,7 @@ import pytest
 from PySide6.QtCore import QPointF
 
 from src.edon.node import EntityNode
-from src.edon_ui.graph.controller import GraphController
+from src.edon_ui.graph.controller import WorkspaceController
 from src.edon_ui.widgets.node_spawner import NodeSpawningPanel
 
 
@@ -45,7 +45,7 @@ def spawner_graph_controller(qtbot):
     # Assuming constructor for now, or that it can be set.
     # If GraphController is a QObject and has signals/slots relevant here,
     # it might need to be managed by qtbot too.
-    controller = GraphController(
+    controller = WorkspaceController(
         {
             SpawnerTestIntNode.__name__: SpawnerTestIntNode,
             SpawnerTestStrNode.__name__: SpawnerTestStrNode,

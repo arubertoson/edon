@@ -9,6 +9,8 @@ This module provides the GraphController class, which is responsible for:
 
 """
 
+from __future__ import annotations
+
 from collections.abc import Mapping, MutableMapping, Sequence
 from typing import TYPE_CHECKING, Type
 
@@ -19,20 +21,19 @@ from edon.graph import EntityGraph
 from edon.node import EntityNode
 from edon.types import EdgeKey, SocketAddress, SocketRole
 from edon_ui import theme
+from edon_ui.graph.context import GraphContextStack
 from edon_ui.graph.registry import GraphUIDataRegistry
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.factory import create_node_item
 from edon_ui.items.node import NodeItem
-from edon_ui.views.scene import DragPrepInfo
-
-if TYPE_CHECKING:
-    from edon_ui.views.scene import GraphicsScene
+from edon_ui.views.scene import GraphicsScene, DragPrepInfo
+from edon_ui.views.viewer import GraphicsView
 
 
 type NodeRegistryMap = MutableMapping[str, Type[EntityNode]]
 
 
-class GraphController:
+class WorkspaceController:
     """
     Controls the synchronization between the entity graph (edon.graph.EntityGraph)
     and the UI representation (edon_ui.graphics_scene.GraphicsScene).
@@ -48,31 +49,45 @@ class GraphController:
         node_type_registry: Mapping[str, Type[EntityNode]] | None = None,
     ):
         """
-        Initialize controller with empty graph and registry.
-        Graph content will be loaded separately via load_graph().
+        Initialize controller, creating its own GraphicsView and initial root graph context.
+        The GraphContextStack is initialized with this root context.
+        Graph content can be loaded subsequently via load_graph().
         """
-        self._scene: "GraphicsScene | None" = None  # Will be set by set_scene
-        self.entity_graph: EntityGraph = EntityGraph()  # Always start empty
-        self.data: GraphUIDataRegistry = GraphUIDataRegistry()
+        self._view: GraphicsView = GraphicsView()
+        self.graph_context_stack: GraphContextStack = GraphContextStack()
         self.node_registry: NodeRegistryMap = dict(node_type_registry or {})
 
-        logger.info(
-            "GraphController initialized with an empty entity graph. UI scene will be set later."
+        initial_scene = GraphicsScene(controller=self)
+        initial_graph = EntityGraph()
+        initial_registry = GraphUIDataRegistry()
+        self.graph_context_stack.initialize(
+            root_graph=initial_graph,
+            root_scene=initial_scene,
+            root_registry=initial_registry,
         )
+
+        self._view.setScene(initial_scene)
+        assert self.view.scene() is initial_scene, (
+            "CORRUPTION: GraphicsView's scene does not match the initial_scene created by WorkspaceController."
+        )
+        # Ensure the scene (especially if empty) displays its state correctly.
+        initial_scene._update_scene_content_display()
 
     @property
-    def scene(self) -> "GraphicsScene":
-        assert self._scene is not None, "CORRUPTION: Using scene opertion without a scene set."
+    def view(self) -> GraphicsView:
+        return self._view
 
-        return self._scene
+    @property
+    def scene(self) -> GraphicsScene:
+        return self.graph_context_stack.current_scene
 
-    @scene.setter
-    def scene(self, scene: "GraphicsScene") -> None:
-        logger.debug(
-            f"GraphController: UI scene set to {scene}. Populating scene from graph data."
-        )
+    @property
+    def graph(self) -> EntityGraph:
+        return self.graph_context_stack.current_graph
 
-        self._scene = scene
+    @property
+    def data(self) -> GraphUIDataRegistry:
+        return self.graph_context_stack.current_registry
 
     def _clear_all_ui(self) -> None:
         """
@@ -94,8 +109,7 @@ class GraphController:
             self.scene.remove_node(node_item)
 
         # Reset the registry to clean state
-        self.data = GraphUIDataRegistry()
-        # self._registration_order.clear() # _registration_order is not a member
+        self.graph_context_stack.current_level.registry = GraphUIDataRegistry()
 
         logger.debug(
             f"Cleared {len(edge_items_to_remove)} edges and {len(node_items_to_remove)} nodes"
@@ -111,22 +125,33 @@ class GraphController:
         """
         logger.info(f"Loading new graph with {len(entity_graph.nodes)} nodes")
 
-        # Reset All Sources
-        self.data = GraphUIDataRegistry()
-        self.entity_graph = EntityGraph()
-        self.scene.clear()
+        assert self.graph_context_stack.is_at_root(), (
+            "load_graph can only be called when at the root navigation level."
+        )
+
+        new_entity_graph = EntityGraph()
+        new_scene = GraphicsScene(controller=self)
+        new_registry = GraphUIDataRegistry()
+
+        self.graph_context_stack.initialize(
+            root_graph=new_entity_graph,
+            root_scene=new_scene,
+            root_registry=new_registry,
+        )
 
         # Create Scene state from the given entity_graph
         self._populate_scene_from_graph_data(source_graph=entity_graph)
-        self.scene._update_scene_content_display()
 
-        logger.info("Graph loading completed successfully")
+        self.view.setScene(new_scene)
+        new_scene._update_scene_content_display()
+
+        logger.info("Graph loading completed successfully for the current context")
 
     def _register_node_internal(
         self, entity_node: EntityNode, scene_position: QPointF
     ) -> NodeItem:
         """
-        Creates a NodeItem for an EntityNode that is ALREADY in self.entity_graph.
+        Creates a NodeItem for an EntityNode that is ALREADY in self.graph.
 
         This method only handles UI registration and assumes the entity_node
         is already properly added to the entity graph. It never modifies
@@ -140,7 +165,7 @@ class GraphController:
 
         # Register with scene and data layer
         self.scene.add_node(node_item)
-        self.entity_graph.add_node(entity_node)
+        self.graph.add_node(entity_node)
 
         self.data.register_node_with_sockets(node_item)
 
@@ -150,7 +175,7 @@ class GraphController:
         """
         Creates an EdgeItem for the given EdgeKey, adds it to the scene,
         and updates internal controller maps.
-        Assumes the link exists in self.entity_graph and source/target node UIs are registered.
+        Assumes the link exists in self.graph and source/target node UIs are registered.
         """
         logger.debug(f"GraphController: Registering UI for edge {edge_key}")
 
@@ -172,7 +197,7 @@ class GraphController:
         Populates the GraphicsScene with NodeItems and EdgeItems based on the
         given source graph (or current EntityGraph if None).
         """
-        graph_to_read = source_graph if source_graph is not None else self.entity_graph
+        graph_to_read = source_graph if source_graph is not None else self.graph
 
         logger.debug(
             f"GraphController: Populating UI scene from {'external' if source_graph else 'current'} entity graph data."
@@ -290,7 +315,7 @@ class GraphController:
         """
         logger.debug(f"GraphController: Requesting to create edge: {edge_key}")
 
-        link_success, reason = self.entity_graph.link_sockets(edge_key)
+        link_success, reason = self.graph.link_sockets(edge_key)
         assert link_success, (
             f"CORRUPTION: EntityGraph.link_sockets failed for {edge_key} with reason {reason}"
         )
@@ -319,10 +344,10 @@ class GraphController:
             # This might attempt to unlink sockets that are already unlinked if
             # entity_graph.remove_node below also handles unlinking.
             # However, entity_graph.unlink_sockets should be idempotent or handle this.
-            self.entity_graph.unlink_sockets(edge_item.edge_key)
+            self.graph.unlink_sockets(edge_item.edge_key)
             self.scene.remove_edge(edge_item)
 
-        self.entity_graph.remove_node(entity_node_id)
+        self.graph.remove_node(entity_node_id)
         self.scene.remove_node(node_item_to_remove)
 
     def request_remove_edge(self, edge_key: EdgeKey) -> None:
@@ -333,7 +358,7 @@ class GraphController:
 
         # XXX: This should be handled by assertions in the `entity_graph`, not by upstream checks.
         # Unlink sockets in the entity graph first. Refactor necessary.
-        self.entity_graph.unlink_sockets(edge_key)
+        self.graph.unlink_sockets(edge_key)
 
         edge_item = self.data.unregister_edge(edge_key)
         self.scene.remove_edge(edge_item)
@@ -404,7 +429,7 @@ class GraphController:
         This method delegates to EntityGraph.get_connection_targets() to maintain
         proper separation of concerns between UI coordination and business logic.
         """
-        valid_targets, invalid_targets = self.entity_graph.partition_valid_link_targets(
+        valid_targets, invalid_targets = self.graph.partition_valid_link_targets(
             drag_origin_socket_addr
         )
 
