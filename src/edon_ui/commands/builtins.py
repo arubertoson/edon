@@ -11,6 +11,8 @@ from edon_ui.commands.actions.basic_actions import (
     help_action,
     window_toggle_maximize_action,
     action_show_node_spawner,
+    action_enter_subgraph,
+    action_exit_subgraph,
 )
 from edon_ui.commands.core import Command
 
@@ -62,5 +64,21 @@ ALL_COMMAND_DEFINITIONS: list[Command] = [
         description="Opens a panel to search and add new nodes to the graph.",
         action=action_show_node_spawner,
         default_hotkey_sequence=_parse_hotkey_sequence("Shift+A"),
+    ),
+    Command(
+        id="graph.enter_subgraph",
+        label="Enter Subgraph",
+        category="Graph Navigation",
+        description="Enter the selected subgraph node to view/edit its internal graph.",
+        action=action_enter_subgraph,
+        default_hotkey_sequence=_parse_hotkey_sequence("Ctrl+E"),
+    ),
+    Command(
+        id="graph.exit_subgraph",
+        label="Exit Subgraph",
+        category="Graph Navigation",
+        description="Exit the current subgraph and return to its parent graph.",
+        action=action_exit_subgraph,
+        default_hotkey_sequence=_parse_hotkey_sequence("Ctrl+U"), # "U" for "Up"
     ),
 ]

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from loguru import logger
 
 from typing import TYPE_CHECKING
 
@@ -53,14 +54,17 @@ class GraphContextStack:
             graph=root_graph,
             scene=root_scene,
             registry=root_registry,
-            originating_subgraph_node=None,  # Root has no originating SubGraphNode
+            originating_subgraph_node=None,
         )
-        self._navigation_stack.append(root_level_state)
+        # During a initialize we have to reset the whole stack, the assumption
+        # is that you only do init from the root graph.
+        self._navigation_stack = [root_level_state]
 
     def push_level(self, NavigationState) -> None:
         """
         Pushes a new navigation level (e.g., after entering a subgraph).
         """
+        logger.error(f"CREATING NEW STACK {self.depth}")
         self._navigation_stack.append(NavigationState)
 
     def pop_level(self) -> NavigationState | None:
@@ -69,6 +73,8 @@ class GraphContextStack:
         Returns the state of the level that was popped, or None if at root or uninitialized.
         """
         assert self._navigation_stack, "CORRUPTION: Cannot pop from an empty navigation stack"
+        if self.is_at_root():
+            return None
 
         return self._navigation_stack.pop()
 

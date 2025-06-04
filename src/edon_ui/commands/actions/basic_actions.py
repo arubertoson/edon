@@ -10,6 +10,7 @@ from edon_ui.views.viewer import EditorContext
 from edon_ui.items.node import NodeItem
 from edon_ui.items.edge import EdgeItem
 from edon_ui.widgets.node_spawner import NodeSpawningPanel
+from edon.subgraph.node import SubGraphNode
 
 
 def close_action(context: EditorContext) -> bool:
@@ -158,3 +159,71 @@ def action_show_node_spawner(context: EditorContext) -> bool:
     panel = NodeSpawningPanel(graph_controller, scene_pos_for_node, parent=view)
     panel.show_panel(global_pos_for_panel)
     return True
+
+
+def action_enter_subgraph(context: EditorContext) -> bool:
+    """
+    Action to enter the selected SubGraphNode.
+    """
+    logger.debug("Executing action: Enter Subgraph")
+    if not hasattr(context, "controller") or context.controller is None:
+        logger.warning("Enter Subgraph action: No controller found in context.")
+        return False
+
+    controller = context.controller
+    selected_items = context.selected_items
+
+    if len(selected_items) != 1:
+        logger.trace(
+            f"Expected 1 selected item for subgraph entry, found {len(selected_items)}. No action."
+        )
+        return False
+
+    item = selected_items[0]
+    if not isinstance(item, NodeItem):
+        logger.trace(f"Selected item is not a NodeItem. Type: {type(item)}. No action.")
+        return False
+
+    entity_id = item.entity_id
+    entity_node = context.controller.graph.get_node(entity_id)
+    assert entity_node is not None, (
+        f"CRITICAL: EntityNode with ID {entity_id} not found in graph despite UI item existing."
+    )
+
+    if not isinstance(entity_node, SubGraphNode):
+        logger.trace(
+            f"Selected NodeItem's entity is not a SubGraphNode. "
+            f"Entity ID: {entity_node.id}, Type: {type(entity_node)}. No action."
+        )
+        return False
+
+    controller.enter_subgraph(item)
+
+    return True
+
+
+def action_exit_subgraph(context: EditorContext) -> bool:
+    """
+    Action to exit the current subgraph and return to the parent graph.
+    """
+    logger.debug("Executing action: Exit Subgraph")
+    if not hasattr(context, "controller") or context.controller is None:
+        logger.warning("Exit Subgraph action: No controller found in context.")
+        return False
+
+    controller = context.controller
+    if not controller.graph_context_stack.is_at_root():
+        logger.info(f"Exiting subgraph. Current depth: {controller.graph_context_stack.depth}")
+        # Assuming exit_subgraph() will be implemented on WorkspaceController
+        # based on memory.md.
+        # This method is expected to handle popping from the graph_context_stack
+        # and updating the view.
+        if hasattr(controller, "exit_subgraph"):
+            controller.exit_subgraph()
+            return True
+        else:
+            logger.error("WorkspaceController does not have an exit_subgraph method.")
+            return False
+    else:
+        logger.info("Exit Subgraph action: Already at root graph. No action taken.")
+        return False

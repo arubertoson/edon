@@ -19,9 +19,10 @@ from PySide6.QtCore import QPointF
 
 from edon.graph import EntityGraph
 from edon.node import EntityNode
+from edon.subgraph.node import SubGraphNode
 from edon.types import EdgeKey, SocketAddress, SocketRole
 from edon_ui import theme
-from edon_ui.graph.context import GraphContextStack
+from edon_ui.graph.context import GraphContextStack, NavigationState
 from edon_ui.graph.registry import GraphUIDataRegistry
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.factory import create_node_item
@@ -53,8 +54,8 @@ class WorkspaceController:
         The GraphContextStack is initialized with this root context.
         Graph content can be loaded subsequently via load_graph().
         """
-        self._view: GraphicsView = GraphicsView()
-        self.graph_context_stack: GraphContextStack = GraphContextStack()
+        self._view = GraphicsView()
+        self.graph_context_stack = GraphContextStack()
         self.node_registry: NodeRegistryMap = dict(node_type_registry or {})
 
         initial_scene = GraphicsScene(controller=self)
@@ -165,7 +166,9 @@ class WorkspaceController:
 
         # Register with scene and data layer
         self.scene.add_node(node_item)
-        self.graph.add_node(entity_node)
+        # XXX: we do this if we are populating a scene from existing graph
+        if entity_node.id not in self.graph.nodes:
+            self.graph.add_node(entity_node)
 
         self.data.register_node_with_sockets(node_item)
 
@@ -222,6 +225,74 @@ class WorkspaceController:
         for edge_key in graph_to_read.edges:
             self.request_add_edge(edge_key)
 
+        self.scene._update_scene_content_display()
+
+    def enter_subgraph(self, subgraph_node_item: NodeItem) -> None:
+        """
+        Switches the controller's context to the internal graph of the given SubGraphNodeItem.
+        """
+        logger.trace(f"Entering subgraph from depth {self.graph_context_stack.depth}")
+
+        entity_id = subgraph_node_item.entity_id
+        # The graph and UI registry should be in sync; if node_item exists, entity_node must exist.
+        entity_node = self.graph.get_node(entity_id)
+        assert entity_node is not None, (
+            f"CRITICAL: EntityNode with ID {entity_id} not found in graph despite UI item existing."
+        )
+
+        logger.debug(f"Entering subgraph for node: {entity_node.id}")
+
+        assert isinstance(entity_node, SubGraphNode), (
+            f"CORRUPTION: Node {entity_node.id} provided to enter_subgraph "
+            f"is not a SubGraphNode. Actual type: {type(entity_node)}."
+        )
+        subgraph_entity: SubGraphNode = entity_node
+        internal_graph = subgraph_entity.internal_graph
+
+        # Create new UI components for the subgraph context
+        new_scene = GraphicsScene(controller=self)
+        new_registry = GraphUIDataRegistry()
+
+        # Create and push the new navigation state
+        nav_state = NavigationState(
+            graph=internal_graph,
+            scene=new_scene,
+            registry=new_registry,
+            originating_subgraph_node=subgraph_entity,
+        )
+        self.graph_context_stack.push_level(nav_state)
+
+        # Populate the new scene from the internal graph's data
+        # The _populate_scene_from_graph_data method now takes a source_graph argument
+        self._populate_scene_from_graph_data(source_graph=internal_graph)
+
+        # Update the view to display the new scene
+        # self.scene property will now return new_scene from the context stack
+        self.view.setScene(self.scene)
+        self.scene._update_scene_content_display()
+
+        logger.info(
+            f"Successfully entered subgraph: {subgraph_entity.id}. Current depth: {self.graph_context_stack.depth}"
+        )
+
+    def exit_subgraph(self) -> None:
+        """
+        Exits the current subgraph view and returns to the parent graph view.
+        """
+        logger.debug("Attempting to exit subgraph.")
+
+        assert not self.graph_context_stack.is_at_root(), (
+            "Cannot exit subgraph: Already at the root graph."
+        )
+
+        self.graph_context_stack.pop_level()
+        logger.info(
+            f"Exited subgraph. Current depth: {self.graph_context_stack.depth}. "
+            f"Now viewing graph: {self.graph_context_stack.current_graph if self.graph_context_stack.current_graph else 'Root'}"
+        )
+
+        # Update the view to display the parent scene
+        self.view.setScene(self.scene)
         self.scene._update_scene_content_display()
 
     def handle_ui_node_creation_request(self, node_type_hint: str, scene_pos: QPointF) -> NodeItem:

@@ -176,7 +176,21 @@ class KeyProcessor(QObject):
 
         command_id = self.hotkey_mapping.get_command_id_for_sequence(current_sequence_tuple)
         if command_id:
-            return self._handle_found_command(command_id, event, context_provider, current_sequence_tuple)
+            # XXX: Future enhancement: Commands should be able to specify if they
+            # trigger on KeyPress, KeyRelease, or both. For now, all hotkey-triggered
+            # commands execute on KeyPress only to prevent double execution.
+            if event.type() == QEvent.Type.KeyPress:
+                return self._handle_found_command(command_id, event, context_provider, current_sequence_tuple)
+            else:
+                # Sequence matched on KeyRelease (or other non-KeyPress event),
+                # but command execution is currently tied to KeyPress.
+                # Reset sequence and consume event as it's part of a recognized hotkey.
+                logger.trace(
+                    f"KeyProcessor: Sequence {current_sequence_tuple} matched command '{command_id}' "
+                    f"on event type {event.type()}. Resetting sequence, not re-executing command."
+                )
+                self._reset_typed_sequence()
+                return True  # Event handled as part of a recognized sequence
 
         if self.hotkey_mapping.is_prefix_of_any_binding(current_sequence_tuple):
             return True
