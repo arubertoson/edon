@@ -31,6 +31,7 @@ class EntitySocket:
     role: SocketRole
     node: EntityNode
     type_info: SocketType
+    exposed: bool
     default_value: Any | None = None
     _value: Any | None = field(init=False)
 

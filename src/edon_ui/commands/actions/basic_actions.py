@@ -1,16 +1,16 @@
 """Basic, non-graph-algorithm command actions."""
 
 from loguru import logger
-
 from PySide6.QtCore import QPointF
-from PySide6.QtGui import QMouseEvent, QCursor
+from PySide6.QtGui import QCursor, QMouseEvent
+
+from edon.graph import SubGraphNode
+from edon_ui.items.edge import EdgeItem
+from edon_ui.items.node import NodeItem
 
 # XXX: Editor Context should probably be a protocol.
 from edon_ui.views.viewer import EditorContext
-from edon_ui.items.node import NodeItem
-from edon_ui.items.edge import EdgeItem
 from edon_ui.widgets.node_spawner import NodeSpawningPanel
-from edon.subgraph.node import SubGraphNode
 
 
 def close_action(context: EditorContext) -> bool:

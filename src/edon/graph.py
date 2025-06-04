@@ -10,15 +10,14 @@ objects.
 from __future__ import annotations
 
 from collections.abc import MutableMapping
-from ctypes import LibraryLoader
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
-from edon.logging import logger
 from edon.errors import GraphObjectErrorReason, SocketLinkErrorReason
+from edon.logging import logger
 from edon.node import EntityNode
 from edon.socket import EntitySocket
-from edon.types import SocketAddress, SocketRole
+from edon.types import SocketAddress, SocketDef, SocketRole, current_execution_engine_context
 
 if TYPE_CHECKING:
     from edon.types import EdgeKey
@@ -321,3 +320,100 @@ class EntityGraph:
 
     def __repr__(self) -> str:
         return f"Graph(nodes_count={len(self.nodes)}, edges_count={len(self.edges)})"
+
+
+@dataclass
+class SubGraphNode(EntityNode):
+    """A node that encapsulates an entire EntityGraph.
+
+    This node acts as a regular EntityNode in its parent graph, but internally
+    contains a complete graph with its own nodes and connections. External
+    sockets on this node are mapped to specific sockets within the internal graph.
+    """
+
+    internal_graph: EntityGraph = field(default_factory=EntityGraph)
+    _proxy_mappings: dict[str, EntitySocket] = field(default_factory=dict)
+
+    def _get_internal_socket(self, socket_addr: SocketAddress) -> EntitySocket:
+        """Get a socket from the internal graph by its address."""
+        assert socket_addr.node_id in self.internal_graph.nodes, (
+            f"Node '{socket_addr.node_id}' not found in internal graph"
+        )
+
+        node = self.internal_graph.get_node(socket_addr.node_id)
+        assert socket_addr.name in node.sockets, (
+            f"Socket '{socket_addr.name}' not found on node '{socket_addr.node_id}'"
+        )
+
+        socket = node.sockets[socket_addr.name]
+        assert socket.role == socket_addr.role, (
+            f"Socket role mismatch: expected {socket_addr.role}, got {socket.role}"
+        )
+
+        return socket
+
+    # def sync_exposed_sockets(self) -> None:
+    #     for id_, node in self.internal_graph.nodes.items():
+    #         c_sockets = node.sockets.copy()
+    #         for name, socket in c_sockets.items():
+    #             if not socket.exposed and name in self._proxy_mappings:
+    #                 self._remove_proxy_socket(name)
+    #             elif socket.exposed:
+    #                 self._add_proxy_socket(name, socket.address)
+
+    def add_proxy_socket(self, proxy_name: str, internal_addr: SocketAddress) -> None:
+        """Dynamically add a new proxy socket mapping.
+
+        This method allows runtime modification of the sub-graph's external interface
+        by exposing additional internal sockets.
+        """
+        internal_socket = self._get_internal_socket(internal_addr)
+        assert internal_socket.exposed, (
+            "CORRUPTION: Can only add 'exposed' sockets, {internal_addr} is not."
+        )
+
+        self._proxy_mappings[proxy_name] = internal_socket
+
+        socket_def = SocketDef(
+            name=proxy_name,
+            socket_type=internal_socket.type_info,
+            default=internal_socket.default_value,
+            exposed=internal_socket.exposed,
+        )
+        self._add_socket_internal(socket_def, internal_addr.role)
+
+        logger.debug(f"Added {internal_socket.role} proxy socket '{proxy_name}'")
+
+    def remove_proxy_socket(self, proxy_name: str) -> None:
+        del self._proxy_mappings[proxy_name]
+        self.sockets.pop(proxy_name)
+
+        logger.debug(f"Removed proxy socket '{proxy_name}'")
+
+    def _propagate_sockets(self, role: SocketRole) -> None:
+        for proxy_name, internal_socket in self._proxy_mappings.items():
+            if not internal_socket.role == role:
+                continue
+
+            internal_socket.value = self.sockets[proxy_name].value
+            logger.trace(f"Propagated: {proxy_name} -> {internal_socket.address}")
+
+    def process(self) -> None:
+        logger.debug(f"Processing SubGraphNode '{self.name}'")
+
+        self._propagate_sockets(SocketRole.TARGET)
+
+        active_engine = current_execution_engine_context.get()
+        assert active_engine is not None, (
+            "SubGraphNode.process() called without an active ExecutionEngine context"
+        )
+
+        # The active_engine is already managing depth, so it will increment it
+        # when it calls execute_graph recursively.
+        active_engine.execute_graph(self.internal_graph, context=f"sub-graph: {self.name}")
+
+        # After we are done processing the graph we propagate the resulting values to the proxy
+        # sockets to make available to the outer graph.
+        self._propagate_sockets(SocketRole.SOURCE)
+
+        logger.debug(f"Completed processing SubGraphNode '{self.name}'")

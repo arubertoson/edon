@@ -12,14 +12,13 @@ This module provides the GraphController class, which is responsible for:
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping, Sequence
-from typing import TYPE_CHECKING, Type
+from typing import Type
 
 from loguru import logger
 from PySide6.QtCore import QPointF
 
-from edon.graph import EntityGraph
+from edon.graph import EntityGraph, SubGraphNode
 from edon.node import EntityNode
-from edon.subgraph.node import SubGraphNode
 from edon.types import EdgeKey, SocketAddress, SocketRole
 from edon_ui import theme
 from edon_ui.graph.context import GraphContextStack, NavigationState
@@ -27,9 +26,8 @@ from edon_ui.graph.registry import GraphUIDataRegistry
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.factory import create_node_item
 from edon_ui.items.node import NodeItem
-from edon_ui.views.scene import GraphicsScene, DragPrepInfo
+from edon_ui.views.scene import DragPrepInfo, GraphicsScene
 from edon_ui.views.viewer import GraphicsView
-
 
 type NodeRegistryMap = MutableMapping[str, Type[EntityNode]]
 

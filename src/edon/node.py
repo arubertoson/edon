@@ -1,4 +1,4 @@
-"""Defines the core `EntityNode` class and related structures for the Edon graph.
+"""Defines the core `EntityNode` class andrelated structures for the Edon graph.
 
 This module provides the `EntityNode`, which is the base representation for all
 nodes within the `EntityGraph`. Nodes are the primary computational units and
@@ -105,6 +105,7 @@ class EntityNode:
             name=socket_def.name,
             role=role,
             node=self,
+            exposed=socket_def.exposed,
             type_info=socket_def.socket_type,
             default_value=socket_def.default,
         )

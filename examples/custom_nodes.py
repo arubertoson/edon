@@ -1,18 +1,15 @@
 from loguru import logger
 
-from edon.graph import EntityGraph
+from edon.graph import EntityGraph, SubGraphNode
 from edon.node import EntityNode
-from edon.subgraph.node import SubGraphNode  # Import SubGraphNode
 from edon.types import (
     SocketDisplayState,
     SocketDef,
     SocketAddress,
     SocketRole,
-)  # Import SocketAddress, SocketRole
-from edon_ui.app import EdonApplication  # Import EdonApplication instead of main
-from edon_ui.widgets.factories import SocketType  # Import the new enum
-
-# --- Define custom nodes declaratively ---
+)
+from edon_ui.app import EdonApplication
+from edon_ui.widgets.factories import SocketType
 
 
 class IntegerNode(EntityNode):
@@ -182,7 +179,6 @@ class ConcatNode(EntityNode):
 
 # --- Register custom nodes ---
 custom_node_registry = {
-    # Keys should match the class names (which become default node names)
     "IntegerNode": IntegerNode,
     "FloatNode": FloatNode,
     "StringNode": StringNode,
@@ -190,7 +186,7 @@ custom_node_registry = {
     "MultiplyNode": MultiplyNode,
     "ConcatNode": ConcatNode,
     "LargeTextNode": LargeTextNode,
-    "SubGraphNode": SubGraphNode,  # Add SubGraphNode to the registry
+    "SubGraphNode": SubGraphNode,
 }
 
 
@@ -217,6 +213,9 @@ def create_sample_graph():
     # We can do this by adding internal nodes and then exposing their sockets.
     # Example: Create an internal AddNode and expose its input and output.
     internal_adder = AddNode(name="InternalAdder")  # This node needs inputs and outputs defined
+    for sck in internal_adder.sockets.values():
+        sck.exposed = True
+
     sub_graph_node.internal_graph.add_node(internal_adder)
 
     # Expose 'a' and 'b' from internal_adder as inputs to the sub_graph_node
@@ -224,19 +223,16 @@ def create_sample_graph():
     sub_graph_node.add_proxy_socket(
         proxy_name="sub_input_A",
         internal_addr=SocketAddress(internal_adder.id, "a", SocketRole.TARGET),
-        is_input=True,
     )
     sub_graph_node.add_proxy_socket(
         proxy_name="sub_input_B",
         internal_addr=SocketAddress(internal_adder.id, "b", SocketRole.TARGET),
-        is_input=True,
     )
     # Expose 'result' from internal_adder as an output from the sub_graph_node
     # Ensure 'result' is a source socket on AddNode
     sub_graph_node.add_proxy_socket(
         proxy_name="sub_output_Sum",
         internal_addr=SocketAddress(internal_adder.id, "result", SocketRole.SOURCE),
-        is_input=False,
     )
 
     # Add nodes to graph

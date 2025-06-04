@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from edon.graph import SocketRole
-from edon.subgraph.node import SubGraphNode
+from edon.graph import SubGraphNode
+from edon.types import SocketRole
 from edon_ui import theme
 from edon_ui.items.node import NodeItem, SubGraphNodeItem
 from edon_ui.items.socket import SocketComponent, SocketComponents, SocketItem, SocketLinkItem
@@ -117,7 +117,7 @@ def create_node_item(
         # We need to create SocketDef instances on-the-fly for the UI factory,
         # as SubGraphNode doesn't rely on class-level socket_definitions for its proxy sockets' UI.
         # The EntitySocket instances on SubGraphNode already have type_info and default_value.
-        from edon.types import SocketDisplayState, SocketDef
+        from edon.types import SocketDef, SocketDisplayState
 
         for entity_socket_instance in entity_node.target_sockets:
             # Create a SocketDef based on the EntitySocket's properties

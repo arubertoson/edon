@@ -83,6 +83,7 @@ class SocketDef:
     name: str
     socket_type: SocketType
     default: Any = None
+    exposed: bool = False
     display_state: SocketDisplayState = SocketDisplayState.LINK_LABEL
 
     @property
