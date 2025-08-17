@@ -9,7 +9,7 @@ Defines:
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from loguru import logger
 
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from PySide6.QtGui import QInputEvent
 
 
+@runtime_checkable
 class ContextProvider(Protocol):
     """A protocol for objects that can provide an EditorContext.
 

@@ -6,14 +6,14 @@ top-level window, handling user interactions like resizing and providing
 a container for the main graphics view.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QContextMenuEvent, QMouseEvent
 from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget
+from edon_ui.views.scene import GraphicsScene
 
 if TYPE_CHECKING:
-    from edon_ui.views.scene import GraphicsScene
     from edon_ui.views.viewer import GraphicsView
 
 
@@ -47,16 +47,16 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.view: "GraphicsView" = view
+        self.view: GraphicsView = view
         self.view.setParent(central_widget)
-        self.scene: "GraphicsScene" = view.scene()
+        self.scene = cast(GraphicsScene, view.scene())
 
         layout.addWidget(self.view)
         self.setCentralWidget(central_widget)
 
         # Window movement and resize state
         self._resizing: bool = False
-        self._resize_edge: Qt.Edge = Qt.Edge()
+        self._resize_edge = Qt.Edge
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """
@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
         """
         if event.button() == Qt.MouseButton.LeftButton:
             self._resize_edge = self._detect_edge(event.position().toPoint())
-            if self._resize_edge != Qt.Edge():
+            if self._resize_edge != Qt.Edge:
                 self._resizing = True
                 self.windowHandle().startSystemResize(self._resize_edge)
                 event.accept()
@@ -88,7 +88,7 @@ class MainWindow(QMainWindow):
         """
         if event.button() == Qt.MouseButton.LeftButton and self._resizing:
             self._resizing = False
-            self._resize_edge = Qt.Edge()
+            self._resize_edge = Qt.Edge
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -106,7 +106,7 @@ class MainWindow(QMainWindow):
         """
         rect = self.rect()
         margin = self.MARGIN
-        edges = Qt.Edge()
+        edges = Qt.Edge(0)
 
         if pos.x() <= rect.x() + margin:
             edges |= Qt.Edge.LeftEdge
@@ -116,6 +116,7 @@ class MainWindow(QMainWindow):
             edges |= Qt.Edge.TopEdge
         if pos.y() >= rect.y() + rect.height() - margin:
             edges |= Qt.Edge.BottomEdge
+
         return edges
 
     def is_position_on_resize_edge(self, global_pos: QPointF) -> bool:
@@ -129,7 +130,7 @@ class MainWindow(QMainWindow):
             True if the position is on a resize edge, False otherwise.
         """
         pos_in_local_coords: QPoint = self.mapFromGlobal(global_pos).toPoint()
-        return self._detect_edge(pos_in_local_coords) != Qt.Edge()
+        return self._detect_edge(pos_in_local_coords) != Qt.Edge
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         """

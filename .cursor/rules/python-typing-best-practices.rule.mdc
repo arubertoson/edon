@@ -1,0 +1,77 @@
+---
+description: 
+globs: *.py
+alwaysApply: false
+---
+# python-typing-best-practices
+
+<rule>
+name: python-typing-best-practices
+description: |
+    - Use type hints for all function signatures (arguments and return types), class attributes, and variables to improve code clarity and enable static analysis.
+    - Prefer built-in generics (e.g., `list[str]`, `dict[str, int]`) for collections, as introduced in Python 3.9+ ([PEP 585](mdc:https:/peps.python.org/pep-0585)).
+    - Use `collections.abc` for generic types like `Iterable`, `Sequence`, `Mapping`, `Set`, and `Callable` instead of their `typing` module counterparts.
+    - Use the `type` statement for type aliases in Python 3.12+ (e.g., `type UserId = int`).
+    - Use `NewType` from `typing` to create distinct types for stronger type safety (e.g., `UserId = NewType('UserId', int)`).
+    - Use the new union syntax (`X | Y`) for optionals and unions (e.g., `str | None` instead of `Optional[str]`), as introduced in Python 3.10 ([PEP 604](mdc:https:/peps.python.org/pep-0604)).
+    - Annotate callables using `collections.abc.Callable` (e.g., `Callable[[int], str]`).
+    - For generic types and abstract base classes (ABCs), use the versions from `collections.abc` (e.g., `from collections.abc import Iterable, Sequence`).
+    - Use runtime type enforcement tools (e.g., [Beartype](mdc:https:/beartype.readthedocs.io)) or validation libraries (e.g., [Pydantic](mdc:https:/docs.pydantic.dev)) when runtime type safety is required.
+    - Use static type checkers (e.g., [mypy](mdc:https:/mypy.readthedocs.io), [pyright](mdc:https:/github.com/microsoft/pyright)) and enable them in your development workflow.
+    - Stay updated with the official Python type system specification and relevant PEPs.
+    - Avoid deprecated features from the `typing` module (e.g., `typing.List`, `typing.Dict`).
+    - Use `Protocol` from `typing` to define structural interfaces for classes. Protocols enable static type checking based on the presence of methods and attributes, not inheritance, and are preferred over ABCs when you want to specify required methods/attributes without enforcing inheritance.
+    - Use `from typing import TYPE_CHECKING` to guard imports that are only needed for type annotations, preventing unnecessary runtime dependencies and avoiding circular imports.
+    - For forward references (when a type is not yet defined), use string literals for type annotations (e.g., def foo(x: "Bar") -> None: ..., or in unions "Bar | None"), allowing you to use types before they are defined.
+
+actions:
+    - type: general_guidance
+      command: |
+        Adhere to the described typing practices when writing or refactoring Python code.
+
+examples:
+    - input: |
+        # Old style
+        from typing import List, Dict, Callable, Optional
+        UserId = int
+        def get_user_name(user_id: UserId) -> Optional[str]:
+            pass
+
+        # New style (Python 3.10+ for unions, 3.9+ for generics, 3.12+ for type aliases)
+        from collections.abc import Callable, Iterable
+        from typing import NewType
+        type UserId = int
+        def get_user_name(user_id: UserId) -> str | None:
+            pass
+        def process_users(users: Iterable[UserId], cb: Callable[[UserId], str]) -> None:
+            pass
+
+        # Protocol example
+        from typing import Protocol
+        class SupportsClose(Protocol):
+            def close(self) -> None: ...
+        def cleanup(resource: SupportsClose) -> None:
+            resource.close()
+        class File:
+            def close(self) -> None:
+                print("File closed")
+        cleanup(File())  # OK: File matches the protocol
+
+        # TYPE_CHECKING and forward reference example
+        from typing import TYPE_CHECKING
+        if TYPE_CHECKING:
+            from mymodule import Bar  # Only imported for type checking
+        def foo(x: "Bar") -> None:
+            pass
+        def bar(x: "Bar | None") -> None:
+            pass
+
+metadata:
+    priority: high
+    version: 1.0
+    references:
+      - https://typing.python.org/en/latest/index.html
+      - https://docs.python.org/3/library/typing.html
+      - https://docs.python.org/3/library/typing.html#typing.Protocol
+      - https://khaled-jallouli.medium.com/python-typing-in-2025-a-comprehensive-guide-d61b4f562b99
+</rule> 

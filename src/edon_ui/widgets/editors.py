@@ -1,28 +1,29 @@
 """Specialized QWidget subclasses for editing socket values."""
 
-from typing import TYPE_CHECKING, Any, Callable, Protocol, TypeAlias, runtime_checkable
+from __future__ import annotations
 
-import qtawesome as qta  # For icon support
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, runtime_checkable
+
 from loguru import logger
-from PySide6.QtCore import QRect, Qt, QTimer, Signal, QSize
+from PySide6.QtCore import QRect, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
     QCloseEvent,
     QColor,
     QFocusEvent,
     QFontMetrics,
+    QHoverEvent,
+    QIcon,
     QKeyEvent,
     QLinearGradient,
     QMouseEvent,
     QPainter,
+    QPainterPath,
     QPaintEvent,
     QPalette,
     QPen,
-    QIcon,
     QResizeEvent,
     QShowEvent,
-    QHoverEvent,
-    QPainterPath,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -52,7 +53,22 @@ class ValueWidget(Protocol):
     def set_value(self, value: Any) -> None: ...
 
 
-ValueWidgetType: TypeAlias = ValueWidget |  QWidget
+ValueWidgetType: TypeAlias = ValueWidget | QWidget
+
+
+class ProxyAttributeMixin:
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._proxy: QGraphicsProxyWidget | None = None
+
+    @property
+    def proxy(self) -> QGraphicsProxyWidget:
+        assert self._proxy is not None, "CORRUPTION: `QGraphicsProxyWidget` should always be set"
+        return self._proxy
+
+    @proxy.setter
+    def proxy(self, proxy: QGraphicsProxyWidget) -> None:
+        self._proxy = proxy
 
 
 class CustomDialogWidget(QWidget):
@@ -75,7 +91,9 @@ class CustomDialogWidget(QWidget):
         self._overlay_item: QGraphicsRectItem | None = None
 
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.SubWindow
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.SubWindow
         )
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
@@ -168,13 +186,16 @@ class CustomDialogWidget(QWidget):
 
         self.close_button.move(tb_width - self.close_button.width(), 0)
         self.title_label.move(
-            (tb_width / 2) - (self.title_label.width() / 2), (tb_height / 2) - (self.title_label.height() / 2)
+            int((tb_width / 2) - (self.title_label.width() / 2)),
+            int((tb_height / 2) - (self.title_label.height() / 2)),
         )
 
     def _dynamic_resize(self) -> None:
         parent_widget = self.parentWidget()
         if parent_widget:
-            set_dynamic_width_and_height(self, parent_widget.rect(), width_ratio=0.7, height_ratio=0.8)
+            set_dynamic_width_and_height(
+                self, parent_widget.rect(), width_ratio=0.7, height_ratio=0.8
+            )
         else:
             desktop = QApplication.primaryScreen().geometry()
             set_dynamic_width_and_height(self, desktop, width_ratio=0.7, height_ratio=0.8)
@@ -205,7 +226,10 @@ class CustomDialogWidget(QWidget):
         if event.key() == Qt.Key.Key_Escape:
             self.rejected.emit()
             event.accept()
-        elif event.key() == Qt.Key.Key_Return and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+        elif (
+            event.key() == Qt.Key.Key_Return
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
             self.accepted.emit()
             self.close()
             event.accept()
@@ -270,7 +294,7 @@ class CustomDialogWidget(QWidget):
     #     super().mouseReleaseEvent(event)
 
 
-class FocusSelectLineEdit(QLineEdit):
+class FocusSelectLineEdit(ProxyAttributeMixin, QLineEdit):
     """A QLineEdit subclass designed for use within a QGraphicsScene via SocketWidgetAdaptor.
 
     It selects all text on focusInEvent. On Return, Enter, or Escape key release,
@@ -278,11 +302,9 @@ class FocusSelectLineEdit(QLineEdit):
     The `SocketWidgetAdaptor` is responsible for setting the `proxy` attribute on this widget.
     """
 
-    def __init__(self, parent: QWidget | None = None):  # proxy parameter removed
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
 
-        # This attribute will be set by the SocketWidgetAdaptor
-        self.proxy: "QGraphicsProxyWidget | None" = None
         self._elide_text = True
         self._focus_in = False
         self._ellipsis_place = Qt.TextElideMode.ElideRight
@@ -314,9 +336,13 @@ class FocusSelectLineEdit(QLineEdit):
             option = QStyleOptionFrame()
             self.initStyleOption(option)
 
-            self.style().drawPrimitive(QStyle.PrimitiveElement.PE_PanelLineEdit, option, painter, self)
+            self.style().drawPrimitive(
+                QStyle.PrimitiveElement.PE_PanelLineEdit, option, painter, self
+            )
 
-            text_rect = self.style().subElementRect(QStyle.SubElement.SE_LineEditContents, option, self)
+            text_rect = self.style().subElementRect(
+                QStyle.SubElement.SE_LineEditContents, option, self
+            )
             text_rect.adjust(4, 0, -4, 0)  # Adjust for padding/icon space
 
             fm = QFontMetrics(self.font())
@@ -384,7 +410,9 @@ class HighlightEventMixin:
     def paint_highlight(self, painter: QPainter, rect: QRect) -> None:
         # Create a semi-transparent highlight with rounded corners
         highlight_path = QPainterPath()
-        radius = theme.INPUT_WIDGET_BORDER_RADIUS if hasattr(theme, "INPUT_WIDGET_BORDER_RADIUS") else 4
+        radius = (
+            theme.INPUT_WIDGET_BORDER_RADIUS if hasattr(theme, "INPUT_WIDGET_BORDER_RADIUS") else 4
+        )
 
         r = QRect(rect.x() - 2, rect.y() - 2, rect.width() + 4, rect.height() + 4)
         highlight_path.addRoundedRect(r, radius, radius)
@@ -405,11 +433,14 @@ class HighlightEventMixin:
         painter.restore()
 
 
-class ExpandLineEdit(QLineEdit):
+class ExpandLineEdit(ProxyAttributeMixin, QLineEdit):
     """A QLineEdit that displays an icon and opens a larger editor on click."""
 
     def __init__(
-        self, widget_factory: type[ValueWidgetType], icon_name: str = "fa5s.expand", parent: QWidget | None = None
+        self,
+        widget_factory: type[ValueWidgetType],
+        icon_name: str = "fa5s.expand",
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
 
@@ -429,7 +460,6 @@ class ExpandLineEdit(QLineEdit):
 
         self.widget_factory = widget_factory
         self.value: Any = None
-        self.proxy: "QGraphicsProxyWidget | None" = None
         self._ellipsis_place = Qt.TextElideMode.ElideRight
         self.icon = FontIcon(icon_name, QColor(theme.ICON_COLOR))
 
@@ -442,16 +472,24 @@ class ExpandLineEdit(QLineEdit):
 
         # Try to get the scene from the window, or from this widget's direct parent if part of a GFX view
         scene = getattr(window, "scene", None)
-        if not scene and isinstance(self.parentWidget(), QWidget) and hasattr(self.parentWidget(), "scene"):
+        if (
+            not scene
+            and isinstance(self.parentWidget(), QWidget)
+            and hasattr(self.parentWidget(), "scene")
+        ):
             scene = self.parentWidget().scene()
 
         if not scene:
             # If scene is still not found, it's a problem for the current overlay logic.
             # Log a warning. The dialog might still show, but overlay will be missing.
-            logger.warning("ExpandLineEdit: Could not determine QGraphicsScene for CustomDialogWidget's overlay.")
+            logger.warning(
+                "ExpandLineEdit: Could not determine QGraphicsScene for CustomDialogWidget's overlay."
+            )
             # scene will be None, CustomDialogWidget's show() method should handle this.
 
-        logger.debug(f"ExpandLineEdit: Opening text dialog. Parent window: {window}, Scene: {scene}")
+        logger.debug(
+            f"ExpandLineEdit: Opening text dialog. Parent window: {window}, Scene: {scene}"
+        )
 
         widget = self.widget_factory()
         widget.set_value(self.value)
@@ -504,14 +542,18 @@ class ExpandLineEdit(QLineEdit):
         self.style().drawPrimitive(QStyle.PrimitiveElement.PE_PanelLineEdit, option, painter)
 
         icon_rect = QRect((rect.width() / 2) - 2, rect.y(), rect.width(), rect.height())
-        text_rect = self.style().subElementRect(QStyle.SubElement.SE_LineEditContents, option, self)
+        text_rect = self.style().subElementRect(
+            QStyle.SubElement.SE_LineEditContents, option, self
+        )
 
         if self.value:
             icon_width = self.height() // 1.3
             text_rect.adjust(0, 0, -int(icon_width), 0)
 
             fm = QFontMetrics(self.font())
-            elided_text_str = fm.elidedText(self.value.replace("\n", " "), self._ellipsis_place, text_rect.width())
+            elided_text_str = fm.elidedText(
+                self.value.replace("\n", " "), self._ellipsis_place, text_rect.width()
+            )
 
             start_color = QColor(theme.INPUT_TEXT_DISABLED_COLOR)
             end_color = QColor(theme.INPUT_TEXT_DISABLED_COLOR).lighter(130)
@@ -524,13 +566,19 @@ class ExpandLineEdit(QLineEdit):
             gradient.setColorAt(0, end_color)
 
             painter.setPen(QPen(QBrush(gradient), 0))
-            painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided_text_str)
+            painter.drawText(
+                text_rect,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                elided_text_str,
+            )
 
         if self.icon:
             self.icon.paint(painter, icon_rect, mode=QIcon.Mode.Normal, state=QIcon.State.On)
 
 
-def set_dynamic_width_and_height(widget, screen_geometry: QRect, width_ratio: float = 0.5, height_ratio: float = 0.5):
+def set_dynamic_width_and_height(
+    widget, screen_geometry: QRect, width_ratio: float = 0.5, height_ratio: float = 0.5
+):
     """
     The screen and height will be updated to match the screen geometry.
     """

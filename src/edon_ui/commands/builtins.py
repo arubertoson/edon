@@ -47,7 +47,7 @@ ALL_COMMAND_DEFINITIONS: list[Command] = [
         category="Window",
         description="Toggle window maximize/fullscreen state.",
         action=window_toggle_maximize_action,
-        default_hotkey_sequence=_parse_hotkey_sequence("Ctrl+K,Ctrl+F"),
+        default_hotkey_sequence=_parse_hotkey_sequence("Ctrl+K,F"),
     ),
     Command(
         id="edit.delete_selection",
@@ -79,6 +79,6 @@ ALL_COMMAND_DEFINITIONS: list[Command] = [
         category="Graph Navigation",
         description="Exit the current subgraph and return to its parent graph.",
         action=action_exit_subgraph,
-        default_hotkey_sequence=_parse_hotkey_sequence("Ctrl+U"), # "U" for "Up"
+        default_hotkey_sequence=_parse_hotkey_sequence("Ctrl+U"),  # "U" for "Up"
     ),
 ]

@@ -25,24 +25,11 @@ from PySide6.QtWidgets import (
 from edon_ui import theme
 from edon_ui.widgets.gfx import SocketLabel
 
-
-class PaintEventMixin:
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
-        """Overrides the pure virtual paint method from QGraphicsObject.
-
-        This method must be implemented, even if it does nothing, to prevent
-        a pure virtual function call error at runtime when Qt attempts to paint
-        this QGraphicsObject. In this adaptor, painting is handled by the
-        child QGraphicsTextItem, so this method intentionally does nothing.
-        """
-        pass
+from edon_ui.base import BaseEdonGraphicsObject
 
 
-class SocketTextAdaptor(QGraphicsObject):
-    """
-    Adapts a QGraphicsTextItem (like SocketLabel) to be used as a SocketComponent.
-    It manages the overall footprint including horizontal margins, and positions the text item within.
-    """
+class SocketTextAdaptor(BaseEdonGraphicsObject):
+    """Adapts a SocketLabel to be used as a SocketComponent with margins."""
 
     def __init__(
         self,
@@ -51,17 +38,11 @@ class SocketTextAdaptor(QGraphicsObject):
         parent: QGraphicsObject | None = None,
     ):
         super().__init__(parent)
-        logger.trace(f"SocketTextAdaptor created for text_item: {text_item}")
-
         self._text_item = text_item
         self._horizontal_margin = horizontal_margin
 
-        self._view = parent
-
-        if self._text_item.parentItem() != self:  # Ensure correct parenting
+        if self._text_item.parentItem() != self:
             self._text_item.setParentItem(self)
-
-        self._text_item.setTextWidth(self.get_required_component_width())
         self._text_item.setPos(self._horizontal_margin, 0)
 
     def get_required_component_width(self) -> float:
@@ -71,23 +52,16 @@ class SocketTextAdaptor(QGraphicsObject):
         return self._text_item.boundingRect().height()
 
     def boundingRect(self) -> QRectF:
-        return QRectF(0, 0, self.get_required_component_width(), self.get_required_component_height())
-
-    def text_item(self) -> QGraphicsTextItem:
-        return self._text_item
+        width = self.get_required_component_width()
+        height = self.get_required_component_height()
+        return QRectF(0, 0, width, height)
 
     def set_text_alignment(self, alignment: Qt.AlignmentFlag) -> None:
-        if hasattr(self._text_item, "set_alignment"):
-            # This assumes SocketLabel (or similar) has a 'set_alignment' method
-            self._text_item.set_text_alignment(alignment)
+        self._text_item.set_text_alignment(alignment)
 
 
-class SocketWidgetAdaptor(QGraphicsObject):
-    """
-    Adapts a QWidget (e.g., QLineEdit) to be used as a SocketComponent.
-    It wraps the QWidget in a QGraphicsProxyWidget and handles size, position, and internal
-    horizontal margins.
-    """
+class SocketWidgetAdaptor(BaseEdonGraphicsObject):
+    """Adapts a QWidget to be used as a SocketComponent via QGraphicsProxyWidget."""
 
     def __init__(
         self,
@@ -96,39 +70,23 @@ class SocketWidgetAdaptor(QGraphicsObject):
         parent: QGraphicsItem | None = None,
     ):
         super().__init__(None)
-        logger.trace(f"SocketWidgetAdaptor.__init__ for widget: {widget}, parent: {parent}")
-
         self._widget = widget
         self._horizontal_margin = horizontal_margin
 
-        self._view = parent
-
         self.proxy = QGraphicsProxyWidget(self)
-        self.proxy.setWidget(self._widget)
-        self.proxy.setPos(self._horizontal_margin, 0)
+        self.proxy.setWidget(widget)
+        self.proxy.setPos(horizontal_margin, 0)
         self.proxy.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        self._widget.proxy = self.proxy
-        self._widget.setParent(parent)
+        widget.proxy = self.proxy
+        widget.setParent(parent)
 
     def get_required_component_width(self) -> float:
-        # Use the actual width of the widget, or its size hint if not yet shown
-        width = self._widget.width()
-        if width == 0:
-            width = self._widget.sizeHint().width()
-
+        width = self._widget.width() or self._widget.sizeHint().width()
         return width + (self._horizontal_margin * 2)
 
     def get_required_component_height(self) -> float:
-        height = self._widget.height()
-        if height == 0:
-            height = self._widget.sizeHint().height()
-        return height
+        return self._widget.height() or self._widget.sizeHint().height()
 
     def boundingRect(self) -> QRectF:
-        width = self.get_required_component_width()
-        height = self.get_required_component_height()
-        return QRectF(0, 0, width, height)
-
-    def widget(self) -> QWidget:
-        return self._widget
+        return QRectF(0, 0, self.get_required_component_width(), self.get_required_component_height())

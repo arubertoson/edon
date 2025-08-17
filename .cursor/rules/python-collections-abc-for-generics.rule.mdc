@@ -1,0 +1,37 @@
+---
+description: 
+globs: *.py
+alwaysApply: false
+---
+# Use collection abc for generics
+
+<rule>
+name: python-collections-abc-for-generics
+description: |
+    - When annotating generic types such as iterables, sequences, mappings, sets, and callables, always use the abstract base classes (ABCs) from the `collections.abc` module (e.g., `Iterable`, `Sequence`, `Mapping`, `Set`, `Callable`) instead of their counterparts from the `typing` module or built-in types.
+    - This practice ensures forward compatibility and adherence to the latest Python standards, as the `typing` module's generic collections (e.g., `typing.List`, `typing.Dict`) are deprecated in favor of built-in types and `collections.abc` generics since Python 3.9.
+    - For example, use `from collections.abc import Iterable, Sequence, Mapping, Set, Callable` and annotate as `Iterable[int]`, `Mapping[str, float]`, etc.
+    - This applies to all function signatures, variable annotations, and class attributes.
+    - For more details, see the [official Python documentation on collections.abc](mdc:https:/docs.python.org/3/library/collections.abc.html).
+
+actions:
+    - type: general_guidance
+      command: |
+        Use `collections.abc` ABCs for all generic type annotations in Python code.
+
+examples:
+    - input: |
+        # Old/deprecated style
+        from typing import List, Dict, Callable
+        def process(items: List[int], config: Dict[str, float], cb: Callable[[int], str]) -> None:
+            pass
+
+        # Recommended style (Python 3.9+)
+        from collections.abc import Iterable, Mapping, Callable
+        def process(items: Iterable[int], config: Mapping[str, float], cb: Callable[[int], str]) -> None:
+            pass
+
+metadata:
+    priority: high
+    version: 1.0
+</rule> 

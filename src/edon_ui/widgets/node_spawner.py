@@ -25,7 +25,7 @@ class NodeSpawningPanel(QWidget):
 
     def __init__(
         self,
-        graph_controller: WorkspaceController,
+        controller: WorkspaceController,
         spawn_position: QPointF,
         parent: QWidget | None = None,
     ):
@@ -39,7 +39,7 @@ class NodeSpawningPanel(QWidget):
         """
         super().__init__(parent)
 
-        self.graph_controller = graph_controller
+        self.controller = controller
         self.spawn_position = spawn_position
 
         self.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
@@ -74,8 +74,8 @@ class NodeSpawningPanel(QWidget):
         Loads all available node type names from the graph_controller's node_registry.
         """
         self._all_node_type_names = []
-        if self.graph_controller and self.graph_controller.node_registry:
-            self._all_node_type_names = sorted(list(self.graph_controller.node_registry.keys()))
+        if self.controller and self.controller.node_registry:
+            self._all_node_type_names = sorted(list(self.controller.node_registry.keys()))
 
     def _filter_node_list(self) -> None:
         """
@@ -126,7 +126,7 @@ class NodeSpawningPanel(QWidget):
 
         # Spawn the node. The controller will place its top-left at self.spawn_position initially.
         # self.spawn_position is the mouse click, intended as the center.
-        node_item = self.graph_controller.handle_ui_node_creation_request(
+        node_item = self.controller.handle_ui_node_creation_request(
             node_type_hint=node_type_hint, scene_pos=self.spawn_position
         )
 

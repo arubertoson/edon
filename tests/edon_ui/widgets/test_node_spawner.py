@@ -62,7 +62,7 @@ def test_node_spawner_filtering_and_selection(qtbot, spawner_graph_controller):
     and default item selection.
     """
     panel = NodeSpawningPanel(
-        graph_controller=spawner_graph_controller,
+        controller=spawner_graph_controller,
         spawn_position=QPointF(0, 0),  # Position not critical for this test
     )
     qtbot.addWidget(panel)

@@ -13,3 +13,6 @@ mise.local.toml
 .vscode
 
 .aider*
+.repomap*
+.hypothesis*
+

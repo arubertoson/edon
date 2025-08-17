@@ -6,10 +6,10 @@ interaction, and layout for individual nodes within the graphics scene.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
-from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QGraphicsItem,
@@ -19,17 +19,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from edon.types import SocketRole
 from edon_ui import theme
 
 if TYPE_CHECKING:
+    from edon_ui.views.scene import GraphicsScene
     from edon_ui.items.socket import SocketItem
 
 
 class NodeItem(QGraphicsObject):
     """A visual node item in the editor, representing a logical node entity."""
-
-    node_position_update_signal = Signal(str)
-    node_redraw_signal = Signal(str)
 
     def __init__(
         self,
@@ -60,12 +59,24 @@ class NodeItem(QGraphicsObject):
         self.source_sockets = source_sockets or []
         for row in self.target_sockets + self.source_sockets:
             row.setParentItem(self)
-            row.layoutChanged.connect(self._on_socket_row_layout_changed)
+            # XXX: I'm really unsure about this.
+            # row.layout_dirty.connect(self._on_socket_row_layout_changed)
 
         self._width: float = 0
         self._height: float = 0
 
-        self._on_socket_row_layout_changed()
+        # self._on_socket_row_layout_changed()
+
+    @property
+    def _scene(self) -> GraphicsScene:
+        from edon_ui.views.scene import GraphicsScene
+
+        scene = cast(GraphicsScene, self.scene())
+        assert isinstance(scene, GraphicsScene), (
+            "CORRUPTION: parent item of {self} is not of type `GraphicsScene`"
+        )
+
+        return scene
 
     def _calculate_dynamic_height(self) -> float:
         total_socket_rows_height = theme.NODE_TITLE_HEIGHT + theme.SOCKET_VERTICAL_CONTENT_MARGIN
@@ -125,7 +136,7 @@ class NodeItem(QGraphicsObject):
 
     def _on_socket_row_layout_changed(self) -> None:
         """Handle a socket row's layout change by relayouting the entire node."""
-        self.prepareGeometryChange()  # Prepare the node for geometry changes
+        self.prepareGeometryChange()
 
         # Recalculate node's own width first based on potentially changed intrinsic needs of rows
         self._width = self._calculate_dynamic_width()
@@ -138,24 +149,40 @@ class NodeItem(QGraphicsObject):
 
         logger.info(f"Node {self.entity_id} layout changed: {self._width}x{self._height}")
 
-        self.update()  # Redraw the node
-        self.node_redraw_signal.emit(self.entity_id)
+        self.update()
+
+        self._scene.node_redraw_ui_request.emit(self.entity_id, self._scene)
+
+        # self._scene.handle_ui_redraw_node_item(self)
+        # self._scene._update_redraw_node_item(self)
+
+    def add_socket_item(self, socket_item: SocketItem) -> None:
+        assert socket_item not in self.target_sockets + self.source_sockets, (
+            "CORRUPTION: Trying to add non-unique socket {SocketItem} to node {self}"
+        )
+
+        # We have to add the new socket as a child to the node item, this create the
+        # internal Qt wiring and add it to the scene as well.
+        socket_item.setParentItem(self)
+
+        role = socket_item.role
+        if role == SocketRole.SOURCE:
+            self.source_sockets.append(socket_item)
+        else:
+            self.target_sockets.append(socket_item)
+
+        self._on_socket_row_layout_changed()
 
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._width, self._height)
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: Any) -> Any:
-        """Handles item state changes, like position changes.
-
-        Args:
-            change: The type of change occurring.
-            value: The new value associated with the change.
-
-        Returns:
-            The processed value, potentially modified from the input value.
+        """
+        Handles item state changes, like position changes.
         """
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.node_position_update_signal.emit(self.entity_id)
+            self._scene.node_redraw_ui_request.emit(self.entity_id, self._scene)
+            self._scene._update_active_area_rect()
 
         return super().itemChange(change, value)
 
@@ -246,17 +273,6 @@ class NodeItem(QGraphicsObject):
 
 class SubGraphNodeItem(NodeItem):
     """A visual node item for SubGraphNodes, with distinct styling."""
-
-    def __init__(
-        self,
-        title: str | None,
-        node_entity_id: str,
-        target_sockets: list[SocketItem] | None = None,
-        source_sockets: list[SocketItem] | None = None,
-        width: float = theme.NODE_MIN_WIDTH,
-        height: float = theme.NODE_MIN_HEIGHT,
-    ) -> None:
-        super().__init__(title, node_entity_id, target_sockets, source_sockets, width, height)
 
     def paint(
         self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None

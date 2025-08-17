@@ -8,7 +8,7 @@ for running or extending the Edon UI.
 import sys
 
 from loguru import logger
-from PySide6.QtCore import QMessageLogContext, QtMsgType, qInstallMessageHandler
+from PySide6.QtCore import QEvent, QMessageLogContext, QObject, QtMsgType, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 
 from edon.graph import EntityGraph
@@ -22,7 +22,7 @@ from edon_ui.commands import (
     default_command_registry,
 )
 from edon_ui.graph import WorkspaceController
-from edon_ui.views import GraphicsScene, GraphicsView, MainWindow
+from edon_ui.views import MainWindow
 
 
 def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, message: str) -> None:
@@ -51,6 +51,72 @@ def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, messag
 
     log_message = f"Qt: {_populate_context()} - {message}"
     logger.opt(depth=2).log(level, log_message)
+
+
+class EdonLoggingApplication(QApplication):
+    def __init__(self, argv):
+        super().__init__(argv)
+        logger.info("EdonLoggingApplication initialized with custom notify() method.")
+
+    def notify(self, receiver: QObject, event: QEvent) -> bool:
+        """
+        Overrides QCoreApplication.notify to catch and log exceptions
+        that occur during event handling before they are potentially
+        suppressed by Qt's C++ layer from reaching sys.excepthook.
+        """
+        receiver_class_name = "UnknownReceiver"
+        event_type_name = "UnknownEvent"
+        try:
+            receiver_class_name = receiver.__class__.__name__
+            # QEvent.Type is an enum, .name gives its string representation (e.g., "MouseButtonRelease")
+            event_type_name = QEvent.Type(event.type()).name
+        except Exception:
+            # In case receiver or event is in an odd state
+            pass
+
+        try:
+            # Call the original notify() method, which dispatches the event
+            # to the receiver's specific event handler (e.g., mouseReleaseEvent).
+            # Any exception escaping that handler will be caught by our except block.
+            return super().notify(receiver, event)
+        except Exception as e:
+            log_context = (
+                f"Receiver: {receiver_class_name}, "
+                f"Event Type: {event_type_name} (ID: {event.type()})"
+            )
+            logger.error(
+                f"<<<<<<<<<< Exception during Qt event dispatch ({log_context}) START >>>>>>>>>>"
+            )
+            # Use logger.opt(exception=...) for full traceback
+            logger.opt(exception=(type(e), e, e.__traceback__)).critical(
+                f"Unhandled Python exception caught in EdonLoggingApplication.notify(): {log_context}"
+            )
+            logger.error(
+                f"<<<<<<<<<< Exception during Qt event dispatch ({log_context}) END >>>>>>>>>>"
+            )
+            logger.error(f"QNAME:: ---- > {receiver.objectName()}, {receiver.__class__.__name__}")
+            check = "parent" if not hasattr(receiver, "parentItem") else "parentItem"
+            value = getattr(receiver, check)()
+            logger.error(f"QNAME:: ---- > {value}, {value.__class__.__name__}")
+
+            # CRITICAL DECISION: What to do after logging?
+            # Option 1 (Recommended): Re-raise the exception.
+            # This allows Qt to perform its default C++ handling for the Python exception
+            # (which might include printing a message to stderr).
+            # It's the most "transparent" action after logging.
+            # If there's any Python code higher up *calling* the event loop dispatch
+            # that has a try-except, it could also catch it.
+            raise
+
+            # Option 2: Manually call your global excepthook and then suppress/exit.
+            # This is a more forceful intervention if you want your hook to dictate behavior.
+            # global an_exception_handler # your sys.excepthook function
+            # an_exception_handler(type(e), e, e.__traceback__)
+            # return False # Or True, depending on what notify should return on error.
+            # If an_exception_handler exits, this won't matter.
+
+            # If you don't re-raise and don't exit, the exception is "eaten" here,
+            # which might lead to unexpected application behavior.
 
 
 class EdonApplication:
@@ -144,12 +210,7 @@ class EdonApplication:
         logger.debug("Logging system initialized")
 
     def _create_qt_application(self) -> QApplication:
-        app = QApplication.instance()
-        if not app:
-            app = QApplication(sys.argv)
-
-        assert isinstance(app, QApplication)
-        return app
+        return EdonLoggingApplication(sys.argv)
 
     def _setup_command_system(self) -> None:
         """Initializes the application's command system.

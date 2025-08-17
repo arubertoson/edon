@@ -1,7 +1,8 @@
 from loguru import logger
 
-from edon.graph import EntityGraph, SubGraphNode
+from edon.graph import EntityGraph, EntitySubGraphNode
 from edon.node import EntityNode
+from edon.nodes.utility import SubgraphPromoterNode
 from edon.types import (
     SocketDisplayState,
     SocketDef,
@@ -186,7 +187,9 @@ custom_node_registry = {
     "MultiplyNode": MultiplyNode,
     "ConcatNode": ConcatNode,
     "LargeTextNode": LargeTextNode,
-    "SubGraphNode": SubGraphNode,
+    "SubGraphNode": EntitySubGraphNode,
+    # Add the new promoter node here for testing/availability
+    "SubgraphPromoterNode": SubgraphPromoterNode,
 }
 
 
@@ -207,7 +210,7 @@ def create_sample_graph():
     large_text_node1 = LargeTextNode(name="MyLargeText")
 
     # Create a SubGraphNode
-    sub_graph_node = SubGraphNode(name="MyFirstSubGraph")
+    sub_graph_node = EntitySubGraphNode(name="MyFirstSubGraph")
 
     # To make the SubGraphNode display sockets, we need to define some proxy sockets.
     # We can do this by adding internal nodes and then exposing their sockets.
@@ -217,23 +220,6 @@ def create_sample_graph():
         sck.exposed = True
 
     sub_graph_node.internal_graph.add_node(internal_adder)
-
-    # Expose 'a' and 'b' from internal_adder as inputs to the sub_graph_node
-    # Ensure 'a' and 'b' are target sockets on AddNode
-    sub_graph_node.add_proxy_socket(
-        proxy_name="sub_input_A",
-        internal_addr=SocketAddress(internal_adder.id, "a", SocketRole.TARGET),
-    )
-    sub_graph_node.add_proxy_socket(
-        proxy_name="sub_input_B",
-        internal_addr=SocketAddress(internal_adder.id, "b", SocketRole.TARGET),
-    )
-    # Expose 'result' from internal_adder as an output from the sub_graph_node
-    # Ensure 'result' is a source socket on AddNode
-    sub_graph_node.add_proxy_socket(
-        proxy_name="sub_output_Sum",
-        internal_addr=SocketAddress(internal_adder.id, "result", SocketRole.SOURCE),
-    )
 
     # Add nodes to graph
     graph.add_node(int_node)
@@ -288,7 +274,6 @@ def create_sample_graph():
     #     logger.error(f"Failed to connect string_node1 to concat_node: {reason3}")
     # if not success4:
     #     logger.error(f"Failed to connect string_node2 to concat_node: {reason4}")
-    print(graph)
 
     return graph
 
@@ -297,7 +282,7 @@ def create_sample_graph():
 if __name__ == "__main__":
     # Create and run the application with our custom graph and node registry
     graph = create_sample_graph()
-    app = EdonApplication(custom_node_registry, log_level="TRACE")  # Use TRACE for detailed logs
+    app = EdonApplication(custom_node_registry, log_level="DEBUG")  # Use TRACE for detailed logs
     app.load_graph(graph)
 
     # Run the application

@@ -113,8 +113,24 @@ def create_large_string_socket_component(
     return adaptor
 
 
+# XXX: This is just shit
+def create_any(
+    initial_value: str,
+    node_id: str,
+    socket_name: str,
+) -> SocketWidgetAdaptor:
+    logger.debug(
+        f"Creating large string socket component (IconPopupLineEdit) for node_id='{node_id}', socket_name='{socket_name}' with initial_value='{initial_value}'"
+    )
+    line_edit = FocusSelectLineEdit(None)
+
+    adaptor = SocketWidgetAdaptor(line_edit)
+    return adaptor
+
+
 # Registry for socket widget component factories
 SOCKET_WIDGET_COMPONENT_FACTORIES: dict[SocketType, SocketWidgetComponentFactory] = {
+    SocketType.ANY: create_any,
     SocketType.INTEGER: create_integer_socket_component,
     SocketType.FLOAT: create_float_socket_component,
     SocketType.STRING: create_string_socket_component,

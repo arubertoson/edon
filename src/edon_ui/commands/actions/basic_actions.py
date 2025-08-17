@@ -4,7 +4,7 @@ from loguru import logger
 from PySide6.QtCore import QPointF
 from PySide6.QtGui import QCursor, QMouseEvent
 
-from edon.graph import SubGraphNode
+from edon.graph import EntitySubGraphNode
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.node import NodeItem
 
@@ -76,21 +76,7 @@ def delete_selection_action(context: EditorContext) -> bool:
 
     Retrieves selected NodeItem and EdgeItem instances from the context
     and requests their deletion via the context's manager.
-
-    Args:
-        context: The current editor context, expected to have `selected_items`
-                 and a `manager` capable of handling deletion requests.
-
-    Returns:
-        True if deletion requests were successfully made or if nothing was selected.
-        False if the context was invalid or an error occurred during deletion requests.
     """
-    if not context or not hasattr(context, "selected_items") or not hasattr(context, "manager"):
-        logger.warning(
-            "Delete selection action: Invalid context (missing selected_items or manager)."
-        )
-        return False
-
     node_items = [item for item in context.selected_items if isinstance(item, NodeItem)]
     edge_items = [item for item in context.selected_items if isinstance(item, EdgeItem)]
 
@@ -106,18 +92,12 @@ def delete_selection_action(context: EditorContext) -> bool:
         node_ids = [node.entity_id for node in node_items]
         try:
             context.controller.handle_ui_node_deletion_request(node_ids)
-            logger.debug(f"Requested deletion of nodes: {node_ids}")
         except Exception as e:
             logger.error(f"Error during node deletion request: {e}")
             return False
 
     if edge_items:
         try:
-            edge_ids_for_log = [
-                f"{edge.source_socket_item.parent_node_entity_id if edge.source_socket_item else 'N/A'}->{edge.target_socket_item.parent_node_entity_id if edge.target_socket_item else 'N/A'}"
-                for edge in edge_items
-            ]
-            logger.debug(f"Requesting deletion of edges: {edge_ids_for_log}")
             context.controller.handle_ui_edge_deletion_request(edge_items)
         except Exception as e:
             logger.error(f"Error during edge deletion request: {e}")
@@ -190,7 +170,7 @@ def action_enter_subgraph(context: EditorContext) -> bool:
         f"CRITICAL: EntityNode with ID {entity_id} not found in graph despite UI item existing."
     )
 
-    if not isinstance(entity_node, SubGraphNode):
+    if not isinstance(entity_node, EntitySubGraphNode):
         logger.trace(
             f"Selected NodeItem's entity is not a SubGraphNode. "
             f"Entity ID: {entity_node.id}, Type: {type(entity_node)}. No action."
@@ -212,8 +192,8 @@ def action_exit_subgraph(context: EditorContext) -> bool:
         return False
 
     controller = context.controller
-    if not controller.graph_context_stack.is_at_root():
-        logger.info(f"Exiting subgraph. Current depth: {controller.graph_context_stack.depth}")
+    if not controller.context_stack.is_at_root():
+        logger.info(f"Exiting subgraph. Current depth: {controller.context_stack.depth}")
         # Assuming exit_subgraph() will be implemented on WorkspaceController
         # based on memory.md.
         # This method is expected to handle popping from the graph_context_stack

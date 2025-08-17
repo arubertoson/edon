@@ -5,14 +5,15 @@ and rows that can contain a socket circle, label, and widget (`SocketRowItem`),
 along with a protocol (`SocketComponent`) for items within a socket row.
 """
 
+from __future__ import annotations
+
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from loguru import logger
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPen
-from dataclasses import dataclass
-
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
@@ -22,10 +23,12 @@ from PySide6.QtWidgets import (
 
 from edon.types import SocketAddress, SocketDisplayState, SocketRole
 from edon_ui import theme
+from edon_ui.widgets.adaptors import SocketTextAdaptor, SocketWidgetAdaptor
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QGraphicsSceneHoverEvent
 
+    from edon_ui.items.node import NodeItem
     from edon_ui.views.scene import GraphicsScene
 
 
@@ -34,17 +37,9 @@ class SocketComponent(Protocol):
     """
     Protocol defining the interface for a visual component within a SocketRowItem.
 
-    A SocketComponent is expected to be a QGraphicsItem or behave like one for layout purposes.
-    It must be able to report its required size and position itself within an allocated rectangle.
+    Extends QGraphicsItem to inherit all the standard Qt graphics functionality,
+    and adds the specific layout methods needed for socket components.
     """
-
-    def setParentItem(self, parent: QGraphicsItem, /) -> None: ...
-    def setPos(self, pos: QPointF, /) -> None: ...
-    def pos(self) -> QPointF: ...
-    def boundingRect(self) -> QRectF: ...
-    def isVisible(self) -> bool: ...
-    def show(self) -> None: ...
-    def hide(self) -> None: ...
 
     def get_required_component_width(self) -> float:
         """Returns the intrinsic width this component requires for layout."""
@@ -70,9 +65,9 @@ class SocketTextComponent(SocketComponent, Protocol):
 class SocketComponents:
     """Pure data structure holding socket visual components."""
 
-    link: "SocketLinkItem"
-    label: SocketTextComponent
-    widget: SocketComponent
+    link: SocketLinkItem
+    label: SocketTextAdaptor
+    widget: SocketWidgetAdaptor
     display_state: SocketDisplayState
 
     def __post_init__(self):
@@ -114,7 +109,7 @@ class SocketComponents:
     def __iter__(self) -> Iterator[SocketComponent]:
         return iter([self.link, self.label, self.widget])
 
-    def visible(self) -> list[SocketComponent]:
+    def visible(self) -> list[SocketWidgetAdaptor]:
         return [c for c in self if c.isVisible()]
 
 
@@ -238,8 +233,12 @@ class SocketLinkItem(QGraphicsEllipseItem):
         self.setAcceptHoverEvents(True)
 
     @property
-    def parent(self) -> "SocketItem":
-        socket_item: SocketItem = cast(SocketItem, self.parentItem())
+    def _socket_item(self) -> SocketItem:
+        socket_item = cast(SocketItem, self.parentItem())
+        assert isinstance(socket_item, SocketItem), (
+            "CORRUPTION: parent item of {self} is not of type `SocketItem`"
+        )
+
         return socket_item
 
     def _update_brush(self) -> None:
@@ -270,14 +269,14 @@ class SocketLinkItem(QGraphicsEllipseItem):
             self._is_drop_target = highlight
             self._update_brush()
 
-    def hoverEnterEvent(self, event: "QGraphicsSceneHoverEvent") -> None:
+    def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         if not self._is_valid_drop_target:
             self._is_hovered = True
             self._update_brush()
 
         super().hoverEnterEvent(event)
 
-    def hoverLeaveEvent(self, event: "QGraphicsSceneHoverEvent") -> None:
+    def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         if not self._is_valid_drop_target:
             self._is_hovered = False
             self._update_brush()
@@ -286,7 +285,7 @@ class SocketLinkItem(QGraphicsEllipseItem):
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            self.parent.handle_link_press(event)
+            self._socket_item.handle_link_press(event)
             event.accept()
         else:
             super().mousePressEvent(event)
@@ -296,7 +295,7 @@ class SocketLinkItem(QGraphicsEllipseItem):
         # The parent's handler might assume a drag is in progress.
         scene = cast("GraphicsScene", self.scene())
         if scene.is_dragging_edge():
-            self.parent.handle_link_move(event)
+            self._socket_item.handle_link_move(event)
             event.accept()
         else:
             # It's important to call the base class implementation if we're not handling the event,
@@ -308,7 +307,7 @@ class SocketLinkItem(QGraphicsEllipseItem):
             # Similar to mouseMoveEvent, only delegate if a drag was active.
             scene = cast("GraphicsScene", self.scene())
             if scene.is_dragging_edge():
-                self.parent.handle_link_release(event)
+                self._socket_item.handle_link_release(event)
                 event.accept()
             else:
                 # If no drag was active, perhaps the press was consumed elsewhere or it was a simple click
@@ -324,8 +323,6 @@ class SocketItem(QGraphicsObject):
     This item manages the layout of its child components (label, circle, widget)
     based on whether it's an input or output socket and its connection state.
     """
-
-    layoutChanged: Signal = Signal()
 
     def __init__(
         self,
@@ -362,34 +359,52 @@ class SocketItem(QGraphicsObject):
         return self.components.link
 
     @property
-    def _scene(self) -> "GraphicsScene":
-        return cast("GraphicsScene", self.scene())
-
-    @property
     def address(self) -> SocketAddress:
         if not self._address:
             self._address = SocketAddress(self.node_entity_id, self.entity_name, self.role)
         return self._address
 
+    @property
+    def _node_item(self) -> NodeItem:
+        from edon_ui.items.node import NodeItem
+
+        node_item = cast(NodeItem, self.parentItem())
+        assert isinstance(node_item, NodeItem), (
+            "CORRUPTION: parent item of {self} is not of type `NodeItem`"
+        )
+
+        return node_item
+
+    @property
+    def _scene(self) -> GraphicsScene:
+        from edon_ui.views.scene import GraphicsScene
+
+        scene = cast(GraphicsScene, self.scene())
+        assert isinstance(scene, GraphicsScene), (
+            "CORRUPTION: parent item of {self} is not of type `GraphicsScene`"
+        )
+
+        return scene
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(0, 0, self._width, self._height)
+
     def handle_link_press(self, event: QGraphicsSceneMouseEvent) -> None:
-        """Handles mouse press events forwarded from the SocketLinkItem."""
         logger.debug(f"SocketItem link in {self.address} pressed at {event.scenePos()}")
 
-        self._scene.initiate_dragging_edge(self.address, event.scenePos())
+        self._scene.edge_drag_initiation_request.emit(self.address, event.scenePos(), self._scene)
 
     def handle_link_move(self, event: QGraphicsSceneMouseEvent) -> None:
-        """Handles mouse move events forwarded from the SocketLinkItem during a drag."""
         # The scene's update_dragging_edge method typically doesn't need the socket_address,
         # just the current mouse position.
-        self._scene.update_dragging_edge(event.scenePos())
+        self._scene.edge_drag_action(event.scenePos())
 
     def handle_link_release(self, event: QGraphicsSceneMouseEvent) -> None:
-        """Handles mouse release events forwarded from the SocketLinkItem."""
         logger.debug(
             f"SocketItem link '{self.node_entity_id}::{self.entity_name}' released at {event.scenePos()}"
         )
 
-        self._scene.finalize_dragging_edge(event.scenePos())
+        self._scene.edge_drop_action(event.scenePos())
 
     def update_layout(self, available_width: float) -> None:
         """Updates the layout of socket components based on role and available width."""
@@ -404,14 +419,6 @@ class SocketItem(QGraphicsObject):
 
         self.update()
 
-    def boundingRect(self) -> QRectF:
-        """Returns the bounding rectangle of the row's primary content area (label/widget).
-        The SocketItem's (0,0) is the top-left of this content area.
-        Child items like SocketLinkItem might be positioned relative to this,
-        potentially outside this explicit QRectF. QGraphicsObject handles overall bounds.
-        """
-        return QRectF(0, 0, self._width, self._height)
-
     def set_drop_target_highlight(self, highlight: bool) -> None:
         """Forwards the drop target highlight state to the underlying SocketLinkItem."""
         self.components.link.set_drop_target_highlight(highlight)
@@ -425,8 +432,8 @@ class SocketItem(QGraphicsObject):
         else:
             self.components.transition_to(self.components.display_state)
 
-        self._calculate_bounding_rect()  # Recalculate bounds as widget visibility changed
-        self.layoutChanged.emit()  # Notify parent (NodeItem) that layout might need update
+        self._calculate_bounding_rect()
+        self._node_item._on_socket_row_layout_changed()
 
     def _calculate_bounding_rect(self) -> None:
         """Calculates the bounding rectangle for the SocketItem's main content area.
@@ -442,3 +449,15 @@ class SocketItem(QGraphicsObject):
 
         self._width = self.components.width()
         self._height = self.components.height()
+
+    # def paint(
+    #     self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None
+    # ) -> None:
+    #     """Overrides the pure virtual paint method from QGraphicsObject.
+    #
+    #     This method must be implemented, even if it does nothing, to prevent
+    #     a pure virtual function call error at runtime when Qt attempts to paint
+    #     this QGraphicsObject. In this adaptor, painting is handled by the
+    #     child QGraphicsTextItem, so this method intentionally does nothing.
+    #     """
+    #     pass

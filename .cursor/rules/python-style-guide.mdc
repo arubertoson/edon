@@ -1,0 +1,145 @@
+---
+description: 
+globs: *.py
+alwaysApply: false
+---
+# Python Style Guide
+
+Review and apply these Python style guidelines, particularly focusing on comprehensive type hinting, Google-style docstrings, modern Python features, and code organization.
+
+<rule>
+name: python-style-guide
+description: |
+    ## 1. Tech Stack
+
+    - Python 3.13
+    - PySide6 for Qt bindings
+    - use absolute imports
+    - never make changes to formatting
+
+    ## 2. Type Hinting
+
+    Utilize type hints for all function signatures (arguments and return types), class attributes, and variable annotations to improve code clarity and enable static analysis.
+
+    - **Generics and Collections**:
+        - Prefer built-in generic types for collections (e.g., `list[str]`, `dict[str, int]`) as per Python 3.9+ (PEP 585).
+        - For abstract collection types (interfaces) or when defining generic functions/classes, use the abstract base classes (ABCs) from the `collections.abc` module (e.g., `from collections.abc import Iterable, Sequence, Mapping, Set`). For example, annotate as `Iterable[int]`, `Mapping[str, float]`.
+    - **Union Types**:
+        - Use the `X | Y` syntax for union types (e.g., `str | None` instead of `Optional[str]`), as per Python 3.10+ (PEP 604).
+    - **Callables**:
+        - Annotate callables using `from collections.abc import Callable` (e.g., `Callable[[int], str]`).
+    - **Type Aliases**:
+        - Use the `type` statement for creating simple type aliases in Python 3.12+ (e.g., `type UserID = int`).
+        - For creating distinct types that are not interchangeable with their base type (for stronger type safety), use `NewType` from the `typing` module (e.g., `from typing import NewType; UserID = NewType('UserID', int)`).
+    - **Forward References**:
+        - When a type hint refers to a class name that has not yet been defined (e.g., a class referring to itself, or mutually dependent classes), specify the type hint as a string literal (e.g., `def set_parent(self, parent: "MyClass | None") -> None:`).
+    - **`TYPE_CHECKING`**:
+        - To avoid circular imports or unnecessary runtime imports solely for type annotations, use `from typing import TYPE_CHECKING`. Import modules needed only for type hints within an `if TYPE_CHECKING:` block.
+    - **Protocols (Structural Typing)**:
+        - Use `from typing import Protocol` to define structural interfaces (i.e., specifying what methods and attributes a class must have, without requiring inheritance). This is useful for static duck typing.
+    - **Completeness**: Always include type hints for all function/method parameters and return values.
+
+    ## 3. Docstrings
+
+    All public modules, functions, classes, and methods MUST have a docstring. Docstrings MUST follow the Google Python Style Guide format. Each module MUST have a module docstring as well describing why this specific module exists.
+
+    - **Structure**:
+        - A concise summary line (one line only), followed by a blank line, then a more detailed explanation if needed.
+        - The summary line should not merely repeat the function/method signature.
+    - **Function/Method Docstrings**:
+        - **Summary**: Brief overview of behavior.
+        - **`Args:`**: List each parameter by name. A description should follow the name, separated by a colon and a space. Indent wrapped lines by 2 or 4 spaces.
+        - **`Returns:`** (or `Yields:` for generators): Describe the type and meaning of the return value. If the function/method always returns `None`, this section can be omitted unless the return type annotation is `-> None` explicitly for clarity or if it can return other types as well.
+        - **`Raises:`**: List all exceptions that are part of the interface.
+    - **Class Docstrings**:
+        - **Summary**: Brief overview of the class's purpose.
+        - **`Attributes:`**: (If applicable) List and describe public attributes.
+        - If the class is intended to be subclassed and has an additional interface for subclasses, this interface should be listed separately.
+
+    ## 4. Comments (Inline)
+
+    Refer to the main `edon-project-guidelines.mdc` for the philosophy on commenting (explaining the "why"). Key points for inline comments:
+    - Avoid comments that state the obvious or merely translate code into English. Code should aim to be self-documenting.
+    - Use inline comments sparingly for non-trivial or complex logic sections if the logic cannot be made self-evident through clear naming and structure, primarily to explain *why* a certain approach was taken or to clarify complex business logic.
+
+    ## 5. Naming Conventions
+
+    Follow naming conventions from the Google Python Style Guide (Section 3.16):
+    - `module_name`
+    - `ClassName`
+    - `method_name`
+    - `function_name`
+    - `CONSTANT_NAME`
+    - `_internal_variable_or_method` (protected)
+    - `__private_attribute_or_method` (use with caution, for name mangling when necessary)
+
+actions:
+    - type: general_guidance
+      command: |
+        Follow the Python style guide: use Python 3.13 features, PySide6, comprehensive type hinting (built-in generics, collections.abc, X | Y unions, Callable, type aliases, NewType, forward references, TYPE_CHECKING, Protocol), Google-style docstrings, and specified naming conventions. Emphasize code readability and meaningful comments as per edon-project-guidelines.
+
+examples:
+    - input: |
+        # Old style / less clear
+        from typing import List, Dict, Callable as TypingCallable, Optional
+        
+        def process_data(data: List[int], config: Dict[str, float], callback: TypingCallable) -> Optional[str]:
+            # Process data
+            if not data: return None
+            res = ""
+            for i in data: res += str(callback(i * config.get("multiplier", 1.0)))
+            return res
+
+    - output: |
+        # Recommended style
+        from collections.abc import Callable, Iterable, Mapping
+        from typing import TYPE_CHECKING
+        
+        if TYPE_CHECKING:
+            from other_module import ComplexObject # Example for TYPE_CHECKING
+        
+        type UserID = int # Python 3.12+ type alias
+        
+        def process_data(
+            items: Iterable[UserID], 
+            configuration: Mapping[str, float | None], 
+            process_item_func: Callable[[UserID, float], str]
+        ) -> str | None:
+            """Processes a collection of user IDs based on configuration.
+
+            Args:
+                items: An iterable of user IDs to process.
+                configuration: A mapping of configuration options.
+                process_item_func: Function to call for processing each item. 
+                                   It takes user ID and a multiplier.
+            
+            Returns:
+                A concatenated string of processing results, or None if items is empty.
+            """
+            if not items:
+                return None
+            
+            multiplier = configuration.get("multiplier")
+            if multiplier is None:
+                # Explain why default is 1.0 if it's not obvious, 
+                # or why None in config leads to this.
+                multiplier = 1.0 
+            
+            results: list[str] = []
+            for item_id in items:
+                # Example of a comment explaining a non-obvious step or choice
+                # The process_item_func is expected to handle potential errors internally.
+                result_str = process_item_func(item_id, multiplier)
+                results.append(result_str)
+            
+            return "".join(results)
+
+metadata:
+    priority: high
+    version: 1.1 # Assuming previous was 1.0
+    references:
+      - https://peps.python.org/pep-0585/ # Built-in generics
+      - https://peps.python.org/pep-0604/ # Union types X | Y
+      - https://docs.python.org/3/library/collections.abc.html
+      - .cursor/rules/edon-project-guidelines.mdc
+</rule>

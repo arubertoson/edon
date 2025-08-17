@@ -26,7 +26,6 @@ class EditorContext:
     scene: GraphicsScene
     window: QMainWindow
     controller: WorkspaceController
-    entity_graph: EntityGraph
     selected_items: list[QGraphicsItem]
     event: QInputEvent | None = None
     params: dict[str, Any] = field(default_factory=dict)
@@ -35,9 +34,10 @@ class EditorContext:
 class GraphicsView(QGraphicsView):
     RIGHT_CLICK_MOVE_THRESHOLD = 5
 
-    def __init__(self, parent=None):
+    def __init__(self, controller: WorkspaceController, parent=None):
         super().__init__(parent)
         self.key_processor: KeyProcessor | None = None
+        self._controller = controller
 
         # Rendering and transformation
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -59,27 +59,24 @@ class GraphicsView(QGraphicsView):
         self._zoom_factor = 1.1
         self._interaction_enabled = True
 
-        scene = cast(GraphicsScene, self.scene())
+    @property
+    def is_interactive(self) -> bool:
+        return self._interaction_enabled
 
-    def setScene(self, scene: QGraphicsScene | None) -> None:
-        super().setScene(scene)
-        if scene is not None:
-            cast(GraphicsScene, scene).scene_node_count_changed.connect(self._update_view_behavior)
-
-    @Slot(int)
-    def _update_view_behavior(self, num_scene_items: int) -> None:
+    def set_interactive_scene(self, active: bool) -> None:
         current_scene = cast(GraphicsScene, self.scene())
 
-        has_scene_elements = bool(num_scene_items)
-        self.setInteractive(has_scene_elements)
-        self._interaction_enabled = has_scene_elements
+        self.setInteractive(active)
+        self._interaction_enabled = active
 
-        if not has_scene_elements:
+        if active:
+            self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        else:
             self.setDragMode(QGraphicsView.DragMode.NoDrag)
             self.resetTransform()
             self.centerOn(current_scene.empty_scene_text)
-        else:
-            self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+
+        current_scene.set_active(active)
 
     def _request_scene_rect_adjustment(self):
         """Helper method to get visible scene rect and request adjustment from the scene.
@@ -124,8 +121,7 @@ class GraphicsView(QGraphicsView):
             view=self,
             scene=scene,
             window=window,
-            controller=scene.controller,
-            entity_graph=scene.controller.graph,
+            controller=self._controller,
             selected_items=scene.selectedItems(),
             event=event,
             params={},
@@ -141,6 +137,11 @@ class GraphicsView(QGraphicsView):
         self._request_scene_rect_adjustment()
 
     def _route_key_event(self, event: QKeyEvent) -> None:
+        # We have no use for the auto repeat keys and will be ignoring those events in the key
+        # processor, how we use this is up for debate.
+        if event.isAutoRepeat():
+            return False
+
         event_type_str = "KeyPress" if event.type() == QEvent.Type.KeyPress else "KeyRelease"
         scene_focus_item = self.scene().focusItem() if self.scene() else None
 
@@ -158,8 +159,8 @@ class GraphicsView(QGraphicsView):
         # the event to the base implementation, which will route it to the appropriate QGraphicsItem
         # or handle it at the view level. This fallback ensures standard Qt event propagation.
         #
-        # In both cases, after delegating to the base implementation, we return to prevent further processing.
-        # This structure keeps the event routing logic clear and maintainable.
+        # In both cases, after delegating to the base implementation, we return to prevent further
+        # processing.
         if isinstance(scene_focus_item, QGraphicsProxyWidget):
             logger.debug(
                 f"GV.{event_type_str}: Scene-focused proxy widget ({scene_focus_item}) processing."
@@ -210,7 +211,7 @@ class GraphicsView(QGraphicsView):
     def keyReleaseEvent(self, event: QKeyEvent) -> None:
         self._route_key_event(event)
 
-    def mousePressEvent(self, event: QMouseEvent):
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         scene_item_under_mouse = self.itemAt(event.pos())
         logger.trace(
             f"GV.mousePress: btn={event.button()}, pos={event.pos()}. ItemUnderMouse: {scene_item_under_mouse}. "
@@ -278,7 +279,6 @@ class GraphicsView(QGraphicsView):
     def mouseReleaseEvent(self, event: QMouseEvent):
         logger.trace(f"GV.mouseRelease: btn={event.button()}, pos={event.pos()}")
 
-        # Priority 1: Specific view actions for button releases
         if event.button() == Qt.MouseButton.MiddleButton:
             if self._pan_active:
                 logger.trace("  Middle mouse release: Deactivating pan.")
@@ -290,27 +290,28 @@ class GraphicsView(QGraphicsView):
         elif event.button() == Qt.MouseButton.RightButton:
             if self._right_click_pos and not self._right_click_moved:
                 logger.debug("  Right mouse release (no drag): Showing context menu.")
-                menu = AppContextMenu(cast(QMainWindow, self.window()), event.globalPos(), self)
+                menu = AppContextMenu(
+                    cast(QMainWindow, self.window()),
+                    event.globalPos(),
+                    self,
+                )
                 menu.exec(event.globalPos())
             else:
                 logger.trace("  Right mouse release (dragged or no initial pos): Resetting state.")
             self._right_click_pos = None
             self._right_click_moved = False
             event.accept()
-            return  # Crucial: If right or middle button was handled, we return.
+            return
 
-        # Priority 2: Interaction enabled check for further processing
         if not self._interaction_enabled:
             logger.trace("  Interaction disabled, ignoring further mouse release processing.")
             event.ignore()
             return
 
-        # Priority 3: Pass to QGraphicsItems via super().mouseReleaseEvent()
         logger.trace("  GV.mouseRelease: Passing to super() for item processing.")
         super().mouseReleaseEvent(event)
         logger.trace(f"  GV.mouseRelease: After super(), event.accepted={event.isAccepted()}")
 
-        # Priority 4: Key processor (if event not already accepted by items/view actions)
         if not event.isAccepted():
             if self.key_processor and self.key_processor._process_event_for_command_sequence(
                 event, self
@@ -323,7 +324,6 @@ class GraphicsView(QGraphicsView):
             logger.trace("  GV.mouseRelease: Event already accepted before key_processor check.")
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        # Panning logic (middle mouse drag)
         if self._pan_active and self._last_pan_pos:
             current_pos = event.position().toPoint()
             delta = current_pos - self._last_pan_pos

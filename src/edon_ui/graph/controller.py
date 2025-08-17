@@ -1,33 +1,35 @@
-"""Manages the interaction between the data-centric EntityGraph and the UI GraphicsScene.
+"""
+Manages the synchronization and interaction between the logical entity graph
+and its visual representation in the UI.
 
-This module provides the GraphController class, which is responsible for:
-- Populating the graphics scene with nodes and edges based on the entity graph.
-- Handling UI requests to add, remove, or modify nodes and edges,
-  and translating these into operations on the entity graph.
-- Keeping the UI representation synchronized with the state of the entity graph.
-- Responding to signals from UI elements for graph-related actions.
-
+This controller acts as the central point for handling user input related
+to graph manipulation (node creation, deletion, linking) and reflecting
+changes from the entity graph model onto the graphics scene. It also
+manages the context when navigating into and out of subgraphs.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping, Sequence
-from typing import Type
+from typing import TYPE_CHECKING, Type, cast
 
 from loguru import logger
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QPointF, Slot
 
-from edon.graph import EntityGraph, SubGraphNode
+from edon.graph import EntityGraph, EntitySubGraphNode
 from edon.node import EntityNode
 from edon.types import EdgeKey, SocketAddress, SocketRole
 from edon_ui import theme
-from edon_ui.graph.context import GraphContextStack, NavigationState
-from edon_ui.graph.registry import GraphUIDataRegistry
+from edon_ui.graph.context import ContextState, WorkspaceContextStack
+from edon_ui.graph.registry import WorkspaceUIDataRegistry
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.factory import create_node_item
 from edon_ui.items.node import NodeItem
-from edon_ui.views.scene import DragPrepInfo, GraphicsScene
+from edon_ui.views.scene import EdgeDragContext, GraphicsScene
 from edon_ui.views.viewer import GraphicsView
+
+if TYPE_CHECKING:
+    pass
 
 type NodeRegistryMap = MutableMapping[str, Type[EntityNode]]
 
@@ -52,25 +54,32 @@ class WorkspaceController:
         The GraphContextStack is initialized with this root context.
         Graph content can be loaded subsequently via load_graph().
         """
-        self._view = GraphicsView()
-        self.graph_context_stack = GraphContextStack()
+        self._view = GraphicsView(self)
+
+        self.context_stack = WorkspaceContextStack()
         self.node_registry: NodeRegistryMap = dict(node_type_registry or {})
 
-        initial_scene = GraphicsScene(controller=self)
-        initial_graph = EntityGraph()
-        initial_registry = GraphUIDataRegistry()
-        self.graph_context_stack.initialize(
-            root_graph=initial_graph,
-            root_scene=initial_scene,
-            root_registry=initial_registry,
-        )
-
-        self._view.setScene(initial_scene)
-        assert self.view.scene() is initial_scene, (
+        init_scene = self._create_wired_scene()
+        self._view.setScene(init_scene)
+        assert self.view.scene() is init_scene, (
             "CORRUPTION: GraphicsView's scene does not match the initial_scene created by WorkspaceController."
         )
-        # Ensure the scene (especially if empty) displays its state correctly.
-        initial_scene._update_scene_content_display()
+
+        self.context_stack.initialize(
+            ContextState(
+                graph=EntityGraph(),
+                scene=init_scene,
+                registry=WorkspaceUIDataRegistry(),
+            )
+        )
+
+    def _create_wired_scene(self) -> GraphicsScene:
+        scene = GraphicsScene()
+        scene.edge_drag_initiation_request.connect(self.handle_ui_init_edge_drag_action)
+        scene.edge_link_request.connect(self.handle_ui_edge_link_request)
+        scene.node_redraw_ui_request.connect(self.handle_ui_node_redraw_request)
+
+        return scene
 
     @property
     def view(self) -> GraphicsView:
@@ -78,15 +87,15 @@ class WorkspaceController:
 
     @property
     def scene(self) -> GraphicsScene:
-        return self.graph_context_stack.current_scene
+        return self.context_stack.current.scene
 
     @property
     def graph(self) -> EntityGraph:
-        return self.graph_context_stack.current_graph
+        return self.context_stack.current.graph
 
     @property
-    def data(self) -> GraphUIDataRegistry:
-        return self.graph_context_stack.current_registry
+    def registry(self) -> WorkspaceUIDataRegistry:
+        return self.context_stack.current.registry
 
     def _clear_all_ui(self) -> None:
         """
@@ -99,16 +108,16 @@ class WorkspaceController:
         # XXX: We should look into scene reset that is prettier than this.
         # I don't think we have to go through everything and delete it.
         # But if we do we should delegate it to scene either way.
-        edge_items_to_remove = list(self.data.edges)
+        edge_items_to_remove = list(self.registry.edges)
         for edge_item in edge_items_to_remove:
             self.scene.remove_edge(edge_item)
 
-        node_items_to_remove = list(self.data.nodes)
+        node_items_to_remove = list(self.registry.nodes)
         for node_item in node_items_to_remove:
             self.scene.remove_node(node_item)
 
         # Reset the registry to clean state
-        self.graph_context_stack.current_level.registry = GraphUIDataRegistry()
+        self.context_stack.current.registry = WorkspaceUIDataRegistry()
 
         logger.debug(
             f"Cleared {len(edge_items_to_remove)} edges and {len(node_items_to_remove)} nodes"
@@ -124,25 +133,22 @@ class WorkspaceController:
         """
         logger.info(f"Loading new graph with {len(entity_graph.nodes)} nodes")
 
-        assert self.graph_context_stack.is_at_root(), (
+        assert self.context_stack.is_at_root(), (
             "load_graph can only be called when at the root navigation level."
         )
 
-        new_entity_graph = EntityGraph()
-        new_scene = GraphicsScene(controller=self)
-        new_registry = GraphUIDataRegistry()
-
-        self.graph_context_stack.initialize(
-            root_graph=new_entity_graph,
-            root_scene=new_scene,
-            root_registry=new_registry,
+        state = ContextState(
+            graph=EntityGraph(),
+            scene=self._create_wired_scene(),
+            registry=WorkspaceUIDataRegistry(),
         )
+        self.context_stack.initialize(state)
 
         # Create Scene state from the given entity_graph
-        self._populate_scene_from_graph_data(source_graph=entity_graph)
+        self._populate_scene_from_graph_data(entity_graph)
 
-        self.view.setScene(new_scene)
-        new_scene._update_scene_content_display()
+        self.view.setScene(state.scene)
+        self.view.set_interactive_scene(bool(state.registry.nodes))
 
         logger.info("Graph loading completed successfully for the current context")
 
@@ -162,13 +168,18 @@ class WorkspaceController:
             entity_node,
         )
 
-        # Register with scene and data layer
-        self.scene.add_node(node_item)
         # XXX: we do this if we are populating a scene from existing graph
         if entity_node.id not in self.graph.nodes:
             self.graph.add_node(entity_node)
 
-        self.data.register_node_with_sockets(node_item)
+        self.registry.register_node_with_sockets(node_item)
+
+        # Finally update graphics layers, scene/view behavior, if this is the first node added this will
+        # enable interactivity etc.
+        self.scene.add_node(node_item)
+
+        if not self.view.is_interactive:
+            self.view.set_interactive_scene(True)
 
         return node_item
 
@@ -184,12 +195,12 @@ class WorkspaceController:
         target_socket_addr = edge_key.target
 
         edge_item = EdgeItem(
-            self.data.socket_item_for_address(source_socket_addr),
-            self.data.socket_item_for_address(target_socket_addr),
+            self.registry.socket_item_for_address(source_socket_addr),
+            self.registry.socket_item_for_address(target_socket_addr),
         )
 
         self.scene.add_edge(edge_item)
-        self.data.register_edge_item(edge_key, edge_item)
+        self.registry.register_edge_item(edge_key, edge_item)
 
         return edge_item
 
@@ -221,78 +232,66 @@ class WorkspaceController:
 
         # Add all edges using existing request method
         for edge_key in graph_to_read.edges:
-            self.request_add_edge(edge_key)
-
-        self.scene._update_scene_content_display()
+            self._register_edge_internal(edge_key)
 
     def enter_subgraph(self, subgraph_node_item: NodeItem) -> None:
         """
         Switches the controller's context to the internal graph of the given SubGraphNodeItem.
         """
-        logger.trace(f"Entering subgraph from depth {self.graph_context_stack.depth}")
+        logger.trace(f"Entering subgraph from depth {self.context_stack.depth}")
 
-        entity_id = subgraph_node_item.entity_id
         # The graph and UI registry should be in sync; if node_item exists, entity_node must exist.
+        entity_id = subgraph_node_item.entity_id
         entity_node = self.graph.get_node(entity_id)
+
         assert entity_node is not None, (
             f"CRITICAL: EntityNode with ID {entity_id} not found in graph despite UI item existing."
         )
-
-        logger.debug(f"Entering subgraph for node: {entity_node.id}")
-
-        assert isinstance(entity_node, SubGraphNode), (
+        assert isinstance(entity_node, EntitySubGraphNode), (
             f"CORRUPTION: Node {entity_node.id} provided to enter_subgraph "
             f"is not a SubGraphNode. Actual type: {type(entity_node)}."
         )
-        subgraph_entity: SubGraphNode = entity_node
-        internal_graph = subgraph_entity.internal_graph
 
-        # Create new UI components for the subgraph context
-        new_scene = GraphicsScene(controller=self)
-        new_registry = GraphUIDataRegistry()
-
-        # Create and push the new navigation state
-        nav_state = NavigationState(
-            graph=internal_graph,
-            scene=new_scene,
-            registry=new_registry,
-            originating_subgraph_node=subgraph_entity,
+        subgraph_entity = cast(EntitySubGraphNode, entity_node)
+        context_state = ContextState(
+            graph=subgraph_entity.internal_graph,
+            scene=self._create_wired_scene(),
+            registry=WorkspaceUIDataRegistry(),
+            origin_subgraph_node=subgraph_entity,
         )
-        self.graph_context_stack.push_level(nav_state)
+        self.context_stack.push(context_state)
 
-        # Populate the new scene from the internal graph's data
-        # The _populate_scene_from_graph_data method now takes a source_graph argument
-        self._populate_scene_from_graph_data(source_graph=internal_graph)
+        self._populate_scene_from_graph_data(source_graph=context_state.graph)
 
-        # Update the view to display the new scene
-        # self.scene property will now return new_scene from the context stack
+        # It's always important to update the interaction on the scene.
         self.view.setScene(self.scene)
-        self.scene._update_scene_content_display()
+        self.view.set_interactive_scene(bool(self.context_stack.current.registry.nodes))
 
-        logger.info(
-            f"Successfully entered subgraph: {subgraph_entity.id}. Current depth: {self.graph_context_stack.depth}"
+        logger.debug(
+            f"Successfully entered subgraph: {subgraph_entity.id}. Current depth: {self.context_stack.depth}"
         )
 
     def exit_subgraph(self) -> None:
         """
         Exits the current subgraph view and returns to the parent graph view.
         """
-        logger.debug("Attempting to exit subgraph.")
+        logger.trace(f"Leaving subgraph from depth {self.context_stack.depth}")
 
-        assert not self.graph_context_stack.is_at_root(), (
+        assert not self.context_stack.is_at_root(), (
             "Cannot exit subgraph: Already at the root graph."
         )
 
-        self.graph_context_stack.pop_level()
+        self.context_stack.pop()
         logger.info(
-            f"Exited subgraph. Current depth: {self.graph_context_stack.depth}. "
-            f"Now viewing graph: {self.graph_context_stack.current_graph if self.graph_context_stack.current_graph else 'Root'}"
+            f"Exited subgraph. Current depth: {self.context_stack.depth}. "
+            f"Now viewing graph: {self.context_stack.current.graph if self.context_stack.current.graph else 'Root'}"
         )
 
         # Update the view to display the parent scene
         self.view.setScene(self.scene)
-        self.scene._update_scene_content_display()
+        self.view.set_interactive_scene(bool(self.context_stack.current.graph.nodes))
 
+    @Slot(str, QPointF)
     def handle_ui_node_creation_request(self, node_type_hint: str, scene_pos: QPointF) -> NodeItem:
         """
         Slot to handle the new_node_requested_at_scene_pos signal from the UI (e.g., GraphicsView).
@@ -313,6 +312,7 @@ class WorkspaceController:
             mouse_position=scene_pos,
         )
 
+    @Slot(SocketAddress, SocketAddress)
     def handle_ui_edge_link_request(
         self, source_socket_addr: SocketAddress, target_socket_addr: SocketAddress
     ) -> None:
@@ -331,12 +331,36 @@ class WorkspaceController:
         # If the target socket already has an edge, we remove it, input nodes can only have one edge
         # and we decided on behavior that the new edge will replace the old one.
         # This uses the updated find_edge_items_at_socket which calls the registry.
-        edge_items = self.data.edge_items_for_socket(target_socket_addr)
+        edge_items = self.registry.edge_items_for_socket(target_socket_addr)
         if edge_items:
             logger.debug(
                 f"Target socket {target_socket_addr.node_id}::{target_socket_addr.name} already has a link, removing existing."
             )
             self.handle_ui_edge_deletion_request(list(edge_items))
+
+        # If we are in a subgraph we need to check whether we have to update the SubGraphNode in the parent with
+        # new context.
+        if not self.context_stack.is_at_root():
+            # Import here to avoid circular dependencies at module level if SubgraphPromoterNode
+            # itself might eventually use controller functionalities, or keep at top if safe.
+            from edon.nodes.utility import SubgraphPromoterNode
+
+            source_node_entity = self.graph.get_node(source_socket_addr.node_id)
+            target_node_entity = self.graph.get_node(target_socket_addr.node_id)
+
+            is_source_node_promoter = isinstance(source_node_entity, SubgraphPromoterNode)
+            is_target_node_promoter = isinstance(target_node_entity, SubgraphPromoterNode)
+            if any([is_source_node_promoter, is_target_node_promoter]):
+                if is_source_node_promoter:
+                    internal_socket_addr = target_socket_addr
+                else:
+                    internal_socket_addr = source_socket_addr
+
+                logger.debug(
+                    f"Dispatching to request_expose_subgraph_socket: "
+                    f"internal: {internal_socket_addr}"
+                )
+                self.request_expose_socket_from_subgraph(internal_socket_addr=internal_socket_addr)
 
         self.request_add_edge(edge_key)
 
@@ -400,8 +424,8 @@ class WorkspaceController:
 
         # Unregister from UI registry; this will assert if node_id is not found.
         # It returns the node_item, and lists of socket_items and edge_items that were part of this node.
-        node_item_to_remove, _removed_socket_items, removed_edge_items = self.data.unregister_node(
-            entity_node_id
+        node_item_to_remove, _removed_socket_items, removed_edge_items = (
+            self.registry.unregister_node(entity_node_id)
         )
 
         # XXX: should  `remove_node` handle removing edges as well or is that part of business logic?
@@ -419,6 +443,10 @@ class WorkspaceController:
         self.graph.remove_node(entity_node_id)
         self.scene.remove_node(node_item_to_remove)
 
+        # Finally update view behavior, if this is the first node added this will
+        # enable interactivity etc.
+        self.view.set_interactive_scene(bool(self.registry.nodes))
+
     def request_remove_edge(self, edge_key: EdgeKey) -> None:
         """
         Handles a request to remove a single edge (entity and UI).
@@ -429,26 +457,71 @@ class WorkspaceController:
         # Unlink sockets in the entity graph first. Refactor necessary.
         self.graph.unlink_sockets(edge_key)
 
-        edge_item = self.data.unregister_edge(edge_key)
+        edge_item = self.registry.unregister_edge(edge_key)
         self.scene.remove_edge(edge_item)
 
         logger.debug(f"UI EdgeItem for {edge_key} removed from graphics scene and UI registry.")
 
-    def prepare_drag_operation(self, clicked_socket_addr: SocketAddress) -> DragPrepInfo:
+    def request_expose_socket_from_subgraph(self, internal_socket_addr: SocketAddress) -> None:
         """
-        Analyzes a clicked socket and prepares the data needed for edge drag operations.
+        Handles a request to expose an internal socket of a subgraph as a proxy
+        socket on the parent SubGraphNode.
 
-        Handles the business logic of edge lifting when dragging from input sockets
-        that already have connections. Returns the actual source socket that should
-        be used for the new edge, along with precomputed drop target validation.
-        Assertions in `GraphUIDataRegistry` handle cases where the socket address is not found.
-        If this method returns, it guarantees a valid DragPrepInfo object.
+        This is typically triggered by dragging an edge from an internal node's socket
+        to a special socket on a SubgraphPromoterNode within the subgraph's view.
         """
-        socket_item = self.data.socket_item_for_address(clicked_socket_addr)
+        current_stack_state = self.context_stack.current
+        assert current_stack_state.origin_subgraph_node is not None, (
+            "CORRUPTION: Attempting to expose subgraph socket when not editing within a subgraph context."
+        )
+
+        subgraph_node_entity = current_stack_state.origin_subgraph_node
+        subgraph_node_entity.add_proxy_socket(internal_socket_addr.name, internal_socket_addr)
+
+        parent_stack_state = self.context_stack.parent
+        assert parent_stack_state is not None, (
+            "CORRUPTION: Attempting to expose subgraph socket when not editing within a subgraph context."
+        )
+
+        from edon_ui.items.factory import create_socket_item
+
+        socket_entity = subgraph_node_entity.sockets[internal_socket_addr.name]
+        # We need to get the display state from the socket item that we are exposing, so the behavior
+        # is maintained.
+        internal_socket_item = self.registry.socket_item_for_address(internal_socket_addr)
+        new_socket_item = create_socket_item(
+            socket_entity, internal_socket_item.components.display_state
+        )
+
+        parent_stack_state.registry.register_socket_item_for_node(new_socket_item)
+
+        subgraph_item = parent_stack_state.registry.node_item_for_id(subgraph_node_entity.id)
+        subgraph_item.add_socket_item(new_socket_item)
+
+    @Slot(str, GraphicsScene)
+    def handle_ui_node_redraw_request(self, node_id: str, scene: GraphicsScene) -> None:
+        state = self.context_stack.context_state_for_scene(scene)
+        node_item = state.registry.node_item_for_id(node_id)
+
+        for socket_item in node_item.source_sockets + node_item.target_sockets:
+            edges = state.registry.edge_items_for_socket(socket_item.address)
+            # Drawing should really happen at the scene level but creating a function to
+            # pipe the edge items to the scene just "because" is unnecessary.
+            for edge in edges:
+                edge.update_path()
+
+    @Slot(SocketAddress, QPointF, GraphicsScene)
+    def handle_ui_init_edge_drag_action(
+        self, clicked_socket_addr: SocketAddress, pos: QPointF, scene: GraphicsScene
+    ) -> None:
+        """
+        Analyzes a clicked socket and prepares the data needed for the edge drag action.
+        """
+        socket_item = self.registry.socket_item_for_address(clicked_socket_addr)
 
         # Check if we need to lift an existing edge
         # This uses the updated find_edge_items_at_socket which calls the registry.
-        linked_edges = list(self.data.edge_items_for_socket(clicked_socket_addr))
+        linked_edges = list(self.registry.edge_items_for_socket(clicked_socket_addr))
 
         if socket_item.role == SocketRole.TARGET and linked_edges:
             # Lift existing edge - the actual source becomes the original source
@@ -477,16 +550,20 @@ class WorkspaceController:
 
         valid_targets, invalid_targets = self.partition_socket_drop_targets(actual_source_addr)
 
-        return DragPrepInfo(
-            source_socket_addr=actual_source_addr,
-            source_socket_item=actual_source_socket_item,
-            is_lifted_edge=is_lifted,
-            valid_targets={
-                addr: self.data.socket_item_for_address(addr) for addr in valid_targets
-            },
-            invalid_targets={
-                addr: self.data.socket_item_for_address(addr) for addr in invalid_targets
-            },
+        # Feed the necessary context to the scene for it to start the edge drag action
+        scene.edge_drag_create_action(
+            EdgeDragContext(
+                source_socket_addr=actual_source_addr,
+                source_socket_item=actual_source_socket_item,
+                is_lifted_edge=is_lifted,
+                valid_targets={
+                    addr: self.registry.socket_item_for_address(addr) for addr in valid_targets
+                },
+                invalid_targets={
+                    addr: self.registry.socket_item_for_address(addr) for addr in invalid_targets
+                },
+            ),
+            pos,
         )
 
     def partition_socket_drop_targets(
@@ -512,4 +589,4 @@ class WorkspaceController:
 
         Assertions in `GraphUIDataRegistry` handle cases where the socket address is not found.
         """
-        return self.data.edge_items_for_socket(socket_addr)
+        return self.registry.edge_items_for_socket(socket_addr)

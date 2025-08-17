@@ -1,0 +1,96 @@
+@startuml KeyProcessorBehavior
+title KeyProcessor Event Filtering and Command Execution
+
+[*] --> Idle : Initialized
+
+state Idle {
+    [*] -> ReceivingEvent : Event Arrives (Key/Mouse)
+}
+
+state ReceivingEvent <<transient>> {
+    description
+        Event filter receives QEvent.
+        Ignores common/high-frequency events.
+        Filters for KeyPress/KeyRelease, MouseButtonPress/MouseButtonRelease.
+        Ignores auto-repeat key presses.
+    end description
+    ReceivingEvent -> ConvertingEvent : Relevant Event (Key/Mouse Press/Release)
+    ReceivingEvent --> Idle : Irrelevant Event or Auto-Repeat
+}
+
+state ConvertingEvent {
+    description
+        Converts QKeyEvent/QMouseEvent to action_str.
+        e.g., "Ctrl+S", "LMBClick", "G"
+        Ignores pure modifier key events if no sequence active.
+    end description
+    ConvertingEvent -> ProcessingSequence : action_str generated
+    ConvertingEvent --> Idle : Event not convertible or standalone modifier
+}
+
+state ProcessingSequence {
+    description
+        Appends action_str to current_typed_sequence.
+        Starts/restarts sequence_timeout_ms timer.
+    end description
+    ProcessingSequence -> CheckingCommand : Sequence Updated
+}
+
+state CheckingCommand <<choice>>  {
+    CheckingCommand --> ExecutingCommand : [Sequence is Full Command]
+    CheckingCommand --> WaitingForMoreInput : [Sequence is Prefix of Command]
+    CheckingCommand --> ResettingSequenceAndPassEvent : [Sequence not Command or Prefix]
+}
+
+state WaitingForMoreInput {
+    description
+        Current sequence is a valid prefix of a longer hotkey.
+        Event is consumed (returns True).
+        Awaits next event or timeout.
+    end description
+    WaitingForMoreInput -> ReceivingEvent : Next Event Arrives (within timeout)
+    WaitingForMoreInput -> ResettingSequenceAndPassEvent : Sequence Timeout Occurs
+}
+
+state ExecutingCommand {
+    description
+        Retrieves Command from registry.
+        Gets EditorContext from ContextProvider.
+        Executes command.action(context).
+        Event is consumed (returns True).
+    end description
+    ExecutingCommand -> ResettingSequenceAndHandled : Command Executed
+}
+
+state ResettingSequenceAndHandled {
+    description
+        _current_typed_sequence is cleared.
+        Sequence timer is stopped.
+    end description
+    ResettingSequenceAndHandled --> Idle
+}
+
+state ResettingSequenceAndPassEvent {
+    description
+        _current_typed_sequence is cleared.
+        Sequence timer is stopped.
+        Event is NOT consumed by KeyProcessor (returns False).
+    end description
+    ResettingSequenceAndPassEvent --> Idle
+}
+
+note right of Idle
+  <b>KeyProcessor State:</b>
+  - _current_typed_sequence: list[str]
+  - _sequence_timer: QTimer
+  - _sequence_timeout_ms: int
+end note
+
+note right of ProcessingSequence
+  <b>Dependencies:</b>
+  - CommandRegistry: To get Command objects.
+  - HotkeyMapping: To resolve sequences and prefixes.
+  - ContextProvider (e.g., GraphicsView): To get EditorContext.
+end note
+
+@enduml 

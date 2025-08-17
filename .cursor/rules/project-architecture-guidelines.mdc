@@ -1,0 +1,124 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Edon Project Development and Architectural Guidelines
+
+This document outlines the architectural principles, code readability philosophy, coding conventions, and general development practices for the Edon project. Its purpose is to ensure consistency, maintainability, and collaboration across the codebase.
+
+<rule>
+name: edon-project-guidelines
+description: |
+    ## 1. Introduction
+
+    This document outlines the architectural principles, coding conventions, and development practices for the Edon project. Its purpose is to ensure consistency, maintainability, and collaboration.
+
+    ## 2. Core Architecture
+
+    Edon employs a modular architecture inspired by the Model-View-Controller (MVC) pattern, tailored for a node-based editor.
+
+    ### 2.1. Key Components and Responsibilities
+
+    *   **`edon` (Core Engine - `src/edon/`)**:
+        *   **`EntityGraph`**: The central data model for the node graph. It is UI-agnostic.
+        *   **`EntityNode`**: Base representation for nodes within the graph.
+        *   **`Socket`**: Defines connection points (inputs/outputs) for nodes.
+        *   **`Executor`**: (Assumed) Handles the execution or processing logic of the graph.
+        *   *Guideline*: Logic placed here should be core to the graph's functionality and independent of any specific UI implementation.
+
+    *   **`edon_ui` (User Interface - `src/edon_ui/`)**:
+        *   **`EdonApplication`**: The main application class, orchestrating all components.
+        *   **`graphics` (Module)**:
+            *   `MainWindow`: The main application window.
+            *   `GraphicsView`: Displays the graph and handles user interaction.
+            *   `GraphicsScene`: Contains the visual representation of graph elements.
+        *   **`commands` (Module)**:
+            *   `CommandRegistry`, `KeyMapping`, `KeyProcessor`: Manage registration, key-binding, and execution of user commands.
+            *   `actions/`, `builtins.py`: Implementations of specific commands.
+        *   **`GraphController`**: The bridge between `EntityGraph` (model) and `GraphicsScene` (view). Synchronizes state and translates UI actions to model operations.
+        *   *Guideline*: UI-specific logic, Qt dependencies, and direct user interaction handling belong in this package.
+
+    ### 2.2. Architectural Principles
+
+    *   **Separation of Concerns**: Maintain a clear distinction between core graph logic (`edon`) and the user interface (`edon_ui`).
+    *   **Modularity**: Design components with well-defined responsibilities and interfaces.
+    *   **Data Flow**:
+        *   The `EntityGraph` is the single source of truth for the graph structure.
+        *   The `GraphController` is responsible for keeping the `GraphicsScene` synchronized with the `EntityGraph`.
+        *   Changes to the graph should ideally be performed through the `GraphController` or via commands that utilize it, ensuring UI consistency.
+    *   **Control Flow**:
+        *   User input in the `GraphicsView` is typically processed by the `KeyProcessor`.
+        *   The `KeyProcessor` uses the `CommandRegistry` and `KeyMapping` to trigger command execution.
+        *   Commands operate on the application state, potentially modifying the `EntityGraph` via the `GraphController`.
+
+    ### 2.3. Adding New Features
+
+    *   **New Node Types**:
+        1.  Define your node logic by subclassing `edon.node.EntityNode` (or a relevant derived class).
+        2.  Implement its data structure, properties, and any specific execution logic.
+        3.  Create a corresponding visual representation (typically a `QGraphicsItem` subclass) if a new visual style is needed.
+        4.  Register the node type string and its Python class in the `node_registry` passed to or updated in `EdonApplication`.
+        5.  The `GraphController` will use this registry to instantiate and display new nodes.
+    *   **New Commands**:
+        1.  Define the command logic (e.g., in `src/edon_ui/commands/actions/`). This usually involves creating a function or class that encapsulates the action.
+        2.  Create a `CommandDefinition` for it, specifying its ID, name, default key sequence, and the callable.
+        3.  Add the `CommandDefinition` to `ALL_COMMAND_DEFINITIONS` in `src/edon_ui/commands/__init__.py` for automatic registration, or register it manually with the `CommandRegistry`.
+
+    ## 3. Code Readability, Structure, and Commenting Philosophy
+
+    Beyond syntactic correctness and algorithm efficiency, the Edon project prioritizes code that is exceptionally readable and understandable. Our goal is to make the codebase accessible and easy to navigate for any developer.
+
+    ### 3.1. Code as a Narrative ("Read Like a Book")
+
+    -   **Logical Flow**: Strive to structure code modules, classes, and functions so that they tell a clear story. The flow of logic should be easy to follow, much like reading well-organized prose.
+    -   **Coherent Blocks ("Paragraphs")**: Group related statements and operations into logical blocks, often separated by blank lines. Each block should accomplish a distinct, small part of a larger task, forming a "paragraph" in the code's narrative.
+    -   **Top-Down Readability**: Where appropriate, aim for a top-down structure within files or large functions. Higher-level orchestrating logic should appear before the detailed implementation specifics, allowing readers to grasp the overall picture first.
+    -   **Clear and Descriptive Naming**: Use precise and descriptive names for variables, functions, classes, and modules that clearly convey their purpose and role in the overall logic.
+
+    ### 3.2. Commenting – Explaining the "Why"
+
+    While docstrings (covered in the Python Style Guide) explain *what* a public interface does and *how* to use it, inline comments are crucial for explaining the *why* behind the implementation.
+
+    -   **Intent and Rationale**: Use comments to clarify the reasoning behind non-obvious design choices, complex algorithms, or specific implementations. If a piece of code might seem counter-intuitive or addresses a subtle edge case, explain the rationale.
+    -   **Contextual Background**: Provide comments that offer background or context that isn't immediately apparent from reading the code itself. This could include references to specific requirements, reasons for choosing a particular approach over alternatives, or assumptions being made.
+    -   **High-Level Overviews for Complex Sections**: For intricate functions or logical blocks, a brief comment at the beginning can summarize the strategy or purpose of the upcoming code, acting as an introduction to that "chapter" or "section."
+    -   **Avoid Redundancy**: Do not comment on what is already clear from well-written code. Comments should add insight, not noise (e.g., avoid `x = x + 1  # Increment x`).
+    -   **Maintain Accuracy**: Ensure comments are kept meticulously up-to-date as the code evolves. Outdated or incorrect comments can be more misleading than no comments at all.
+
+    ## 4. Python Styling and Conventions
+
+    Refer to the `python-style-guide.mdc` rule for detailed Python style, type hinting, and docstring conventions. Key highlights include:
+        *   Python 3.13 features.
+        *   PySide6 for Qt bindings.
+        *   Comprehensive type hinting.
+        *   Google-style docstrings.
+        *   `collections.abc` for generics.
+
+    ## 5. Dependency Management
+
+    *   Dependencies are managed via `pyproject.toml` and `uv` (as indicated by `uv.lock`).
+    *   Keep dependencies updated and justify additions.
+
+    ## 6. Testing (Placeholder)
+
+    *   (Outline testing strategy here - e.g., unit tests for core logic, UI tests if applicable).
+    *   Tests should be placed in a `tests/` directory.
+
+    ## 7. Logging
+
+    *   `loguru` is the standard logging library.
+    *   Use appropriate log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+    *   Ensure sensitive information is not logged in production releases.
+
+actions:
+    - type: general_guidance
+      command: |
+        Adhere to the Edon project's architectural principles, code readability standards (structure code like a narrative with "paragraphs", comment the "why"), and development practices. Consult specific style guides like python-style-guide.mdc for language details.
+
+metadata:
+    priority: high
+    version: 1.1 # Assuming previous was 1.0
+    references:
+      - .cursor/rules/python-style-guide.mdc
+</rule>

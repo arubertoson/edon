@@ -5,6 +5,8 @@ This module defines the `KeyProcessor` class, which listens to input events
 a complete hotkey sequence, retrieves and executes the corresponding command.
 """
 
+# TODO: I kind of want to be able to set "tool context", that will swap the key mapping.
+
 from loguru import logger
 from typing import TYPE_CHECKING
 
@@ -49,7 +51,9 @@ def qkeyevent_to_string(event: QKeyEvent) -> str | None:
     if event.key() in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta):
         return None
 
-    key_str = QKeySequence(event.keyCombination()).toString(QKeySequence.SequenceFormat.PortableText)
+    key_str = QKeySequence(event.keyCombination()).toString(
+        QKeySequence.SequenceFormat.PortableText
+    )
     return key_str if key_str else None
 
 
@@ -111,61 +115,28 @@ class KeyProcessor(QObject):
         self._sequence_timer.timeout.connect(self._reset_typed_sequence)
         self._sequence_timeout_ms: int = sequence_timeout_ms
 
-    def eventFilter(self, watched: "QObject | ContextProvider", event: QEvent) -> bool:
-        if event.type() in IGNORED_EVENT_TYPES:
-            return False  # Pass through these events without processing for commands
-
-        input_event: QInputEvent | None = None
-        is_relevant_type = False
-
-        if event.type() in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease) and isinstance(event, QKeyEvent):
-            input_event = event
-            is_relevant_type = True
-            # Auto-repeat filtering for key presses should happen here if not done by the view
-            if event.type() == QEvent.Type.KeyPress and event.isAutoRepeat():
-                logger.trace(f"KeyProcessor.eventFilter: Ignoring auto-repeat key press: key={event.key()}")
-                return False  # Filter out auto-repeat, don't pass to sequence logic
-
-        elif event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease) and isinstance(
-            event, QMouseEvent
-        ):
-            input_event = event
-            is_relevant_type = True
-
-        # Log details for events that are not early-exited but might not be QInputEvent
-        if not is_relevant_type and not input_event:
-            logger.trace(
-                f"KeyProcessor.eventFilter: Passing through unhandled event type: {event.type()} for watched: {type(watched).__name__}"
-            )
-            return False
-
-        if input_event:
-            # We expect 'watched' to be a ContextProvider (e.g., GraphicsView)
-            if not hasattr(watched, "provide_context") or not callable(watched.provide_context):
-                logger.error(
-                    f"KeyProcessor.eventFilter: Watched object {type(watched).__name__} is not a ContextProvider."
-                )
-                return False  # Cannot proceed without context
-
-            # Cast for type hinting if needed, though direct call should work if attribute exists
-            context_provider = watched  # type: ignore
-
-            return self._process_event_for_command_sequence(input_event, context_provider)
-
-        return False  # Default to passing through if not handled
-
     def set_sequence_timeout(self, timeout_ms: int) -> None:
         """Sets the timeout for multi-key sequences."""
         if timeout_ms > 0:
             self._sequence_timeout_ms = timeout_ms
         else:
-            logger.warning(f"Attempted to set invalid sequence timeout: {timeout_ms}ms. Using current or default.")
+            logger.warning(
+                f"Attempted to set invalid sequence timeout: {timeout_ms}ms. Using current or default."
+            )
 
-    def _process_event_for_command_sequence(self, event: QInputEvent, context_provider: "ContextProvider") -> bool:
+    def _process_event_for_command_sequence(
+        self, event: QInputEvent, context_provider: "ContextProvider"
+    ) -> bool:
         """Core logic for processing an event to find and execute a command sequence."""
+        # Can you help me break this function down, we are trying to ensure that sequences like "Ctr+K", "F" is stored, but it seems it doesn't work properly AI?
         action_str, _, should_continue = self._determine_action_string_and_details(event)
 
-        if not should_continue:
+        if not should_continue or action_str is None:
+            return False
+
+        # XXX: we need a state object to for the even tracking, this is quite
+        # silly how it's handled.
+        if self._current_typed_sequence and "KeyRelease" in _:
             return False
 
         self._current_typed_sequence.append(action_str)
@@ -180,7 +151,9 @@ class KeyProcessor(QObject):
             # trigger on KeyPress, KeyRelease, or both. For now, all hotkey-triggered
             # commands execute on KeyPress only to prevent double execution.
             if event.type() == QEvent.Type.KeyPress:
-                return self._handle_found_command(command_id, event, context_provider, current_sequence_tuple)
+                return self._handle_found_command(
+                    command_id, event, context_provider, current_sequence_tuple
+                )
             else:
                 # Sequence matched on KeyRelease (or other non-KeyPress event),
                 # but command execution is currently tied to KeyPress.
@@ -201,33 +174,30 @@ class KeyProcessor(QObject):
         self._reset_typed_sequence()
         return False  # Not a command, not a prefix
 
-    def _determine_action_string_and_details(self, event: QInputEvent) -> tuple[str | None, str, bool]:
-        """Determines the action string and event details from an input event.
-
-        Returns:
-            A tuple containing:
-                - action_str (str | None): The string representation of the action, or None.
-                - specific_event_details (str): A string with details of the event.
-                - should_continue (bool): False if processing should stop early, True otherwise.
+    def _determine_action_string_and_details(
+        self, event: QInputEvent
+    ) -> tuple[str | None, str, bool]:
+        """
+        Determines the action string and event details from an input event.
         """
         action_str: str | None = None
         specific_event_details = ""
 
         if isinstance(event, QKeyEvent):
             qt_event_type = event.type()
-            event_type_name = "KeyPress" if qt_event_type == QKeyEvent.Type.KeyPress else "KeyRelease"
-            specific_event_details = (
-                f"type={event_type_name}, key={event.key()}, mods={event.modifiers()}, text='{event.text()}'"
+            event_type_name = (
+                "KeyPress" if qt_event_type == QKeyEvent.Type.KeyPress else "KeyRelease"
             )
+            specific_event_details = f"type={event_type_name}, key={event.key()}, mods={event.modifiers()}, text='{event.text()}'"
             action_str = qkeyevent_to_string(event)
         elif isinstance(event, QMouseEvent):
             qt_event_type = event.type()
             event_type_name = (
-                "MouseButtonPress" if qt_event_type == QMouseEvent.Type.MouseButtonPress else "MouseButtonRelease"
+                "MouseButtonPress"
+                if qt_event_type == QMouseEvent.Type.MouseButtonPress
+                else "MouseButtonRelease"
             )
-            specific_event_details = (
-                f"type={event_type_name}, button={event.button()}, pos={event.position()}, mods={event.modifiers()}"
-            )
+            specific_event_details = f"type={event_type_name}, button={event.button()}, pos={event.position()}, mods={event.modifiers()}"
             action_str = qmouseevent_to_string(event)
         else:
             logger.warning(
@@ -235,7 +205,9 @@ class KeyProcessor(QObject):
             )
             return None, specific_event_details, False
 
-        logger.trace(f"KeyProcessor._determine_action_string_and_details received: {specific_event_details}")
+        logger.trace(
+            f"KeyProcessor._determine_action_string_and_details received: {specific_event_details}"
+        )
 
         if not action_str:
             logger.trace(
@@ -245,7 +217,11 @@ class KeyProcessor(QObject):
 
         # Handle standalone modifier strings
         is_standalone_modifier_str = action_str in STANDALONE_MODIFIERS
-        if is_standalone_modifier_str and not self._current_typed_sequence and isinstance(event, QKeyEvent):
+        if (
+            is_standalone_modifier_str
+            and not self._current_typed_sequence
+            and isinstance(event, QKeyEvent)
+        ):
             logger.trace(f"Ignoring standalone modifier string: {action_str}")
             return action_str, specific_event_details, False
 
@@ -265,7 +241,9 @@ class KeyProcessor(QObject):
         command = self.command_registry.get_command(command_id)
         if command:
             editor_context = context_provider.provide_context(event)
-            context_event_type = type(editor_context.event).__name__ if editor_context.event else "None"
+            context_event_type = (
+                type(editor_context.event).__name__ if editor_context.event else "None"
+            )
             logger.info(
                 f"KeyProcessor: Executing command '{command.id}' for sequence: {current_sequence_tuple}. "
                 f"Context event: {context_event_type}, Selected items: {len(editor_context.selected_items)}"
@@ -280,7 +258,9 @@ class KeyProcessor(QObject):
             self._reset_typed_sequence()
             return False  # Command not found, sequence was valid but failed
 
-    def _reset_typed_sequence_and_log_issue(self, event: QInputEvent | None, issue_message: str) -> None:
+    def _reset_typed_sequence_and_log_issue(
+        self, event: QInputEvent | None, issue_message: str
+    ) -> None:
         """Resets sequence and logs an issue, optionally with event details."""
         log_message = issue_message
         if event:

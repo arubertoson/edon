@@ -12,8 +12,6 @@ from edon_ui.widgets.node_spawner import NodeSpawningPanel
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QMainWindow, QWidget
 
-    from edon_ui.views.viewer import GraphicsView
-
 
 class AppContextMenu(QMenu):
     def __init__(
@@ -25,6 +23,9 @@ class AppContextMenu(QMenu):
         super().__init__(parent)
         self.menu_position = position
         self.main_window = main_window
+
+        from edon_ui.views.viewer import GraphicsView
+
         self.view = cast(GraphicsView, parent)
 
         self._add_file_actions()
@@ -51,8 +52,6 @@ class AppContextMenu(QMenu):
         if not self.view or not self.menu_position:
             return
 
-        scene = cast(GraphicsScene, self.view.scene())
-
         # self.menu_position is the global click position.
         # NodeSpawningPanel's spawn_position needs to be in scene coordinates.
         # First, map the global menu position to view coordinates.
@@ -63,7 +62,7 @@ class AppContextMenu(QMenu):
 
         # Parent the panel to the view for proper lifecycle management
         node_spawner = NodeSpawningPanel(
-            graph_controller=scene.controller,
+            controller=self.view._controller,
             spawn_position=spawn_position_scene,
             parent=self.view,
         )

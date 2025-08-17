@@ -1,9 +1,10 @@
 import sys
-from loguru import logger
-from PySide6.QtWidgets import QApplication, QPushButton, QWidget, QVBoxLayout
-from PySide6.QtGui import QIcon, QIconEngine, QPainter, QColor, QFont, QPixmap
-from PySide6.QtCore import Qt, QRect, QSize, QPoint
+
 import qtawesome as qta
+from loguru import logger
+from PySide6.QtCore import QPoint, QRect, QSize, Qt
+from PySide6.QtGui import QColor, QFont, QIcon, QIconEngine, QPainter, QPixmap
+from PySide6.QtWidgets import QApplication, QPushButton, QVBoxLayout, QWidget
 
 
 def _get_qta_char_code(font_prefix):
@@ -32,20 +33,20 @@ class FontIconEngine(QIconEngine):
         super().__init__()
         self.icon_name = full_icon_name
         self.char_code = _get_qta_char_code(self.icon_name)
-        self.base_color = QColor(base_color)  # Ensure it's a QColor copy
-
         self.prefix, self.char_key = self.icon_name.split(".")
+
+        self.base_color = QColor(base_color)
 
     def paint(self, painter: QPainter, rect: QRect, mode: QIcon.Mode, state: QIcon.State):
         """
         Paints the icon character within the given rectangle.
         """
         if self.char_code is None:
-            # Optionally draw a fallback placeholder if char_code is not found
             painter.save()
             painter.setPen(Qt.GlobalColor.red)
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "?")
             painter.restore()
+
             return
 
         painter.save()
@@ -68,7 +69,9 @@ class FontIconEngine(QIconEngine):
             # Get the QFont for the font family (prefix) and calculated size
             icon_qfont = qta.font(self.prefix, point_size)
         except Exception as e:
-            logger.error(f"Error getting qta.font for prefix '{self.prefix}': {e}. Using fallback.")
+            logger.error(
+                f"Error getting qta.font for prefix '{self.prefix}': {e}. Using fallback."
+            )
             icon_qfont = QFont()  # Default system font
             icon_qfont.setPointSize(point_size)
 

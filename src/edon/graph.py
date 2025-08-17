@@ -323,7 +323,7 @@ class EntityGraph:
 
 
 @dataclass
-class SubGraphNode(EntityNode):
+class EntitySubGraphNode(EntityNode):
     """A node that encapsulates an entire EntityGraph.
 
     This node acts as a regular EntityNode in its parent graph, but internally
@@ -368,6 +368,8 @@ class SubGraphNode(EntityNode):
         by exposing additional internal sockets.
         """
         internal_socket = self._get_internal_socket(internal_addr)
+        internal_socket.exposed = True
+
         assert internal_socket.exposed, (
             "CORRUPTION: Can only add 'exposed' sockets, {internal_addr} is not."
         )

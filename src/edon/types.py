@@ -46,13 +46,14 @@ class SocketType(Enum):
     The `value` tuple stores (python_data_type, description)
     """
 
+    ANY = (object, "any")
     INTEGER = (int, "integer")
     FLOAT = (float, "float")
     STRING = (str, "string")
     LARGE_STRING = (str, "large_string")
 
     @property
-    def python_type(self) -> type[Any]:
+    def python_type(self) -> type:
         """The underlying Python data type for this socket type (e.g., int, str)."""
         return self.value[0]
 
@@ -67,6 +68,7 @@ class SocketType(Enum):
 
 class SocketDisplayState(Enum):
     ALL = auto()
+    LINK = auto()
     LINK_LABEL = auto()
     LINK_WIDGET = auto()
     LABEL = auto()

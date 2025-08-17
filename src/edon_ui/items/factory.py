@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from edon.graph import SubGraphNode
+from edon.graph import EntitySubGraphNode
 from edon.types import SocketRole
 from edon_ui import theme
 from edon_ui.items.node import NodeItem, SubGraphNodeItem
@@ -18,6 +18,7 @@ from edon_ui.widgets import (
     SOCKET_WIDGET_COMPONENT_FACTORIES,
     SocketLabel,
     SocketTextAdaptor,
+    SocketWidgetAdaptor,
 )
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ def create_socket_widget_component(
     entity_socket: EntitySocket,
     node_id: str,
     initial_value: Any | None = None,
-) -> SocketComponent:
+) -> SocketWidgetAdaptor:
     """
     Constructs a socket widget component for a specified entity socket.
 
@@ -56,15 +57,12 @@ def create_socket_widget_component(
 
 def create_socket_item(
     entity_socket: EntitySocket,
-    socket_def: SocketDef,
-    node_id: str,
-    socket_role: SocketRole,
+    display_state: SocketDisplayState,
 ) -> SocketItem:
     """Factory for creating a socket row with the correct composition."""
-    logger.debug(f"Creating socket item for {socket_def}::{socket_role}")
+    logger.debug(f"Creating socket item for {entity_socket}::{display_state}")
 
-    display_state: SocketDisplayState = socket_def.display_state
-    socket_type: SocketType = socket_def.socket_type
+    socket_type: SocketType = entity_socket.type_info
     initial_socket_value: Any = entity_socket.value
 
     socket_component = SocketLinkItem(None, visual_type_key=socket_type.description)
@@ -75,7 +73,7 @@ def create_socket_item(
         )
     )
     widget_component = create_socket_widget_component(
-        entity_socket, node_id, initial_value=initial_socket_value
+        entity_socket, entity_socket.node.id, initial_value=entity_socket.value
     )
 
     assert socket_component and label_component and widget_component, (
@@ -83,9 +81,9 @@ def create_socket_item(
     )
 
     return SocketItem(
-        role=socket_role,
+        role=entity_socket.role,
         entity_name=entity_socket.name,
-        node_entity_id=node_id,
+        node_entity_id=entity_socket.node.id,
         components=SocketComponents(
             link=socket_component,
             label=label_component,
@@ -111,7 +109,8 @@ def create_node_item(
     source_sockets_ui: list[SocketItem] = []
     actual_node_item_class: type[NodeItem]
 
-    if isinstance(entity_node, SubGraphNode):
+    # XXX: This will most likely change when we start with serialization.
+    if isinstance(entity_node, EntitySubGraphNode):
         actual_node_item_class = SubGraphNodeItem
         # For SubGraphNode, its sockets (proxies) are dynamically created.
         # We need to create SocketDef instances on-the-fly for the UI factory,
@@ -127,9 +126,7 @@ def create_node_item(
                 default=entity_socket_instance.default_value,
                 display_state=SocketDisplayState.ALL,  # Explicitly set, or rely on SocketDef default
             )
-            row = create_socket_item(
-                entity_socket_instance, temp_socket_def, entity_node.id, SocketRole.TARGET
-            )
+            row = create_socket_item(entity_socket_instance, temp_socket_def.display_state)
             target_sockets_ui.append(row)
 
         for entity_socket_instance in entity_node.source_sockets:
@@ -139,9 +136,7 @@ def create_node_item(
                 default=entity_socket_instance.default_value,
                 display_state=SocketDisplayState.ALL,  # Explicitly set
             )
-            row = create_socket_item(
-                entity_socket_instance, temp_socket_def, entity_node.id, SocketRole.SOURCE
-            )
+            row = create_socket_item(entity_socket_instance, temp_socket_def.display_state)
             source_sockets_ui.append(row)
     else:
         actual_node_item_class = NodeItem
@@ -169,7 +164,7 @@ def create_node_item(
             assert socket_def is not None, (
                 f"CORRUPTION: No `SocketDef` for target entity: {entity_socket}. Available Defs: {target_defs}"
             )
-            row = create_socket_item(entity_socket, socket_def, entity_node.id, SocketRole.TARGET)
+            row = create_socket_item(entity_socket, socket_def.display_state)
             target_sockets_ui.append(row)
 
         for entity_socket in entity_node.source_sockets:
@@ -177,7 +172,7 @@ def create_node_item(
             assert socket_def is not None, (
                 f"CORRUPTION: No `SocketDef` for source entity: {entity_socket}. Available Defs: {source_defs}"
             )
-            row = create_socket_item(entity_socket, socket_def, entity_node.id, SocketRole.SOURCE)
+            row = create_socket_item(entity_socket, socket_def.display_state)
             source_sockets_ui.append(row)
 
     # Instantiate the determined node item class
