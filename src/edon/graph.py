@@ -11,13 +11,19 @@ from __future__ import annotations
 
 from collections.abc import MutableMapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 from edon.errors import GraphObjectErrorReason, SocketLinkErrorReason
 from edon.logging import logger
 from edon.node import EntityNode
 from edon.socket import EntitySocket
-from edon.types import SocketAddress, SocketDef, SocketRole, current_execution_engine_context
+from edon.types import (
+    SocketAddress,
+    SocketDef,
+    SocketRole,
+    SocketType,
+    current_execution_engine_context,
+)
 
 if TYPE_CHECKING:
     from edon.types import EdgeKey
@@ -135,9 +141,9 @@ class EntityGraph:
         source_socket = self.get_node(source_addr.node_id).sockets[source_addr.name]
         target_socket = self.get_node(target_addr.node_id).sockets[target_addr.name]
 
-        # Check for type compatibility, allowing Any or matching/subclass relationships.
+        # Check for type compatibility, allowing wildcard or matching/subclass relationships.
         types_are_compatible = False
-        if source_socket.data_type == Any or target_socket.data_type == Any:
+        if source_socket.type_info is SocketType.ANY or target_socket.type_info is SocketType.ANY:
             types_are_compatible = True
         elif isinstance(source_socket.data_type, type) and isinstance(
             target_socket.data_type, type
@@ -364,34 +370,44 @@ class EntitySubGraphNode(EntityNode):
     #             elif socket.exposed:
     #                 self._add_proxy_socket(name, socket.address)
 
-    def add_proxy_socket(self, proxy_name: str, internal_addr: SocketAddress) -> None:
-        """Dynamically add a new proxy socket mapping.
-
-        This method allows runtime modification of the sub-graph's external interface
-        by exposing additional internal sockets.
-        """
+    def proxy_name_for_internal_socket(self, internal_addr: SocketAddress) -> str | None:
+        """Return the first proxy exposing an internal socket, if one exists."""
         internal_socket = self._get_internal_socket(internal_addr)
-        internal_socket.exposed = True
+        for proxy_name, mapped_socket in self._proxy_mappings.items():
+            if mapped_socket is internal_socket:
+                return proxy_name
+        return None
 
-        assert internal_socket.exposed, (
-            "CORRUPTION: Can only add 'exposed' sockets, {internal_addr} is not."
-        )
+    def proxy_names_for_internal_node(self, internal_node_id: str) -> list[str]:
+        """Return all proxies mapped to sockets owned by an internal node."""
+        return [
+            proxy_name
+            for proxy_name, internal_socket in self._proxy_mappings.items()
+            if internal_socket.node.id == internal_node_id
+        ]
 
-        self._proxy_mappings[proxy_name] = internal_socket
+    def add_proxy_socket(self, proxy_name: str, internal_addr: SocketAddress) -> None:
+        """Expose an internal socket through a uniquely named interface socket."""
+        internal_socket = self._get_internal_socket(internal_addr)
+        if proxy_name in self.sockets:
+            raise ValueError(f"Proxy socket '{proxy_name}' already exists")
 
         socket_def = SocketDef(
             name=proxy_name,
             socket_type=internal_socket.type_info,
             default=internal_socket.default_value,
-            exposed=internal_socket.exposed,
+            exposed=True,
         )
         self._add_socket_internal(socket_def, internal_addr.role)
+        internal_socket.exposed = True
+        self._proxy_mappings[proxy_name] = internal_socket
 
         logger.debug(f"Added {internal_socket.role} proxy socket '{proxy_name}'")
 
     def remove_proxy_socket(self, proxy_name: str) -> None:
-        del self._proxy_mappings[proxy_name]
+        internal_socket = self._proxy_mappings.pop(proxy_name)
         self.sockets.pop(proxy_name)
+        internal_socket.exposed = internal_socket in self._proxy_mappings.values()
 
         logger.debug(f"Removed proxy socket '{proxy_name}'")
 

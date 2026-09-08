@@ -18,7 +18,7 @@ from PySide6.QtCore import QPointF, Slot
 
 from edon.graph import EntityGraph, EntitySubGraphNode
 from edon.node import EntityNode
-from edon.types import EdgeKey, SocketAddress, SocketRole
+from edon.types import EdgeKey, SocketAddress, SocketDisplayState, SocketRole
 from edon_ui import theme
 from edon_ui.graph.context import ContextState, WorkspaceContextStack
 from edon_ui.graph.registry import WorkspaceUIDataRegistry
@@ -328,39 +328,29 @@ class WorkspaceController:
 
         edge_key = EdgeKey(source_socket_addr, target_socket_addr)
 
-        # If the target socket already has an edge, we remove it, input nodes can only have one edge
-        # and we decided on behavior that the new edge will replace the old one.
-        # This uses the updated find_edge_items_at_socket which calls the registry.
+        if not self.context_stack.is_at_root():
+            from edon.nodes.utility import SubgraphPromoterNode
+
+            source_node_entity = self.graph.get_node(source_socket_addr.node_id)
+            target_node_entity = self.graph.get_node(target_socket_addr.node_id)
+            source_is_promoter = isinstance(source_node_entity, SubgraphPromoterNode)
+            target_is_promoter = isinstance(target_node_entity, SubgraphPromoterNode)
+
+            if source_is_promoter or target_is_promoter:
+                if source_is_promoter != target_is_promoter:
+                    internal_socket_addr = (
+                        target_socket_addr if source_is_promoter else source_socket_addr
+                    )
+                    self.request_expose_socket_from_subgraph(internal_socket_addr)
+                return
+
+        # Inputs accept one edge. A new edge replaces the existing connection.
         edge_items = self.registry.edge_items_for_socket(target_socket_addr)
         if edge_items:
             logger.debug(
                 f"Target socket {target_socket_addr.node_id}::{target_socket_addr.name} already has a link, removing existing."
             )
             self.handle_ui_edge_deletion_request(list(edge_items))
-
-        # If we are in a subgraph we need to check whether we have to update the SubGraphNode in the parent with
-        # new context.
-        if not self.context_stack.is_at_root():
-            # Import here to avoid circular dependencies at module level if SubgraphPromoterNode
-            # itself might eventually use controller functionalities, or keep at top if safe.
-            from edon.nodes.utility import SubgraphPromoterNode
-
-            source_node_entity = self.graph.get_node(source_socket_addr.node_id)
-            target_node_entity = self.graph.get_node(target_socket_addr.node_id)
-
-            is_source_node_promoter = isinstance(source_node_entity, SubgraphPromoterNode)
-            is_target_node_promoter = isinstance(target_node_entity, SubgraphPromoterNode)
-            if any([is_source_node_promoter, is_target_node_promoter]):
-                if is_source_node_promoter:
-                    internal_socket_addr = target_socket_addr
-                else:
-                    internal_socket_addr = source_socket_addr
-
-                logger.debug(
-                    f"Dispatching to request_expose_subgraph_socket: "
-                    f"internal: {internal_socket_addr}"
-                )
-                self.request_expose_socket_from_subgraph(internal_socket_addr=internal_socket_addr)
 
         self.request_add_edge(edge_key)
 
@@ -422,6 +412,12 @@ class WorkspaceController:
         """
         logger.debug(f"GraphController: Requesting to remove node with ID: {entity_node_id}")
 
+        if not self.context_stack.is_at_root():
+            subgraph = self.context_stack.current.origin_subgraph_node
+            assert subgraph is not None
+            for proxy_name in subgraph.proxy_names_for_internal_node(entity_node_id):
+                self.request_remove_socket_from_subgraph(proxy_name)
+
         # Unregister from UI registry; this will assert if node_id is not found.
         # It returns the node_item, and lists of socket_items and edge_items that were part of this node.
         node_item_to_remove, _removed_socket_items, removed_edge_items = (
@@ -463,20 +459,22 @@ class WorkspaceController:
         logger.debug(f"UI EdgeItem for {edge_key} removed from graphics scene and UI registry.")
 
     def request_expose_socket_from_subgraph(self, internal_socket_addr: SocketAddress) -> None:
-        """
-        Handles a request to expose an internal socket of a subgraph as a proxy
-        socket on the parent SubGraphNode.
-
-        This is typically triggered by dragging an edge from an internal node's socket
-        to a special socket on a SubgraphPromoterNode within the subgraph's view.
-        """
+        """Expose an internal socket without creating an internal graph edge."""
         current_stack_state = self.context_stack.current
         assert current_stack_state.origin_subgraph_node is not None, (
             "CORRUPTION: Attempting to expose subgraph socket when not editing within a subgraph context."
         )
 
         subgraph_node_entity = current_stack_state.origin_subgraph_node
-        subgraph_node_entity.add_proxy_socket(internal_socket_addr.name, internal_socket_addr)
+        existing_proxy_name = subgraph_node_entity.proxy_name_for_internal_socket(
+            internal_socket_addr
+        )
+        if existing_proxy_name is not None:
+            self.request_remove_socket_from_subgraph(existing_proxy_name)
+            return
+
+        proxy_name = self._available_proxy_name(internal_socket_addr.name, subgraph_node_entity)
+        subgraph_node_entity.add_proxy_socket(proxy_name, internal_socket_addr)
 
         parent_stack_state = self.context_stack.parent
         assert parent_stack_state is not None, (
@@ -485,18 +483,55 @@ class WorkspaceController:
 
         from edon_ui.items.factory import create_socket_item
 
-        socket_entity = subgraph_node_entity.sockets[internal_socket_addr.name]
-        # We need to get the display state from the socket item that we are exposing, so the behavior
-        # is maintained.
-        internal_socket_item = self.registry.socket_item_for_address(internal_socket_addr)
-        new_socket_item = create_socket_item(
-            socket_entity, internal_socket_item.components.display_state
-        )
+        socket_entity = subgraph_node_entity.sockets[proxy_name]
+        new_socket_item = create_socket_item(socket_entity, SocketDisplayState.ALL)
 
         parent_stack_state.registry.register_socket_item_for_node(new_socket_item)
 
         subgraph_item = parent_stack_state.registry.node_item_for_id(subgraph_node_entity.id)
         subgraph_item.add_socket_item(new_socket_item)
+
+    def request_remove_socket_from_subgraph(self, proxy_name: str) -> None:
+        """Remove a subgraph interface socket and all parent edges using it."""
+        current_state = self.context_stack.current
+        subgraph = current_state.origin_subgraph_node
+        assert subgraph is not None, (
+            "CORRUPTION: Attempting to unexpose a socket outside a subgraph context"
+        )
+        parent_state = self.context_stack.parent
+        assert parent_state is not None
+
+        proxy_socket = subgraph.sockets[proxy_name]
+        proxy_address = proxy_socket.address
+        connected_edges = [
+            edge_key
+            for edge_key in parent_state.graph.edges
+            if proxy_address in (edge_key.source, edge_key.target)
+        ]
+
+        for edge_key in connected_edges:
+            parent_state.graph.unlink_sockets(edge_key)
+        subgraph.remove_proxy_socket(proxy_name)
+
+        for edge_key in connected_edges:
+            edge_item = parent_state.registry.unregister_edge(edge_key)
+            parent_state.scene.remove_edge(edge_item)
+
+        socket_item = parent_state.registry.socket_item_for_address(proxy_address)
+        parent_state.registry.unregister_socket_item(proxy_address)
+        subgraph_item = parent_state.registry.node_item_for_id(subgraph.id)
+        subgraph_item.remove_socket_item(socket_item)
+
+    @staticmethod
+    def _available_proxy_name(base_name: str, subgraph: EntitySubGraphNode) -> str:
+        """Return a deterministic unused interface name."""
+        if base_name not in subgraph.sockets:
+            return base_name
+
+        suffix = 2
+        while f"{base_name}_{suffix}" in subgraph.sockets:
+            suffix += 1
+        return f"{base_name}_{suffix}"
 
     @Slot(str, GraphicsScene)
     def handle_ui_node_redraw_request(self, node_id: str, scene: GraphicsScene) -> None:

@@ -5,6 +5,7 @@ import pytest
 from edon.executor import ExecutionEngine
 from edon.graph import EntityGraph, EntitySubGraphNode
 from edon.node import EntityNode
+from edon.nodes.utility import SubgraphPromoterNode
 from edon.types import EdgeKey, current_execution_engine_context, current_graph_context
 from tests.fixtures.nodes import AddNode, FloatNode, IntegerNode, MultiplyNode
 
@@ -118,6 +119,33 @@ def test_subgraph_dynamic_socket_management() -> None:
     subgraph.sockets["input"].value = 11
     execute_node(subgraph)
     assert subgraph.sockets["output"].value == 11
+
+
+def test_duplicate_proxy_rejection_preserves_subgraph_state() -> None:
+    first = IntegerNode()
+    second = IntegerNode()
+    subgraph = EntitySubGraphNode()
+    subgraph.internal_graph.add_node(first)
+    subgraph.internal_graph.add_node(second)
+    subgraph.add_proxy_socket("number", first.sockets["trg_int"].address)
+
+    with pytest.raises(ValueError, match="already exists"):
+        subgraph.add_proxy_socket("number", second.sockets["trg_int"].address)
+
+    assert set(subgraph.sockets) == {"number"}
+    assert subgraph.proxy_name_for_internal_socket(first.sockets["trg_int"].address) == "number"
+    assert subgraph.proxy_name_for_internal_socket(second.sockets["trg_int"].address) is None
+
+
+def test_subgraph_promoter_is_safe_during_execution() -> None:
+    integer = IntegerNode()
+    integer.sockets["trg_int"].value = 42
+    subgraph = wrap_output(integer, "src_int")
+    subgraph.internal_graph.add_node(SubgraphPromoterNode())
+
+    execute_node(subgraph)
+
+    assert subgraph.sockets["output"].value == 42
 
 
 class FailingNode(IntegerNode):

@@ -7,8 +7,7 @@ UI interactions, or other non-data-processing tasks.
 from __future__ import annotations
 
 from edon.node import EntityNode
-from edon.types import SocketDef, SocketDisplayState
-from edon_ui.widgets.factories import SocketType
+from edon.types import SocketDef, SocketDisplayState, SocketType
 
 
 class SubgraphPromoterNode(EntityNode):
@@ -38,3 +37,6 @@ class SubgraphPromoterNode(EntityNode):
             display_state=SocketDisplayState.LINK_LABEL,
         ),
     ]
+
+    def process(self) -> None:
+        """Do nothing because promotion is an editor operation, not data flow."""

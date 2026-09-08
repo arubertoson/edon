@@ -173,6 +173,20 @@ class NodeItem(QGraphicsObject):
 
         self._on_socket_row_layout_changed()
 
+    def remove_socket_item(self, socket_item: SocketItem) -> None:
+        """Remove a dynamic socket row and update the node layout."""
+        sockets = (
+            self.source_sockets if socket_item.role == SocketRole.SOURCE else self.target_sockets
+        )
+        assert socket_item in sockets, (
+            f"CORRUPTION: Socket {socket_item.address} is not attached to node {self.entity_id}"
+        )
+        sockets.remove(socket_item)
+        scene = self.scene()
+        assert scene is not None, "CORRUPTION: Cannot remove a socket from a node without a scene"
+        scene.removeItem(socket_item)
+        self._on_socket_row_layout_changed()
+
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._width, self._height)
 

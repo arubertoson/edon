@@ -2,9 +2,10 @@
 
 import pytest
 
-from edon.graph import EntityGraph
-from edon.types import EdgeKey, SocketAddress, SocketRole
 from edon.errors import SocketLinkErrorReason
+from edon.graph import EntityGraph
+from edon.node import EntityNode
+from edon.types import EdgeKey, SocketAddress, SocketDef, SocketRole, SocketType
 
 from tests.fixtures.nodes import IntegerNode, FloatNode, AddNode
 
@@ -212,6 +213,26 @@ class TestGraphCanFormLink:
         can_link, reason = graph.can_form_link(source_addr, target_addr)
         assert can_link is False
         assert reason == SocketLinkErrorReason.TYPE_MISMATCH
+
+    def test_any_socket_is_valid_drag_target_in_both_directions(self, graph: EntityGraph) -> None:
+        typed_node = IntegerNode(name="Typed")
+        any_node = EntityNode(
+            name="Any",
+            source_socket_definitions=[SocketDef("any_output", SocketType.ANY)],
+            target_socket_definitions=[SocketDef("any_input", SocketType.ANY)],
+        )
+        graph.add_node(typed_node)
+        graph.add_node(any_node)
+
+        valid_input_exposure_targets, _ = graph.partition_valid_link_targets(
+            typed_node.sockets["trg_int"].address
+        )
+        valid_output_exposure_targets, _ = graph.partition_valid_link_targets(
+            typed_node.sockets["src_int"].address
+        )
+
+        assert any_node.sockets["any_output"].address in valid_input_exposure_targets
+        assert any_node.sockets["any_input"].address in valid_output_exposure_targets
 
     def test_can_form_link_same_parent_node(self, graph: EntityGraph):
         node = AddNode(name="MyAddNode")
