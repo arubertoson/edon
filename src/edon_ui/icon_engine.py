@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor, QFont, QIcon, QIconEngine, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QPushButton, QVBoxLayout, QWidget
 
 
-def _get_qta_char_code(font_prefix):
+def _get_qta_char_code(font_prefix: str) -> str | None:
     """
     Retrieves the integer Unicode character code for a qtawesome icon
     using the simpler qta.charmap().
@@ -29,15 +29,16 @@ class FontIconEngine(QIconEngine):
     Custom QIconEngine that renders an icon from a qtawesome font character.
     """
 
-    def __init__(self, full_icon_name: str, base_color: QColor = QColor("black")):
+    def __init__(self, full_icon_name: str, base_color: QColor = QColor("black")) -> None:
         super().__init__()
         self.icon_name = full_icon_name
         self.char_code = _get_qta_char_code(self.icon_name)
         self.prefix, self.char_key = self.icon_name.split(".")
 
-        self.base_color = QColor(base_color)
+        self.base_color: QColor = QColor(base_color)
+        self.size: QSize | None = None
 
-    def paint(self, painter: QPainter, rect: QRect, mode: QIcon.Mode, state: QIcon.State):
+    def paint(self, painter: QPainter, rect: QRect, mode: QIcon.Mode, state: QIcon.State) -> None:
         """
         Paints the icon character within the given rectangle.
         """
@@ -53,9 +54,9 @@ class FontIconEngine(QIconEngine):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-        if hasattr(self, "size"):
+        point_size: int
+        if self.size is not None:
             point_size = self.size.height()
-            logger.error(f"Icon size: {self.size}")
         else:
             # Determine font point size based on the target rectangle's height
             # Adjust the factor (e.g., 0.75) to get the desired relative icon size
@@ -63,6 +64,7 @@ class FontIconEngine(QIconEngine):
             if point_size < 6:  # Ensure a minimum sensible font size
                 point_size = 6
 
+        rect = QRect(rect)
         rect.setLeft(rect.left() - point_size - 4)
 
         try:
@@ -109,22 +111,18 @@ class FontIconEngine(QIconEngine):
 
         painter = QPainter(pm)
         # The rect for painting on the pixmap is its full bounds
-        self.paint(painter, QRect(QPoint(0, 0), size), mode, state)
-        painter.end()  # Crucial to end painter when drawing on QPixmap directly
+        try:
+            self.paint(painter, QRect(QPoint(0, 0), size), mode, state)
+        finally:
+            painter.end()
 
         return pm
 
-    def clone(self) -> QIconEngine:
-        """
-        Returns a new instance of this icon engine. Required by QIconEngine.
-        """
-        return FontIconEngine(self.full_icon_name, self.base_color)
-
-    def virtual_hook(self, id, data):
-        """
-        Handles virtual hooks if any.
-        """
-        return super().virtual_hook(id, data)
+    def clone(self) -> "FontIconEngine":
+        """Copy the icon's identity, color and optional size without sharing state."""
+        cloned: FontIconEngine = FontIconEngine(self.icon_name, self.base_color)
+        cloned.size = QSize(self.size) if self.size is not None else None
+        return cloned
 
 
 class FontIcon(QIcon):
@@ -138,11 +136,12 @@ class FontIcon(QIcon):
         # Initialize QIcon with the custom engine
         super().__init__(self.engine)
 
-    def font(self, size: QSize = QSize(24, 24)):
-        return qta.font(self.engine.prefix, size)
+    def font(self, size: QSize = QSize(24, 24)) -> QFont:
+        return qta.font(self.engine.prefix, size.height())
 
-    def set_size(self, size: QSize):
-        self.engine.size = size
+    def set_size(self, size: QSize) -> None:
+        assert size.width() > 0 and size.height() > 0, "Icon size must be positive"
+        self.engine.size = QSize(size)
 
     def char(self):
         return self.engine.char_code
