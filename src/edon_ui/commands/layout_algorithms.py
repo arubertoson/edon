@@ -41,16 +41,13 @@ def determine_node_selection_topology(
     if not selected_nodes:
         return []
 
-    # Assuming NodeItem has a 'node_entity_id' string attribute
     adj: dict[str, list[str]] = {node.entity_id: [] for node in selected_nodes}
     selected_node_ids_set = {node.entity_id for node in selected_nodes}
     node_map_by_id: dict[str, NodeItem] = {node.entity_id: node for node in selected_nodes}
 
     for edge in all_edges_in_scene:
-        # Assuming EdgeItem has 'source_socket_item.parent_node_entity_id' and
-        # 'target_socket_item.parent_node_entity_id'
-        source_id = edge.source_socket_item.parent_node_entity_id  # type: ignore
-        target_id = edge.target_socket_item.parent_node_entity_id  # type: ignore
+        source_id: str = edge.edge_key.source.node_id
+        target_id: str = edge.edge_key.target.node_id
 
         # Consider only edges between nodes in the current selection
         if source_id in selected_node_ids_set and target_id in selected_node_ids_set:
@@ -72,7 +69,7 @@ def determine_node_selection_topology(
                 curr_node = q.popleft()
                 current_subgraph_nodes.append(curr_node)
 
-                for neighbor_id in adj[curr_node.node_entity_id]:
+                for neighbor_id in adj[curr_node.entity_id]:
                     if neighbor_id not in visited_ids:
                         visited_ids.add(neighbor_id)
                         q.append(node_map_by_id[neighbor_id])
@@ -115,11 +112,13 @@ def get_directed_graph_of_component(
 
     for edge in all_edges_in_scene:
         if not edge.source_socket_item or not edge.target_socket_item:
-            logger.trace("get_directed_graph_of_component: Edge missing source/target socket item. Skipping.")
+            logger.trace(
+                "get_directed_graph_of_component: Edge missing source/target socket item. Skipping."
+            )
             continue
 
-        source_node_id = edge.source_socket_item.parent_node_entity_id  # type: ignore
-        target_node_id = edge.target_socket_item.parent_node_entity_id  # type: ignore
+        source_node_id: str = edge.edge_key.source.node_id
+        target_node_id: str = edge.edge_key.target.node_id
 
         if source_node_id in component_node_ids_set and target_node_id in component_node_ids_set:
             if target_node_id not in directed_adj[source_node_id]:
@@ -183,7 +182,9 @@ def topological_sort_ui_component(
                 current_rank_node_items.append(nodes_in_component_map[node_id])
                 processed_nodes_count += 1
             else:
-                logger.error(f"TopologicalSort: Node ID '{node_id}' from queue not found in component map.")
+                logger.error(
+                    f"TopologicalSort: Node ID '{node_id}' from queue not found in component map."
+                )
                 continue
 
             for child_id in directed_adj.get(node_id, []):
