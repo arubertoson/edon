@@ -10,22 +10,13 @@ These adaptors ensure consistent behavior and layout for different types of sock
 components while maintaining the flexibility of the underlying Qt graphics system.
 """
 
-from loguru import logger
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import (
-    QGraphicsItem,
-    QGraphicsObject,
-    QGraphicsProxyWidget,
-    QGraphicsTextItem,
-    QStyleOptionGraphicsItem,
-    QWidget,
-)
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsProxyWidget, QWidget
 
 from edon_ui import theme
-from edon_ui.widgets.gfx import SocketLabel
-
 from edon_ui.base import BaseEdonGraphicsObject
+from edon_ui.widgets.editors import ProxyAttributeMixin
+from edon_ui.widgets.gfx import SocketLabel
 
 
 class SocketTextAdaptor(BaseEdonGraphicsObject):
@@ -68,8 +59,11 @@ class SocketWidgetAdaptor(BaseEdonGraphicsObject):
         widget: QWidget,
         horizontal_margin: float = theme.SOCKET_HORIZONTAL_PADDING,
         parent: QGraphicsItem | None = None,
-    ):
+    ) -> None:
         super().__init__(None)
+        if parent is not None:
+            self.setParentItem(parent)
+
         self._widget = widget
         self._horizontal_margin = horizontal_margin
 
@@ -78,8 +72,8 @@ class SocketWidgetAdaptor(BaseEdonGraphicsObject):
         self.proxy.setPos(horizontal_margin, 0)
         self.proxy.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        widget.proxy = self.proxy
-        widget.setParent(parent)
+        if isinstance(widget, ProxyAttributeMixin):
+            widget.proxy = self.proxy
 
     def get_required_component_width(self) -> float:
         width = self._widget.width() or self._widget.sizeHint().width()
@@ -89,4 +83,6 @@ class SocketWidgetAdaptor(BaseEdonGraphicsObject):
         return self._widget.height() or self._widget.sizeHint().height()
 
     def boundingRect(self) -> QRectF:
-        return QRectF(0, 0, self.get_required_component_width(), self.get_required_component_height())
+        return QRectF(
+            0, 0, self.get_required_component_width(), self.get_required_component_height()
+        )

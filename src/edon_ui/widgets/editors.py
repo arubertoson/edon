@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, runtime_checkable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from loguru import logger
 from PySide6.QtCore import QRect, Qt, QTimer, Signal
@@ -49,15 +50,14 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class ValueWidget(Protocol):
+    title: str
+
     def get_value(self) -> Any: ...
     def set_value(self, value: Any) -> None: ...
 
 
-ValueWidgetType: TypeAlias = ValueWidget | QWidget
-
-
 class ProxyAttributeMixin:
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._proxy: QGraphicsProxyWidget | None = None
 
@@ -84,10 +84,10 @@ class CustomDialogWidget(QWidget):
         parent: QWidget,
         scene: QGraphicsScene | None,
         title: str = "Dialog",
-        content: ValueWidgetType | None = None,
-    ):
+        content: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
-        self.scene = scene
+        self.scene: QGraphicsScene | None = scene
         self._overlay_item: QGraphicsRectItem | None = None
 
         self.setWindowFlags(
@@ -180,7 +180,7 @@ class CustomDialogWidget(QWidget):
         main_layout.addWidget(self.content_frame, 1)
         main_layout.addWidget(self.accept_button)  # Accept button row at the bottom
 
-    def _position_title_bar_elements(self):
+    def _position_title_bar_elements(self) -> None:
         tb_width = self.title_bar.width()
         tb_height = self.title_bar.height()
 
@@ -205,33 +205,28 @@ class CustomDialogWidget(QWidget):
         super().resizeEvent(event)
 
     def accept(self) -> None:
-        if self.content:
-            self.content.accept()
-        super().accept()
-
-    def reject(self) -> None:
-        if self.content:
-            self.content.reject()
-        super().reject()
-
-    def _on_accept(self) -> None:
         self.accepted.emit()
         self.close()
 
-    def _on_reject(self) -> None:
+    def reject(self) -> None:
         self.rejected.emit()
         self.close()
 
+    def _on_accept(self) -> None:
+        self.accept()
+
+    def _on_reject(self) -> None:
+        self.reject()
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Escape:
-            self.rejected.emit()
+            self.reject()
             event.accept()
         elif (
             event.key() == Qt.Key.Key_Return
             and event.modifiers() & Qt.KeyboardModifier.ControlModifier
         ):
-            self.accepted.emit()
-            self.close()
+            self.accept()
             event.accept()
         else:
             super().keyPressEvent(event)
@@ -405,7 +400,7 @@ class HighlightEventMixin:
             if hasattr(self, "proxy"):
                 self.proxy.update()
                 return True
-        return super().event(event)
+        return cast(Any, super()).event(event)
 
     def paint_highlight(self, painter: QPainter, rect: QRect) -> None:
         # Create a semi-transparent highlight with rounded corners
@@ -438,10 +433,10 @@ class ExpandLineEdit(ProxyAttributeMixin, QLineEdit):
 
     def __init__(
         self,
-        widget_factory: type[ValueWidgetType],
+        widget_factory: Callable[[], QWidget],
         icon_name: str = "fa5s.expand",
         parent: QWidget | None = None,
-    ):
+    ) -> None:
         super().__init__(parent)
 
         self.setObjectName("ExpandLineEdit")
@@ -472,14 +467,14 @@ class ExpandLineEdit(ProxyAttributeMixin, QLineEdit):
 
         # Try to get the scene from the window, or from this widget's direct parent if part of a GFX view
         scene = getattr(window, "scene", None)
-        if (
-            not scene
-            and isinstance(self.parentWidget(), QWidget)
-            and hasattr(self.parentWidget(), "scene")
-        ):
-            scene = self.parentWidget().scene()
+        parent_widget = self.parentWidget()
+        if scene is None and parent_widget is not None:
+            scene_getter = getattr(parent_widget, "scene", None)
+            if callable(scene_getter):
+                scene = scene_getter()
 
-        if not scene:
+        if not isinstance(scene, QGraphicsScene):
+            scene = None
             # If scene is still not found, it's a problem for the current overlay logic.
             # Log a warning. The dialog might still show, but overlay will be missing.
             logger.warning(
@@ -492,6 +487,9 @@ class ExpandLineEdit(ProxyAttributeMixin, QLineEdit):
         )
 
         widget = self.widget_factory()
+        assert isinstance(widget, ValueWidget), (
+            "widget_factory must return a QWidget implementing ValueWidget"
+        )
         widget.set_value(self.value)
 
         dialog = CustomDialogWidget(
@@ -501,12 +499,12 @@ class ExpandLineEdit(ProxyAttributeMixin, QLineEdit):
             content=widget,
         )
 
-        def _clear_focus():
+        def _clear_focus() -> None:
             logger.trace(f"ExpandLineEdit: Clearing focus on its proxy {self.proxy}")
             self.clearFocus()
             self.proxy.clearFocus()
 
-        def _update_value():
+        def _update_value() -> None:
             self.value = widget.get_value()
             logger.trace(f"ExpandLineEdit: Clearing focus on its proxy {self.proxy}")
             _clear_focus()
@@ -541,7 +539,7 @@ class ExpandLineEdit(ProxyAttributeMixin, QLineEdit):
 
         self.style().drawPrimitive(QStyle.PrimitiveElement.PE_PanelLineEdit, option, painter)
 
-        icon_rect = QRect((rect.width() / 2) - 2, rect.y(), rect.width(), rect.height())
+        icon_rect = QRect((rect.width() // 2) - 2, rect.y(), rect.width(), rect.height())
         text_rect = self.style().subElementRect(
             QStyle.SubElement.SE_LineEditContents, option, self
         )
@@ -577,8 +575,11 @@ class ExpandLineEdit(ProxyAttributeMixin, QLineEdit):
 
 
 def set_dynamic_width_and_height(
-    widget, screen_geometry: QRect, width_ratio: float = 0.5, height_ratio: float = 0.5
-):
+    widget: QWidget,
+    screen_geometry: QRect,
+    width_ratio: float = 0.5,
+    height_ratio: float = 0.5,
+) -> None:
     """
     The screen and height will be updated to match the screen geometry.
     """

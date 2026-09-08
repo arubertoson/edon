@@ -10,10 +10,9 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from edon.graph import EntitySubGraphNode
-from edon.types import SocketRole
 from edon_ui import theme
 from edon_ui.items.node import NodeItem, SubGraphNodeItem
-from edon_ui.items.socket import SocketComponent, SocketComponents, SocketItem, SocketLinkItem
+from edon_ui.items.socket import SocketComponents, SocketItem, SocketLinkItem
 from edon_ui.widgets import (
     SOCKET_WIDGET_COMPONENT_FACTORIES,
     SocketLabel,
@@ -63,7 +62,6 @@ def create_socket_item(
     logger.debug(f"Creating socket item for {entity_socket}::{display_state}")
 
     socket_type: SocketType = entity_socket.type_info
-    initial_socket_value: Any = entity_socket.value
 
     socket_component = SocketLinkItem(None, visual_type_key=socket_type.description)
     label_component = SocketTextAdaptor(

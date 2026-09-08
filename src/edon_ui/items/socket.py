@@ -37,9 +37,16 @@ class SocketComponent(Protocol):
     """
     Protocol defining the interface for a visual component within a SocketRowItem.
 
-    Extends QGraphicsItem to inherit all the standard Qt graphics functionality,
-    and adds the specific layout methods needed for socket components.
+    Defines the QGraphicsItem operations and layout methods used by socket rows.
     """
+
+    def isVisible(self) -> bool:
+        """Returns whether the component is visible."""
+        ...
+
+    def setParentItem(self, parent: QGraphicsItem | None) -> None:
+        """Sets the component's parent graphics item."""
+        ...
 
     def get_required_component_width(self) -> float:
         """Returns the intrinsic width this component requires for layout."""
@@ -70,7 +77,7 @@ class SocketComponents:
     widget: SocketWidgetAdaptor
     display_state: SocketDisplayState
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.transition_to(self.display_state)
 
     def height(self) -> float:
@@ -109,8 +116,8 @@ class SocketComponents:
     def __iter__(self) -> Iterator[SocketComponent]:
         return iter([self.link, self.label, self.widget])
 
-    def visible(self) -> list[SocketWidgetAdaptor]:
-        return [c for c in self if c.isVisible()]
+    def visible(self) -> list[SocketComponent]:
+        return [component for component in self if component.isVisible()]
 
 
 def _layout_target_socket(
