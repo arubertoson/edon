@@ -1,9 +1,10 @@
 import pytest
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QPointF, Qt
+from pytestqt.qtbot import QtBot
 
-from src.edon.node import EntityNode
-from src.edon_ui.graph.controller import WorkspaceController
-from src.edon_ui.widgets.node_spawner import NodeSpawningPanel
+from edon.node import EntityNode
+from edon_ui.graph.controller import WorkspaceController
+from edon_ui.widgets.node_spawner import NodeSpawningPanel
 
 
 # Minimal mock node classes for testing the spawner's listing and filtering.
@@ -36,15 +37,8 @@ class SpawnerTestAnotherNode(EntityNode):
 
 
 @pytest.fixture
-def spawner_graph_controller(qtbot):
-    """
-    Provides a GraphController fixture with a predefined node_registry
-    for testing the NodeSpawningPanel.
-    """
-    # GraphController might take graph in constructor or have a setter
-    # Assuming constructor for now, or that it can be set.
-    # If GraphController is a QObject and has signals/slots relevant here,
-    # it might need to be managed by qtbot too.
+def spawner_graph_controller(qtbot: QtBot) -> WorkspaceController:
+    """Provide a controller with a small node registry."""
     controller = WorkspaceController(
         {
             SpawnerTestIntNode.__name__: SpawnerTestIntNode,
@@ -56,7 +50,9 @@ def spawner_graph_controller(qtbot):
     return controller
 
 
-def test_node_spawner_filtering_and_selection(qtbot, spawner_graph_controller):
+def test_node_spawner_filtering_and_selection(
+    qtbot: QtBot, spawner_graph_controller: WorkspaceController
+) -> None:
     """
     Tests the NodeSpawningPanel's filtering logic, list population,
     and default item selection.
@@ -115,3 +111,32 @@ def test_node_spawner_filtering_and_selection(qtbot, spawner_graph_controller):
     assert list_widget.currentItem() is None
 
     panel.close()
+
+
+def test_clicking_result_spawns_node_in_graph_and_scene(
+    qtbot: QtBot, spawner_graph_controller: WorkspaceController
+) -> None:
+    spawn_position = QPointF(240, 160)
+    panel = NodeSpawningPanel(
+        controller=spawner_graph_controller,
+        spawn_position=spawn_position,
+    )
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.search_bar.setText("Another")
+    qtbot.waitUntil(lambda: panel.node_list_widget.count() == 1)
+    item = panel.node_list_widget.item(0)
+
+    qtbot.mouseClick(
+        panel.node_list_widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=panel.node_list_widget.visualItemRect(item).center(),
+    )
+
+    qtbot.waitUntil(lambda: len(spawner_graph_controller.graph.nodes) == 1)
+    spawned = next(iter(spawner_graph_controller.graph.nodes.values()))
+    node_item = spawner_graph_controller.registry.node_item_for_id(spawned.id)
+    assert isinstance(spawned, SpawnerTestAnotherNode)
+    assert node_item.scene() is spawner_graph_controller.scene
+    assert node_item.pos() != spawn_position
+    assert not panel.isVisible()
