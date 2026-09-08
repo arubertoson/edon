@@ -14,7 +14,9 @@ from PySide6.QtWidgets import (
 from edon_ui import theme
 
 
-def fit_font_to_height(font: QFont, target_height: float, min_size: int = 1, max_size: int = 30) -> QFont:
+def fit_font_to_height(
+    font: QFont, target_height: float, min_size: int = 1, max_size: int = 30
+) -> QFont:
     """Finds the largest font size that fits within target_height."""
     test_font = QFont(font)
     for size in range(max_size, min_size - 1, -1):
@@ -32,7 +34,9 @@ def _font_height_diff(font: QFont, target_height: float) -> float:
 
 
 class SocketLabel(QGraphicsTextItem):
-    def __init__(self, text: str, target_layout_height: float, parent: QGraphicsItem | None = None):
+    def __init__(
+        self, text: str, target_layout_height: float, parent: QGraphicsItem | None = None
+    ):
         super().__init__(text, parent)
         logger.trace(f"SocketLabel created with text: '{text}'")
 

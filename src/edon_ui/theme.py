@@ -21,7 +21,7 @@ ACCENT_ERROR = QColor("#E74C3C")  # Red
 
 # --- Node Specific (derived from image and palette) ---
 NODE_BACKGROUND = QColor("#4A4A4A")
-SUBGRAPH_NODE_BACKGROUND = QColor("#3E505B") # Distinct background for SubGraphNode instances
+SUBGRAPH_NODE_BACKGROUND = QColor("#3E505B")  # Distinct background for SubGraphNode instances
 NODE_BORDER_DEFAULT = NODE_BACKGROUND.lighter(110)  # Subtle darker border
 NODE_BORDER_SELECTED = QColor("#5F9FDF")  # A distinct blue for selection
 NODE_BORDER_RADIUS = 4.0
@@ -66,7 +66,9 @@ INPUT_BORDER_COLOR = COLOR_BACKGROUND_MEDIUM.darker(120)
 
 # --- Scene Specific Backgrounds ---
 SCENE_BACKGROUND = QColor(30, 30, 30)  # Very dark gray for the furthest background
-SCENE_ACTIVE_AREA_BACKGROUND = QColor(40, 40, 40)  # Background for the area where nodes primarily reside
+SCENE_ACTIVE_AREA_BACKGROUND = QColor(
+    40, 40, 40
+)  # Background for the area where nodes primarily reside
 SCENE_ACTIVE_AREA_BORDER = QColor(1, 1, 1)  # Border for the active area
 
 # Socket Colors

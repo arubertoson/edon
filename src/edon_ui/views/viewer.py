@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
-from PySide6.QtCore import QEvent, Qt, Slot
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QInputEvent, QKeyEvent, QMouseEvent, QPainter, QWheelEvent
 from PySide6.QtWidgets import QApplication, QGraphicsProxyWidget, QGraphicsView, QMainWindow
 
@@ -13,9 +13,7 @@ from edon_ui.views.scene import GraphicsScene
 from edon_ui.views.window import MainWindow
 
 if TYPE_CHECKING:
-    from PySide6.QtWidgets import QGraphicsItem, QMainWindow, QGraphicsScene
-
-    from edon.graph import EntityGraph
+    from PySide6.QtWidgets import QGraphicsItem
     from edon_ui.commands.key_processor import KeyProcessor
     from edon_ui.graph.controller import WorkspaceController
 
@@ -140,7 +138,7 @@ class GraphicsView(QGraphicsView):
         # We have no use for the auto repeat keys and will be ignoring those events in the key
         # processor, how we use this is up for debate.
         if event.isAutoRepeat():
-            return False
+            return
 
         event_type_str = "KeyPress" if event.type() == QEvent.Type.KeyPress else "KeyRelease"
         scene_focus_item = self.scene().focusItem() if self.scene() else None

@@ -6,7 +6,6 @@ from PySide6.QtCore import QPoint, QPointF
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
 
-from edon_ui.views.scene import GraphicsScene
 from edon_ui.widgets.node_spawner import NodeSpawningPanel
 
 if TYPE_CHECKING:

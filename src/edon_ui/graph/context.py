@@ -5,6 +5,7 @@ This module provides classes to track the current graph, scene, and registry
 when entering and exiting subgraphs, ensuring the UI state remains synchronized
 with the logical graph hierarchy.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

@@ -118,7 +118,10 @@ class KeyMapping:
             return False
 
         for bound_sequence in self._bindings.keys():
-            if len(bound_sequence) > len(sequence_tuple) and bound_sequence[: len(sequence_tuple)] == sequence_tuple:
+            if (
+                len(bound_sequence) > len(sequence_tuple)
+                and bound_sequence[: len(sequence_tuple)] == sequence_tuple
+            ):
                 return True
         return False
 

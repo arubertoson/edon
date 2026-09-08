@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from loguru import logger
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal, Slot
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPen
 from PySide6.QtWidgets import (
     QGraphicsItem,

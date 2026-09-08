@@ -6,4 +6,4 @@
 # from .graphics_view import GraphicsView
 # from .graphics_scene import GraphicsScene
 
-# __all__ = ['MainWindow', 'GraphicsView', 'GraphicsScene'] 
+# __all__ = ['MainWindow', 'GraphicsView', 'GraphicsScene']
