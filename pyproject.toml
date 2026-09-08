@@ -1,19 +1,27 @@
 [project]
 name = "edon"
 version = "0.1.0"
-description = "Add your description here"
+description = "Experimental node-graph engine and PySide6 desktop editor"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "loguru>=0.7.3",
     "pyside6>=6.9.0",
     "qtawesome>=1.4.0",
-    "thefuzz[speedup]>=0.22.1",
+    "thefuzz>=0.22.1",
 ]
 
 [tool.ruff]
 line-length = 99
+target-version = "py313"
+
+[tool.ruff.lint]
 ignore = ["E741"]
+
+[tool.pyrefly]
+project_includes = ["src/**/*.py", "tests/**/*.py", "examples/**/*.py"]
+search_path = ["src", "."]
+python_version = "3.13"
 
 [build-system]
 requires = ["hatchling"]
@@ -21,14 +29,12 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "basedpyright>=1.29.1",
-    "debugpy>=1.8.14",
     "hypothesis>=6.133.2",
+    "pre-commit>=4.0.0",
     "pyrefly>=0.18.0",
     "pytest>=8.3.5",
     "pytest-qt>=4.4.0",
     "ruff>=0.11.10",
-    "ty>=0.0.1a6",
 ]
 
 [tool.pytest.ini_options]
