@@ -1,155 +1,61 @@
 # Contributing to Edon
 
-First off, thank you for considering contributing to Edon! It's people like you that make Edon such a great tool. We welcome any form of contribution, from reporting bugs and suggesting features to writing code and improving documentation.
+## Setup
 
-This document provides guidelines for contributing to Edon. Please read it carefully to ensure a smooth and effective collaboration process.
+Edon requires Python 3.13 or newer and uses `uv` for dependency management.
 
-## Table of Contents
-
-- [Contributing to Edon](#contributing-to-edon)
-  - [Table of Contents](#table-of-contents)
-  - [Code of Conduct](#code-of-conduct)
-  - [How Can I Contribute?](#how-can-i-contribute)
-    - [Reporting Bugs](#reporting-bugs)
-    - [Suggesting Enhancements](#suggesting-enhancements)
-    - [Asking Questions](#asking-questions)
-    - [Your First Code Contribution](#your-first-code-contribution)
-    - [Pull Requests](#pull-requests)
-  - [Development Setup](#development-setup)
-  - [Architectural Overview](#architectural-overview)
-  - [Style Guides](#style-guides)
-    - [Python Code Style](#python-code-style)
-    - [Commit Messages](#commit-messages)
-  - [Testing](#testing)
-  - [License](#license)
-
-## Code of Conduct
-
-This project and everyone participating in it is governed by the [Edon Code of Conduct](CODE_OF_CONDUCT.md) (To be created: We recommend adopting a standard Code of Conduct, like the Contributor Covenant). Please adhere to this code in all your interactions with the project.
-
-## How Can I Contribute?
-
-### Reporting Bugs
-
-If you encounter a bug, please help us by reporting it. Good bug reports are extremely helpful!
-
-Before submitting a bug report, please:
-1.  **Check the existing issues:** Search the issue tracker to see if the bug has already been reported.
-2.  **Ensure you have the latest version:** Try to reproduce the bug with the latest version of Edon.
-3.  **Isolate the problem:** Create a minimal, reproducible example if possible.
-
-When submitting a bug report, please include:
--   A clear and descriptive title.
--   Steps to reproduce the bug.
--   What you expected to happen.
--   What actually happened.
--   Your Edon version, Python version, and operating system.
--   Any relevant error messages or screenshots.
-
-Open a new issue [here](https://github.com/your-username/edon/issues) (replace with your actual issue tracker link).
-
-### Suggesting Enhancements
-
-We welcome suggestions for new features or improvements to existing functionality.
-
-Before submitting an enhancement suggestion, please:
-1.  **Check the existing issues/enhancement requests:** Search the issue tracker to see if your idea has already been discussed.
-2.  **Consider the scope:** Think about whether your enhancement fits the general direction of Edon.
-
-When submitting an enhancement suggestion, please include:
--   A clear and descriptive title.
--   A detailed description of the proposed enhancement.
--   Why this enhancement would be useful.
--   Any potential drawbacks or alternatives.
-
-Open a new issue [here](https://github.com/your-username/edon/issues) (replace with your actual issue tracker link).
-
-### Asking Questions
-
-If you have questions about using Edon or its development, please feel free to ask. The issue tracker can be used for this, or if a dedicated discussion forum/channel exists, that would be preferred.
-
-### Your First Code Contribution
-
-Unsure where to begin contributing to Edon? You can start by looking through `good first issue` or `help wanted` issues: (Link to these labels in your issue tracker).
-
-Working on your first Pull Request? Here are a few pointers:
--   Fork the repository and create your branch from `main` (or the current development branch).
--   Make sure your code adheres to the [Style Guides](#style-guides).
--   Include tests that cover your changes.
--   Ensure your commit messages are clear and follow our conventions.
--   Open a Pull Request, clearly describing the changes you've made.
-
-### Pull Requests
-
-When you're ready to contribute code, please follow these steps:
-1.  Fork the repository.
-2.  Create a new branch for your feature or bug fix: `git checkout -b feature/your-feature-name` or `git checkout -b fix/your-bug-fix-name`.
-3.  Make your changes, adhering to the [Style Guides](#style-guides).
-4.  Add tests for your changes.
-5.  Ensure all tests pass.
-6.  Commit your changes with a descriptive commit message.
-7.  Push your branch to your fork: `git push origin feature/your-feature-name`.
-8.  Open a Pull Request to the `main` branch of the Edon repository.
-9.  Clearly describe the purpose of your Pull Request and the changes made. Reference any related issues.
-10. Be prepared to discuss your changes and make adjustments as requested by the maintainers.
-
-## Development Setup
-
-To set up Edon for development:
-1.  Clone your forked repository: `git clone https://github.com/your-username/edon.git`
-2.  Navigate to the project directory: `cd edon`
-3.  Set up the Python environment and install dependencies using `uv`:
-    ```bash
-    uv venv  # Create a virtual environment
-    uv pip install -e .[dev] # Install in editable mode with dev dependencies
-    ```
-    (Adjust `.[dev]` if your `pyproject.toml` specifies development dependencies differently).
-
-## Architectural Overview
-
-Edon has a modular architecture designed for clarity and maintainability. Key principles include separation of concerns between the core engine and the user interface.
-
-For a comprehensive understanding of Edon's architecture, core components, and design patterns, please refer to the **[Edon Project Architectural Guidelines](./docs/ARCHITECTURAL_GUIDELINES.md)**.
-
-## Style Guides
-
-### Python Code Style
-
-All Python code must adhere to the **[Edon Python Style and Quality Guide](./docs/PYTHON_STYLE_GUIDE.md)**. This guide covers Python 3.13 usage, PySide6, comprehensive type hinting, Google-style docstrings, naming conventions, code structure, and more.
-
-### Commit Messages
-
-Please follow these conventions for commit messages:
--   Start with a verb in the imperative mood (e.g., `Add feature`, `Fix bug`, `Refactor code`).
--   Keep the subject line concise (max 50 characters).
--   Provide a more detailed explanation in the body if necessary.
--   Reference relevant issue numbers (e.g., `Fixes #123`).
-
-Example:
-```
-Refactor node creation logic
-
-- Simplify the node instantiation process in GraphController.
-- Improve type hints for node factory functions.
-
-Addresses issue #45.
+```bash
+git clone <repository-url>
+cd edon
+uv sync --locked
+uv run pre-commit install
 ```
 
-## Testing
+The commit hooks run Ruff linting and formatting on staged Python files. The push hooks run Pyrefly
+and the normal pytest profile. Skip an individual push check for intentional WIP with, for example,
+`SKIP=pytest git push`, or skip all push hooks with `git push --no-verify`. CI remains the
+authoritative quality gate.
 
--   All new features and bug fixes should include corresponding tests.
--   Tests are located in the `tests/` directory.
--   Ensure all tests pass before submitting a Pull Request.
-    ```bash
-    # Command to run tests (e.g., using pytest)
-    uv run pytest
-    ```
-    (Adjust if you use a different test runner).
+Do not edit `uv.lock` manually. Commit it when an intentional dependency change updates it.
 
-## License
+## Before submitting a change
 
-By contributing to Edon, you agree that your contributions will be licensed under its [LICENSE_FILENAME] (e.g., MIT License. Specify your project's license).
+Run the checks relevant to the change. The complete local validation is:
 
----
+```bash
+uv run pyrefly check
+uv run ruff check .
+uv run ruff format --check .
+QT_QPA_PLATFORM=offscreen uv run pytest
+```
 
-Thank you for contributing to Edon! 
+Use `uv run ruff format .` to format code. Do not suppress diagnostics or exclude tests merely
+to make validation pass. If an unrelated existing failure remains, report it explicitly in the
+pull request.
+
+## Change expectations
+
+- Keep changes focused; do not mix feature work with unrelated formatting or refactoring.
+- Add tests for new behavior and fixed defects.
+- Preserve the dependency direction described in [the architecture guide](docs/architecture.md).
+- Follow [the code style guide](docs/style.md) and [testing strategy](docs/testing.md).
+- Update durable documentation when behavior, architecture, or developer workflow changes.
+- Put temporary plans and feature proposals in issues or pull requests, not permanent docs.
+
+## Pull requests
+
+A pull request should explain:
+
+1. The problem being solved.
+2. The chosen approach and important trade-offs.
+3. The validation performed and its results.
+4. Known limitations or follow-up work.
+
+Use concise imperative commit subjects, such as `Add cycle regression test` or
+`Fix hosted QApplication ownership`.
+
+## Reporting defects
+
+Include reproduction steps, expected and actual behavior, Edon and Python versions, operating
+system, and relevant logs. Reduce the case when practical, but never include credentials or
+other sensitive information.

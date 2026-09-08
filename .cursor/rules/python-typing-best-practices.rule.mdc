@@ -17,7 +17,7 @@ description: |
     - Annotate callables using `collections.abc.Callable` (e.g., `Callable[[int], str]`).
     - For generic types and abstract base classes (ABCs), use the versions from `collections.abc` (e.g., `from collections.abc import Iterable, Sequence`).
     - Use runtime type enforcement tools (e.g., [Beartype](mdc:https:/beartype.readthedocs.io)) or validation libraries (e.g., [Pydantic](mdc:https:/docs.pydantic.dev)) when runtime type safety is required.
-    - Use static type checkers (e.g., [mypy](mdc:https:/mypy.readthedocs.io), [pyright](mdc:https:/github.com/microsoft/pyright)) and enable them in your development workflow.
+    - Use Pyrefly as the project's sole type checker. Run `uv run pyrefly check`; configuration lives in `pyproject.toml`.
     - Stay updated with the official Python type system specification and relevant PEPs.
     - Avoid deprecated features from the `typing` module (e.g., `typing.List`, `typing.Dict`).
     - Use `Protocol` from `typing` to define structural interfaces for classes. Protocols enable static type checking based on the presence of methods and attributes, not inheritance, and are preferred over ABCs when you want to specify required methods/attributes without enforcing inheritance.
