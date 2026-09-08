@@ -1,378 +1,170 @@
-"""Integration tests for sub-graph functionality.
-
-These tests validate the complete sub-graph workflow including creation,
-parameter exposure, proxy socket mapping, and execution.
-"""
+"""Behavioural coverage for the current subgraph proxy and execution API."""
 
 import pytest
-from loguru import logger
 
-from edon.graph import EntityGraph
 from edon.executor import ExecutionEngine
-from edon.subgraph import SubGraphNode, ParameterMapping
-from edon.types import SocketAddress, SocketRole, SocketDef, SocketType
-from tests.fixtures.nodes import IntegerNode, AddNode, MultiplyNode, FloatNode
+from edon.graph import EntityGraph, EntitySubGraphNode
+from edon.node import EntityNode
+from edon.types import EdgeKey, current_execution_engine_context, current_graph_context
+from tests.fixtures.nodes import AddNode, FloatNode, IntegerNode, MultiplyNode
 
 
-class TestSubGraphIntegration:
-    """Integration tests for SubGraphNode functionality."""
+def connect(
+    graph: EntityGraph,
+    source: EntityNode,
+    source_name: str,
+    target: EntityNode,
+    target_name: str,
+) -> None:
+    edge: EdgeKey = EdgeKey(
+        source.sockets[source_name].address, target.sockets[target_name].address
+    )
+    success, reason = graph.link_sockets(edge)
+    assert success, reason
 
-    def test_simple_subgraph_creation_and_execution(self):
-        """Test creating a simple sub-graph with two nodes and executing it."""
-        # Create internal graph: IntegerNode -> AddNode
-        internal_graph = EntityGraph()
 
-        # Create nodes for internal graph
-        int_node1 = IntegerNode()
-        int_node2 = IntegerNode()
-        add_node = AddNode()
+def wrap_output(node: EntityNode, output_name: str) -> EntitySubGraphNode:
+    subgraph: EntitySubGraphNode = EntitySubGraphNode()
+    subgraph.internal_graph.add_node(node)
+    subgraph.add_proxy_socket("output", node.sockets[output_name].address)
+    return subgraph
 
-        # Set initial values
-        int_node1.sockets["trg_int"].value = 5
-        int_node2.sockets["trg_int"].value = 3
 
-        # Add nodes to internal graph
-        internal_graph.add_node(int_node1)
-        internal_graph.add_node(int_node2)
-        internal_graph.add_node(add_node)
+def execute_node(node: EntityNode, engine: ExecutionEngine | None = None) -> None:
+    graph: EntityGraph = EntityGraph()
+    graph.add_node(node)
+    active_engine: ExecutionEngine = engine if engine is not None else ExecutionEngine()
+    active_engine.execute_graph(graph)
 
-        # Create connections within internal graph
-        from edon.types import EdgeKey
 
-        edge1 = EdgeKey(
-            source=SocketAddress(int_node1.id, "src_int", SocketRole.SOURCE),
-            target=SocketAddress(add_node.id, "a", SocketRole.TARGET),
-        )
-        edge2 = EdgeKey(
-            source=SocketAddress(int_node2.id, "src_int", SocketRole.SOURCE),
-            target=SocketAddress(add_node.id, "b", SocketRole.TARGET),
-        )
+def test_simple_subgraph_creation_and_execution() -> None:
+    first: IntegerNode = IntegerNode()
+    second: IntegerNode = IntegerNode()
+    addition: AddNode = AddNode()
+    first.sockets["trg_int"].value = 5
+    second.sockets["trg_int"].value = 3
+    subgraph: EntitySubGraphNode = wrap_output(addition, "result")
+    subgraph.internal_graph.add_node(first)
+    subgraph.internal_graph.add_node(second)
+    connect(subgraph.internal_graph, first, "src_int", addition, "a")
+    connect(subgraph.internal_graph, second, "src_int", addition, "b")
 
-        success1, _ = internal_graph.link_sockets(edge1)
-        success2, _ = internal_graph.link_sockets(edge2)
-        assert success1 and success2, "Failed to create internal connections"
+    execute_node(subgraph)
 
-        # Create SubGraphNode
-        subgraph_node = SubGraphNode(
-            name="AddTwoNumbers",
-            internal_graph=internal_graph,
-            proxy_source_mappings={
-                "result": SocketAddress(add_node.id, "result", SocketRole.SOURCE)
-            },
-        )
+    assert addition.sockets["result"].value == 8
+    assert subgraph.sockets["output"].value == 8
 
-        # Create parent graph with the sub-graph
-        parent_graph = EntityGraph()
-        parent_graph.add_node(subgraph_node)
 
-        # Execute the parent graph (which should execute the sub-graph)
-        engine = ExecutionEngine()
-        engine.execute_graph(parent_graph)
+def test_subgraph_with_input_parameters() -> None:
+    addition: AddNode = AddNode()
+    subgraph: EntitySubGraphNode = wrap_output(addition, "result")
+    subgraph.add_proxy_socket("input_a", addition.sockets["a"].address)
+    subgraph.add_proxy_socket("input_b", addition.sockets["b"].address)
+    subgraph.sockets["input_a"].value = 10
+    subgraph.sockets["input_b"].value = 15
 
-        # Verify the result
-        result_socket = subgraph_node.sockets["result"]
-        assert result_socket.value == 8, f"Expected 8, got {result_socket.value}"
+    execute_node(subgraph)
 
-    def test_subgraph_with_input_parameters(self):
-        """Test sub-graph with exposed input parameters."""
-        # Create internal graph: AddNode only
-        internal_graph = EntityGraph()
-        add_node = AddNode()
-        internal_graph.add_node(add_node)
+    assert addition.sockets["a"].value == 10
+    assert addition.sockets["b"].value == 15
+    assert subgraph.sockets["output"].value == 25
 
-        # Create SubGraphNode with input and output proxy mappings
-        subgraph_node = SubGraphNode(
-            name="ParameterizedAdd",
-            internal_graph=internal_graph,
-            proxy_target_mappings={
-                "input_a": SocketAddress(add_node.id, "a", SocketRole.TARGET),
-                "input_b": SocketAddress(add_node.id, "b", SocketRole.TARGET),
-            },
-            proxy_source_mappings={
-                "output": SocketAddress(add_node.id, "result", SocketRole.SOURCE)
-            },
-        )
 
-        # Verify proxy sockets were created
-        assert "input_a" in subgraph_node.sockets
-        assert "input_b" in subgraph_node.sockets
-        assert "output" in subgraph_node.sockets
+def test_exposed_input_can_be_reconfigured_between_executions() -> None:
+    integer: IntegerNode = IntegerNode()
+    subgraph: EntitySubGraphNode = wrap_output(integer, "src_int")
+    subgraph.add_proxy_socket("number", integer.sockets["trg_int"].address)
+    for value in (42, 100, 0):
+        subgraph.sockets["number"].value = value
+        execute_node(subgraph)
+        assert integer.sockets["trg_int"].value == value
+        assert subgraph.sockets["output"].value == value
 
-        # Set input values on proxy sockets
-        subgraph_node.sockets["input_a"].value = 10
-        subgraph_node.sockets["input_b"].value = 15
 
-        # Create parent graph and execute
-        parent_graph = EntityGraph()
-        parent_graph.add_node(subgraph_node)
+def test_nested_subgraphs_feed_downstream_nodes() -> None:
+    addition: AddNode = AddNode()
+    addition.sockets["a"].value = 5
+    addition.sockets["b"].value = 3
+    inner: EntitySubGraphNode = wrap_output(addition, "result")
+    multiplication: MultiplyNode = MultiplyNode()
+    factor: FloatNode = FloatNode()
+    factor.sockets["trg_float"].value = 2.0
+    outer: EntitySubGraphNode = wrap_output(multiplication, "result")
+    outer.internal_graph.add_node(inner)
+    outer.internal_graph.add_node(factor)
+    connect(outer.internal_graph, inner, "output", multiplication, "b")
+    connect(outer.internal_graph, factor, "src_float", multiplication, "a")
 
-        engine = ExecutionEngine()
-        engine.execute_graph(parent_graph)
+    execute_node(outer)
 
-        # Verify the result
-        assert subgraph_node.sockets["output"].value == 25
+    assert inner.sockets["output"].value == 8
+    assert outer.sockets["output"].value == 16.0
 
-    def test_subgraph_parameter_exposure(self):
-        """Test exposing internal sockets as configurable parameters."""
-        # Create internal graph with IntegerNode
-        internal_graph = EntityGraph()
-        int_node = IntegerNode()
-        int_node.sockets["trg_int"].value = 42  # Initial value
-        internal_graph.add_node(int_node)
 
-        # Create SubGraphNode
-        subgraph_node = SubGraphNode(
-            name="ConfigurableInteger",
-            internal_graph=internal_graph,
-            proxy_source_mappings={
-                "value": SocketAddress(int_node.id, "src_int", SocketRole.SOURCE)
-            },
-        )
+def test_subgraph_dynamic_socket_management() -> None:
+    addition: AddNode = AddNode()
+    subgraph: EntitySubGraphNode = EntitySubGraphNode()
+    subgraph.internal_graph.add_node(addition)
+    assert not subgraph.sockets
+    subgraph.add_proxy_socket("input", addition.sockets["a"].address)
+    subgraph.add_proxy_socket("output", addition.sockets["result"].address)
+    assert set(subgraph.sockets) == {"input", "output"}
+    subgraph.remove_proxy_socket("input")
+    assert set(subgraph.sockets) == {"output"}
+    addition.sockets["a"].value = 7
+    execute_node(subgraph)
+    assert subgraph.sockets["output"].value == 7
+    subgraph.add_proxy_socket("input", addition.sockets["a"].address)
+    subgraph.sockets["input"].value = 11
+    execute_node(subgraph)
+    assert subgraph.sockets["output"].value == 11
 
-        # Expose the integer input as a parameter
-        subgraph_node.expose_socket_as_parameter(
-            SocketAddress(int_node.id, "trg_int", SocketRole.TARGET), "number_value"
-        )
 
-        # Verify parameter was created
-        assert len(subgraph_node.parameter_mappings) == 1
-        assert "number_value" in subgraph_node.parameter_values
-        assert subgraph_node.parameter_values["number_value"] == 42
+class FailingNode(IntegerNode):
+    def process(self) -> None:
+        raise ValueError("Intentional test failure")
 
-        # Change parameter value
-        subgraph_node.set_parameter_value("number_value", 100)
-        assert subgraph_node.parameter_values["number_value"] == 100
 
-        # Execute and verify parameter was applied
-        parent_graph = EntityGraph()
-        parent_graph.add_node(subgraph_node)
+def test_subgraph_error_propagation_and_context_restoration() -> None:
+    subgraph: EntitySubGraphNode = wrap_output(FailingNode(), "src_int")
+    engine: ExecutionEngine = ExecutionEngine(max_depth=2)
+    previous_graph: EntityGraph | None = current_graph_context.get()
+    previous_engine: ExecutionEngine | None = current_execution_engine_context.get()
+    with pytest.raises(ValueError, match="Intentional test failure"):
+        execute_node(subgraph, engine)
+    assert current_graph_context.get() is previous_graph
+    assert current_execution_engine_context.get() is previous_engine
+    healthy: IntegerNode = IntegerNode()
+    healthy.sockets["trg_int"].value = 42
+    replacement: EntitySubGraphNode = wrap_output(healthy, "src_int")
+    execute_node(replacement, engine)
+    assert replacement.sockets["output"].value == 42
 
-        engine = ExecutionEngine()
-        engine.execute_graph(parent_graph)
 
-        # The parameter should have been applied to the internal socket
-        assert int_node.sockets["trg_int"].value == 100
-        assert subgraph_node.sockets["value"].value == 100
-
-    def test_nested_subgraphs(self):
-        """Test sub-graphs containing other sub-graphs (nested execution)."""
-        # Create inner sub-graph: IntegerNode -> AddNode
-        inner_graph = EntityGraph()
-        int_node1 = IntegerNode()
-        int_node2 = IntegerNode()
-        add_node = AddNode()
-
-        int_node1.sockets["trg_int"].value = 5
-        int_node2.sockets["trg_int"].value = 3
-
-        inner_graph.add_node(int_node1)
-        inner_graph.add_node(int_node2)
-        inner_graph.add_node(add_node)
-
-        # Connect inner graph
-        from edon.types import EdgeKey
-
-        edge1 = EdgeKey(
-            source=SocketAddress(int_node1.id, "src_int", SocketRole.SOURCE),
-            target=SocketAddress(add_node.id, "a", SocketRole.TARGET),
-        )
-        edge2 = EdgeKey(
-            source=SocketAddress(int_node2.id, "src_int", SocketRole.SOURCE),
-            target=SocketAddress(add_node.id, "b", SocketRole.TARGET),
-        )
-        inner_graph.link_sockets(edge1)
-        inner_graph.link_sockets(edge2)
-
-        # Create inner SubGraphNode
-        inner_subgraph = SubGraphNode(
-            name="InnerAdd",
-            internal_graph=inner_graph,
-            proxy_source_mappings={"sum": SocketAddress(add_node.id, "result", SocketRole.SOURCE)},
-        )
-
-        # Create outer sub-graph: InnerSubGraph -> MultiplyNode
-        outer_graph = EntityGraph()
-        multiply_node = MultiplyNode()
-        float_node = FloatNode()
-        float_node.sockets["trg_float"].value = 2.0
-
-        outer_graph.add_node(inner_subgraph)
-        outer_graph.add_node(multiply_node)
-        outer_graph.add_node(float_node)
-
-        # Connect outer graph: inner_subgraph.sum -> multiply.b, float_node -> multiply.a
-        edge3 = EdgeKey(
-            source=SocketAddress(inner_subgraph.id, "sum", SocketRole.SOURCE),
-            target=SocketAddress(multiply_node.id, "b", SocketRole.TARGET),
-        )
-        edge4 = EdgeKey(
-            source=SocketAddress(float_node.id, "src_float", SocketRole.SOURCE),
-            target=SocketAddress(multiply_node.id, "a", SocketRole.TARGET),
-        )
-        outer_graph.link_sockets(edge3)
-        outer_graph.link_sockets(edge4)
-
-        # Create outer SubGraphNode
-        outer_subgraph = SubGraphNode(
-            name="OuterMultiply",
-            internal_graph=outer_graph,
-            proxy_source_mappings={
-                "final_result": SocketAddress(multiply_node.id, "result", SocketRole.SOURCE)
-            },
-        )
-
-        # Create top-level graph
-        top_graph = EntityGraph()
-        top_graph.add_node(outer_subgraph)
-
-        # Execute with depth tracking
-        engine = ExecutionEngine(max_depth=5)
-        engine.execute_graph(top_graph)
-
-        # Verify nested execution: (5 + 3) * 2.0 = 16.0
-        assert outer_subgraph.sockets["final_result"].value == 16.0
-
-    def test_subgraph_dynamic_socket_management(self):
-        """Test adding and removing proxy sockets dynamically."""
-        # Create internal graph
-        internal_graph = EntityGraph()
-        add_node = AddNode()
-        internal_graph.add_node(add_node)
-
-        # Create SubGraphNode with no initial proxy mappings
-        subgraph_node = SubGraphNode(name="DynamicSockets", internal_graph=internal_graph)
-
-        # Initially should have no sockets
-        assert len(subgraph_node.sockets) == 0
-
-        # Add input proxy socket
-        subgraph_node.add_proxy_socket(
-            "dynamic_input_a", SocketAddress(add_node.id, "a", SocketRole.TARGET), is_input=True
-        )
-
-        # Add output proxy socket
-        subgraph_node.add_proxy_socket(
-            "dynamic_output",
-            SocketAddress(add_node.id, "result", SocketRole.SOURCE),
-            is_input=False,
-        )
-
-        # Verify sockets were created
-        assert "dynamic_input_a" in subgraph_node.sockets
-        assert "dynamic_output" in subgraph_node.sockets
-        assert len(subgraph_node.sockets) == 2
-
-        # Remove a socket
-        subgraph_node.remove_proxy_socket("dynamic_input_a")
-        assert "dynamic_input_a" not in subgraph_node.sockets
-        assert len(subgraph_node.sockets) == 1
-
-    def test_subgraph_error_propagation(self):
-        """Test that errors in sub-graphs are properly propagated."""
-        # Create a sub-graph that will cause an error
-        internal_graph = EntityGraph()
-
-        # Create a node that will fail during processing
-        class FailingNode(IntegerNode):
-            def process(self):
-                raise ValueError("Intentional test failure")
-
-        failing_node = FailingNode()
-        internal_graph.add_node(failing_node)
-
-        subgraph_node = SubGraphNode(name="FailingSubGraph", internal_graph=internal_graph)
-
-        parent_graph = EntityGraph()
-        parent_graph.add_node(subgraph_node)
-
-        # Execution should propagate the error
-        engine = ExecutionEngine()
-        with pytest.raises(ValueError, match="Intentional test failure"):
-            engine.execute_graph(parent_graph)
-
-    def test_subgraph_depth_limit(self):
-        """Test that deeply nested sub-graphs respect depth limits."""
-
-        def create_nested_subgraph(depth: int) -> SubGraphNode:
-            """Recursively create nested sub-graphs."""
-            if depth == 0:
-                # Base case: simple integer node
-                internal_graph = EntityGraph()
-                int_node = IntegerNode()
-                int_node.sockets["trg_int"].value = depth
-                internal_graph.add_node(int_node)
-
-                return SubGraphNode(
-                    name=f"Level{depth}",
-                    internal_graph=internal_graph,
-                    proxy_source_mappings={
-                        "value": SocketAddress(int_node.id, "src_int", SocketRole.SOURCE)
-                    },
-                )
-            else:
-                # Recursive case: sub-graph containing another sub-graph
-                internal_graph = EntityGraph()
-                nested_subgraph = create_nested_subgraph(depth - 1)
-                internal_graph.add_node(nested_subgraph)
-
-                return SubGraphNode(
-                    name=f"Level{depth}",
-                    internal_graph=internal_graph,
-                    proxy_source_mappings={
-                        "value": SocketAddress(nested_subgraph.id, "value", SocketRole.SOURCE)
-                    },
-                )
-
-        # Create a deeply nested structure that exceeds the default limit
-        deep_subgraph = create_nested_subgraph(15)  # Deeper than default max_depth=10
-
-        parent_graph = EntityGraph()
-        parent_graph.add_node(deep_subgraph)
-
-        # Should fail due to depth limit
-        engine = ExecutionEngine(max_depth=10)
+@pytest.mark.parametrize("max_depth, succeeds", [(2, False), (3, True)])
+def test_subgraph_depth_boundary(max_depth: int, succeeds: bool) -> None:
+    integer: IntegerNode = IntegerNode()
+    integer.sockets["trg_int"].value = 42
+    inner: EntitySubGraphNode = wrap_output(integer, "src_int")
+    outer: EntitySubGraphNode = wrap_output(inner, "output")
+    engine: ExecutionEngine = ExecutionEngine(max_depth=max_depth)
+    if succeeds:
+        execute_node(outer, engine)
+        assert outer.sockets["output"].value == 42
+    else:
         with pytest.raises(RuntimeError, match="Maximum sub-graph nesting depth"):
-            engine.execute_graph(parent_graph)
+            execute_node(outer, engine)
+        # A shallower graph must still run after the failed nested execution.
+        execute_node(inner, engine)
+        assert inner.sockets["output"].value == 42
 
-        # Should succeed with higher limit
-        engine_high_limit = ExecutionEngine(max_depth=20)
-        engine_high_limit.execute_graph(parent_graph)  # Should not raise
+
+class DerivedSubgraph(EntitySubGraphNode):
+    pass
 
 
-class TestSubGraphCircularImportFix:
-    """Tests for addressing the circular import issue."""
-
-    def test_execution_engine_injection(self):
-        """Test potential solution: injecting ExecutionEngine into SubGraphNode."""
-        # This test explores a potential architectural improvement
-        # where we pass the ExecutionEngine to avoid circular imports
-
-        # Create a simple sub-graph
-        internal_graph = EntityGraph()
-        int_node = IntegerNode()
-        int_node.sockets["trg_int"].value = 42
-        internal_graph.add_node(int_node)
-
-        subgraph_node = SubGraphNode(
-            name="TestInjection",
-            internal_graph=internal_graph,
-            proxy_source_mappings={
-                "value": SocketAddress(int_node.id, "src_int", SocketRole.SOURCE)
-            },
-        )
-
-        # Current implementation imports ExecutionEngine inside process()
-        # This test verifies it works, but we should consider alternatives
-        parent_graph = EntityGraph()
-        parent_graph.add_node(subgraph_node)
-
-        engine = ExecutionEngine()
-        engine.execute_graph(parent_graph)
-
-        assert subgraph_node.sockets["value"].value == 42
-
-        # TODO: Consider architectural improvements:
-        # 1. Pass ExecutionEngine instance to SubGraphNode.process()
-        # 2. Use dependency injection pattern
-        # 3. Create ExecutionContext class
-        # 4. Restructure module dependencies
+def test_depth_limit_applies_to_subgraph_subclasses() -> None:
+    subgraph: DerivedSubgraph = DerivedSubgraph()
+    subgraph.internal_graph.add_node(IntegerNode())
+    with pytest.raises(RuntimeError, match="Maximum sub-graph nesting depth"):
+        execute_node(subgraph, ExecutionEngine(max_depth=1))

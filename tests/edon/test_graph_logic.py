@@ -3,9 +3,7 @@
 import pytest
 
 from edon.graph import EntityGraph
-from edon.node import EntityNode
-from edon.socket import EntitySocket  # Required for type hints in EntityGraph methods
-from edon.types import EdgeKey, SocketAddress, SocketRole, SocketDef, SocketType
+from edon.types import EdgeKey, SocketAddress, SocketRole
 from edon.errors import SocketLinkErrorReason
 
 from tests.fixtures.nodes import IntegerNode, FloatNode, AddNode
@@ -105,8 +103,10 @@ class TestGraphIsReachable:
         # This is a common technique for testing internal graph algorithms that operate
         # on states which the public API might otherwise restrict or validate against.
         cycle_forming_edge = EdgeKey(
-            SocketAddress(node_c.id, "src_int", SocketRole.SOURCE), # Edge from C
-            SocketAddress(node_a.id, "trg_int", SocketRole.TARGET), # back to A, forming A->B->C->A
+            SocketAddress(node_c.id, "src_int", SocketRole.SOURCE),  # Edge from C
+            SocketAddress(
+                node_a.id, "trg_int", SocketRole.TARGET
+            ),  # back to A, forming A->B->C->A
         )
         graph.edges.add(cycle_forming_edge)
         # --- End Test Setup ---
@@ -134,8 +134,8 @@ class TestGraphIsReachable:
         # We are interested in whether `_is_reachable` correctly determines that
         # an external node `D` is not reachable from `A`, even with the cycle present.
         cycle_forming_edge = EdgeKey(
-            SocketAddress(node_b.id, "src_int", SocketRole.SOURCE), # Edge from B
-            SocketAddress(node_a.id, "trg_int", SocketRole.TARGET), # back to A, forming A->B->A
+            SocketAddress(node_b.id, "src_int", SocketRole.SOURCE),  # Edge from B
+            SocketAddress(node_a.id, "trg_int", SocketRole.TARGET),  # back to A, forming A->B->A
         )
         graph.edges.add(cycle_forming_edge)
         # --- End Test Setup ---
@@ -252,36 +252,30 @@ class TestGraphCanFormLink:
         assert can_link is False
         assert reason == SocketLinkErrorReason.DIRECTIONS_NOT_OPPOSITE
 
-    def test_can_form_link_cannot_link_to_self_socket(self, graph: EntityGraph):
-        # This test, despite its name, now focuses on DIRECTIONS_NOT_OPPOSITE
-        # when attempting to link sockets of the same role on different nodes,
-        # as per the request to modify it to use two different nodes.
-        # The original CANNOT_LINK_TO_SELF scenario (linking a socket strictly to itself)
-        # is implicitly covered by the order of checks in `can_link_sockets_internal`.
+    def test_can_form_link_rejects_same_socket(self, graph: EntityGraph) -> None:
+        node = AddNode(name="Add")
+        graph.add_node(node)
+        address = node.sockets["result"].address
 
-        # Setup two different nodes
-        add_node1 = AddNode(name="AddN1")
-        add_node2 = AddNode(name="AddN2")
-        graph.add_node(add_node1)
-        graph.add_node(add_node2)
+        can_link, reason = graph.can_form_link(address, address)
 
-        # Try to link add_node1.a (target) to add_node2.a (target)
-        # These are different sockets on different nodes, but with the same role.
-        addr1_a = SocketAddress(add_node1.id, "a", SocketRole.TARGET)
-        addr2_a = SocketAddress(add_node2.id, "a", SocketRole.TARGET)
-        
-        can_link, reason = graph.can_form_link(addr1_a, addr2_a)
         assert can_link is False
-        # This should be DIRECTIONS_NOT_OPPOSITE because roles are the same,
-        # and source_addr != target_addr, so CANNOT_LINK_TO_SELF is not hit first.
-        assert reason == SocketLinkErrorReason.DIRECTIONS_NOT_OPPOSITE
+        assert reason == SocketLinkErrorReason.CANNOT_LINK_TO_SELF
 
-        # Try to link add_node1.result (source) to add_node2.result (source)
-        # These are different sockets on different nodes, but with the same role.
-        addr1_res = SocketAddress(add_node1.id, "result", SocketRole.SOURCE)
-        addr2_res = SocketAddress(add_node2.id, "result", SocketRole.SOURCE)
+    @pytest.mark.parametrize("socket_name", ["a", "result"])
+    def test_can_form_link_rejects_matching_roles(
+        self, graph: EntityGraph, socket_name: str
+    ) -> None:
+        first = AddNode(name="First")
+        second = AddNode(name="Second")
+        graph.add_node(first)
+        graph.add_node(second)
 
-        can_link, reason = graph.can_form_link(addr1_res, addr2_res)
+        can_link, reason = graph.can_form_link(
+            first.sockets[socket_name].address,
+            second.sockets[socket_name].address,
+        )
+
         assert can_link is False
         assert reason == SocketLinkErrorReason.DIRECTIONS_NOT_OPPOSITE
 
@@ -305,49 +299,26 @@ class TestGraphCanFormLink:
         # This specific ALREADY_LINKED comes from can_link_sockets_internal
         assert reason == SocketLinkErrorReason.ALREADY_LINKED
 
-    def test_can_form_link_target_already_linked_to_different_source(self, graph: EntityGraph):
-        # Setup: s1 -> t1, now try s2 -> t1
-        # By default, target sockets can accept multiple incoming connections if not restricted by node logic.
-        # EntityGraph.can_link_sockets_internal does not prevent this.
-        # EntityGraph.link_sockets also does not prevent this.
-        # The check `if source_socket in target_socket.links:` in `can_form_link` is the one
-        # that would prevent this if `target_socket.links` was managed and populated.
-        # Since it's not, this test will show that `can_form_link` currently allows it.
-        s1_node = IntegerNode(name="S1")
-        s2_node = IntegerNode(name="S2")
-        t1_node = AddNode(name="T1")
-        graph.add_node(s1_node)
-        graph.add_node(s2_node)
-        graph.add_node(t1_node)
+    def test_can_form_link_rejects_second_source_for_target(self, graph: EntityGraph) -> None:
+        first = IntegerNode(name="First")
+        second = IntegerNode(name="Second")
+        addition = AddNode(name="Addition")
+        for node in (first, second, addition):
+            graph.add_node(node)
+        target = addition.sockets["a"].address
+        existing_edge = EdgeKey(first.sockets["src_int"].address, target)
+        assert graph.link_sockets(existing_edge) == (True, None)
 
-        s1_addr = SocketAddress(s1_node.id, "src_int", SocketRole.SOURCE)
-        s2_addr = SocketAddress(s2_node.id, "src_int", SocketRole.SOURCE)
-        t1_addr = SocketAddress(t1_node.id, "a", SocketRole.TARGET)  # Target socket 'a'
+        can_link, reason = graph.can_form_link(second.sockets["src_int"].address, target)
 
-        # Link s1 -> t1
-        edge1 = EdgeKey(s1_addr, t1_addr)
-        link_success, _ = graph.link_sockets(edge1)
-        assert link_success is True
-
-        # Try to link s2 -> t1
-        # The `if source_socket in target_socket.links:` check in `can_form_link` is the key here.
-        # `target_socket.links` is not part of `EntityGraph`'s direct state.
-        # Assuming `EntitySocket.links` is not populated by `EntityGraph.link_sockets`,
-        # this check will pass.
-        # Then `can_link_sockets_internal` is called. It checks `if source_addr in self.get_socket_links(target_addr)`.
-        # `self.get_socket_links(t1_addr)` will return `[s1_addr]`.
-        # `s2_addr` is not in `[s1_addr]`. So this check also passes.
-        # Therefore, it should be allowed by current logic.
-        can_link, reason = graph.can_form_link(s2_addr, t1_addr)
-        assert can_link is True
-        assert reason is None
-        # If the desired behavior is that a target socket can only have one link,
-        # then `link_sockets` or `can_form_link` would need additional logic.
-        # The current `project-test-strategy.md` mentions "a linked target socket should always have a corresponding source socket"
-        # and `EntityGraph.get_source_socket_for_target` "Assumes a target socket is connected to at most one source socket."
-        # This implies a design intent that target sockets are single-input.
-        # However, `can_form_link` and `link_sockets` do not enforce this.
-        # This test highlights that. For now, testing existing behavior.
+        assert can_link is False
+        assert reason == SocketLinkErrorReason.INPUT_SOCKET_FULL
+        second_edge = EdgeKey(second.sockets["src_int"].address, target)
+        assert graph.link_sockets(second_edge) == (
+            False,
+            SocketLinkErrorReason.INPUT_SOCKET_FULL,
+        )
+        assert graph.edges == {existing_edge}
 
 
 class TestGraphLinkSockets:
@@ -363,7 +334,7 @@ class TestGraphLinkSockets:
         # Link N1 -> N2
         edge1 = EdgeKey(
             SocketAddress(n1.id, "src_int", SocketRole.SOURCE),
-            SocketAddress(n2.id, "trg_int", SocketRole.TARGET)
+            SocketAddress(n2.id, "trg_int", SocketRole.TARGET),
         )
         link_success1, reason1 = graph.link_sockets(edge1)
         assert link_success1 is True, f"Initial link failed: {reason1}"
@@ -372,12 +343,34 @@ class TestGraphLinkSockets:
         # Attempt to link N2 -> N1 (which would form a cycle N1 -> N2 -> N1)
         edge2_cycle = EdgeKey(
             SocketAddress(n2.id, "src_int", SocketRole.SOURCE),
-            SocketAddress(n1.id, "trg_int", SocketRole.TARGET)
+            SocketAddress(n1.id, "trg_int", SocketRole.TARGET),
         )
         link_success2, reason2 = graph.link_sockets(edge2_cycle)
 
         assert link_success2 is False, "Cycle-forming link was not rejected."
-        assert reason2 == SocketLinkErrorReason.CYCLE_DETECTED, \
+        assert reason2 == SocketLinkErrorReason.CYCLE_DETECTED, (
             f"Incorrect reason for cycle rejection: expected CYCLE_DETECTED, got {reason2}"
-        assert edge2_cycle not in graph.edges, \
+        )
+        assert edge2_cycle not in graph.edges, (
             "Cycle-forming edge was added to graph.edges despite rejection."
+        )
+
+    def test_remove_node_removes_only_its_edges(self, graph: EntityGraph) -> None:
+        first = IntegerNode(name="First")
+        second = IntegerNode(name="Second")
+        addition = AddNode(name="Addition")
+        for node in (first, second, addition):
+            graph.add_node(node)
+        first_edge = EdgeKey(first.sockets["src_int"].address, addition.sockets["a"].address)
+        second_edge = EdgeKey(second.sockets["src_int"].address, addition.sockets["b"].address)
+        assert graph.link_sockets(first_edge) == (True, None)
+        assert graph.link_sockets(second_edge) == (True, None)
+
+        graph.remove_node(first.id)
+
+        assert first.id not in graph.nodes
+        assert graph.edges == {second_edge}
+        assert graph.get_socket_links(addition.sockets["a"].address) == []
+        assert graph.get_socket_links(addition.sockets["b"].address) == [
+            second.sockets["src_int"].address
+        ]

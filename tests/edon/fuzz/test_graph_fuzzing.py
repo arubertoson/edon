@@ -1,13 +1,21 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
-from hypothesis import HealthCheck, Phase, assume, settings
-from hypothesis.stateful import Bundle, RuleBasedStateMachine, consumes, invariant, rule
+from hypothesis import assume
+from hypothesis.stateful import (
+    Bundle,
+    MultipleResults,
+    RuleBasedStateMachine,
+    consumes,
+    invariant,
+    multiple,
+    rule,
+)
 
+from edon.errors import SocketLinkErrorReason
 from edon.graph import EntityGraph
 from edon.types import EdgeKey, SocketRole
 from tests.fixtures.nodes import (
@@ -65,32 +73,31 @@ class GraphFuzzer(RuleBasedStateMachine):
     )
     def link_sockets(
         self, source_node_id: str, target_node_id: str, data: st.DataObject
-    ) -> EdgeKey:
-        # To run this rule we need a precondition, without any nodes there are not sockets that can
-        # be linked, meaning it would be a useless operation to run.
-        # XXX: We should not do prefiltering here imo, as there is a good case for just keeping
-        # everything intact. We will have sockets that are "unlinkable", but this business logic
-        # should be handled by the graph.
-
+    ) -> EdgeKey | MultipleResults[EdgeKey]:
         src_node = self.graph.get_node(source_node_id)
         trg_node = self.graph.get_node(target_node_id)
+        assume(bool(src_node.source_sockets))
+        assume(bool(trg_node.target_sockets))
+        source_address = data.draw(
+            st.sampled_from([socket.address for socket in src_node.source_sockets])
+        )
+        target_address = data.draw(
+            st.sampled_from([socket.address for socket in trg_node.target_sockets])
+        )
+        edge_key = EdgeKey(source=source_address, target=target_address)
+        node_ids_before = tuple(self.graph.nodes)
+        edges_before = set(self.graph.edges)
 
-        # Ensure nodes have connectable sockets before proceeding
-        assume(len(src_node.source_sockets) > 0)
-        assume(len(trg_node.target_sockets) > 0)
+        success, reason = self.graph.link_sockets(edge_key)
 
-        # choose sockets
-        src_socket_addr = data.draw(st.sampled_from([s.address for s in src_node.source_sockets]))
-        trg_socket_addr = data.draw(st.sampled_from([s.address for s in trg_node.target_sockets]))
-
-        edge_key = EdgeKey(source=src_socket_addr, target=trg_socket_addr)
-
-        # Attempt to link the sockets. We don't need to check the result here,
-        # as invariants will verify the graph's state.
-        success, _ = self.graph.link_sockets(edge_key)
-
-        assume(success)
-        return edge_key
+        if success:
+            assert reason is None
+            assert edge_key in self.graph.edges
+            return edge_key
+        assert isinstance(reason, SocketLinkErrorReason)
+        assert tuple(self.graph.nodes) == node_ids_before
+        assert self.graph.edges == edges_before
+        return multiple()
 
     @rule(edge=consumes(active_edges))
     def unlink_sockets(self, edge: EdgeKey) -> None:
@@ -136,6 +143,13 @@ class GraphFuzzer(RuleBasedStateMachine):
             assert trg_socket.address.role == SocketRole.TARGET, (
                 f"INVARIANT FAILED: Target socket '{trg_socket.address}' does not have SocketRole.target."
             )
+
+    @invariant()
+    def check_target_socket_cardinality(self) -> None:
+        target_addresses = [edge.target for edge in self.graph.edges]
+        assert len(target_addresses) == len(set(target_addresses)), (
+            "INVARIANT FAILED: A target socket has more than one incoming edge."
+        )
 
     @invariant()
     def check_get_socket_links_consistency(self) -> None:
@@ -184,31 +198,6 @@ class GraphFuzzer(RuleBasedStateMachine):
                 f"not in get_socket_links for target {target_addr}."
             )
 
-
-settings.register_profile(
-    "fuzzing_dev",
-    max_examples=200,
-    suppress_health_check=[
-        HealthCheck.too_slow,
-        HealthCheck.filter_too_much,
-        HealthCheck.data_too_large,
-    ],
-    deadline=None,
-)
-
-settings.register_profile(
-    "fuzzing_ci",
-    max_examples=1000,
-    suppress_health_check=[
-        HealthCheck.too_slow,
-        HealthCheck.filter_too_much,
-        HealthCheck.data_too_large,
-    ],
-    phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
-    deadline=2000,
-)
-
-settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "fuzzing_dev"))
 
 # Make state machine runnable as a test through PyTest
 TestGraphFuzzing = GraphFuzzer.TestCase

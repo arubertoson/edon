@@ -21,10 +21,10 @@ class IntegerNode(EntityNode):
     ]
     target_socket_definitions = [
         SocketDef(
-            name="trg_int", 
-            socket_type=SocketType.INTEGER, 
+            name="trg_int",
+            socket_type=SocketType.INTEGER,
             display_state=SocketDisplayState.WIDGET,
-            default=0
+            default=0,
         ),
     ]
 
@@ -49,7 +49,7 @@ class FloatNode(EntityNode):
             name="trg_float",
             socket_type=SocketType.FLOAT,
             display_state=SocketDisplayState.WIDGET,
-            default=0.0
+            default=0.0,
         ),
     ]
 
@@ -71,10 +71,10 @@ class StringNode(EntityNode):
     ]
     target_socket_definitions = [
         SocketDef(
-            name="trg_text", 
-            socket_type=SocketType.STRING, 
+            name="trg_text",
+            socket_type=SocketType.STRING,
             display_state=SocketDisplayState.WIDGET,
-            default=""
+            default="",
         )
     ]
 
@@ -103,7 +103,7 @@ class AddNode(EntityNode):
         """Add the two input values."""
         a_value = self.sockets["a"].value or 0
         b_value = self.sockets["b"].value or 0
-        
+
         result = a_value + b_value
         self.sockets["result"].value = result
         logger.trace(f"AddNode ({self.name}): {a_value} + {b_value} = {result}")
@@ -125,7 +125,7 @@ class MultiplyNode(EntityNode):
         """Multiply the two input values."""
         a_value = self.sockets["a"].value or 0.0
         b_value = self.sockets["b"].value or 0
-        
+
         result = float(a_value) * float(b_value)
         self.sockets["result"].value = result
         logger.trace(f"MultiplyNode ({self.name}): {a_value} * {b_value} = {result}")
@@ -147,7 +147,7 @@ class ConcatNode(EntityNode):
         """Concatenate the two input strings."""
         a_value = self.sockets["a"].value or ""
         b_value = self.sockets["b"].value or ""
-        
+
         result = str(a_value) + str(b_value)
         self.sockets["result"].value = result
         logger.trace(f"ConcatNode ({self.name}): '{a_value}' + '{b_value}' = '{result}'")

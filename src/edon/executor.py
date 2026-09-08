@@ -19,7 +19,7 @@ from collections import deque
 from loguru import logger
 
 from edon.node import EntityNode
-from edon.graph import EntityGraph
+from edon.graph import EntityGraph, EntitySubGraphNode
 from edon.types import current_graph_context, current_execution_engine_context
 
 
@@ -190,8 +190,8 @@ class ExecutionEngine:
         logger.info(f"Graph execution complete at depth {self._current_depth} ({context}).")
 
     def _is_subgraph_node(self, node: EntityNode) -> bool:
-        """Check if a node is a SubGraphNode without importing to avoid circular imports."""
-        return node.__class__.__name__ == "SubGraphNode"
+        """Recognize subgraph nodes, including user-defined subclasses."""
+        return isinstance(node, EntitySubGraphNode)
 
     def _execute_subgraph_node(self, subgraph_node: EntityNode) -> None:
         """Execute a sub-graph node with proper context management.

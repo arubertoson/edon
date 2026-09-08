@@ -148,6 +148,9 @@ class EntityGraph:
         if not types_are_compatible:
             return False, SocketLinkErrorReason.TYPE_MISMATCH
 
+        if self.get_socket_links(target_addr):
+            return False, SocketLinkErrorReason.INPUT_SOCKET_FULL
+
         return True, None
 
     def _is_reachable(self, start_node_id: str, end_node_id: str) -> bool:
@@ -280,7 +283,7 @@ class EntityGraph:
         invalid_targets: set[SocketAddress] = set()
 
         # Determine the role of the source socket
-        source_node = self.get_node(source_socket_addr.node_id)
+        self.get_node(source_socket_addr.node_id)
         source_role = source_socket_addr.role
 
         # Iterate through all nodes to categorize their sockets
@@ -397,8 +400,10 @@ class EntitySubGraphNode(EntityNode):
             if not internal_socket.role == role:
                 continue
 
-            internal_socket.value = self.sockets[proxy_name].value
-            logger.trace(f"Propagated: {proxy_name} -> {internal_socket.address}")
+            if role == SocketRole.TARGET:
+                internal_socket.value = self.sockets[proxy_name].value
+            else:
+                self.sockets[proxy_name].value = internal_socket.value
 
     def process(self) -> None:
         logger.debug(f"Processing SubGraphNode '{self.name}'")
@@ -410,8 +415,7 @@ class EntitySubGraphNode(EntityNode):
             "SubGraphNode.process() called without an active ExecutionEngine context"
         )
 
-        # The active_engine is already managing depth, so it will increment it
-        # when it calls execute_graph recursively.
+        # The active engine increments depth before calling this node's process method.
         active_engine.execute_graph(self.internal_graph, context=f"sub-graph: {self.name}")
 
         # After we are done processing the graph we propagate the resulting values to the proxy

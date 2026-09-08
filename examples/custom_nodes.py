@@ -6,8 +6,6 @@ from edon.nodes.utility import SubgraphPromoterNode
 from edon.types import (
     SocketDisplayState,
     SocketDef,
-    SocketAddress,
-    SocketRole,
 )
 from edon_ui.app import EdonApplication
 from edon_ui.widgets.factories import SocketType

@@ -24,7 +24,9 @@ class SocketLinkErrorReason(Enum):
     ALREADY_LINKED = auto()
 
     # Arity/Limit Issues
-    INPUT_SOCKET_FULL = auto()  # e.g., Input socket already has a connection and doesn't allow more
+    INPUT_SOCKET_FULL = (
+        auto()
+    )  # e.g., Input socket already has a connection and doesn't allow more
     OUTPUT_SOCKET_LIMIT_REACHED = auto()  # If an output socket had a fan-out limit (less common)
 
     # General/Other
@@ -38,7 +40,9 @@ class GraphObjectErrorReason(Enum):
 
     NODE_NOT_FOUND = auto()
     SOCKET_NOT_FOUND = auto()
-    SOCKET_DIRECTION_INVALID = auto()  # e.g. trying to use an input as an output in connect_sockets
+    SOCKET_DIRECTION_INVALID = (
+        auto()
+    )  # e.g. trying to use an input as an output in connect_sockets
 
 
 class SocketUnlinkErrorReason(Enum):

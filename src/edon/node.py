@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING
 
 from edon.socket import EntitySocket, SocketRole
 
@@ -50,7 +50,7 @@ class EntityNode:
     sockets: dict[str, EntitySocket] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
-        cls: type[Self] = self.__class__
+        cls = type(self)
 
         # Resolve 'name': Instance > Class > Derived (for subclasses) > None
         if self.name is None:
