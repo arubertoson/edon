@@ -6,9 +6,17 @@ for running or extending the Edon UI.
 """
 
 import sys
+from collections.abc import Mapping
 
 from loguru import logger
-from PySide6.QtCore import QEvent, QMessageLogContext, QObject, QtMsgType, qInstallMessageHandler
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QMessageLogContext,
+    QObject,
+    QtMsgType,
+    qInstallMessageHandler,
+)
 from PySide6.QtWidgets import QApplication
 
 from edon.graph import EntityGraph
@@ -54,7 +62,7 @@ def _qt_message_handler(msg_type: QtMsgType, context: QMessageLogContext, messag
 
 
 class EdonLoggingApplication(QApplication):
-    def __init__(self, argv):
+    def __init__(self, argv: list[str]) -> None:
         super().__init__(argv)
         logger.info("EdonLoggingApplication initialized with custom notify() method.")
 
@@ -124,31 +132,38 @@ class EdonApplication:
 
     This class encapsulates the Qt application, main window, command system,
     and graph management, providing a primary entry point for the Edon UI.
-    It orchestrates the core components and manages their lifecycle.
+    It orchestrates the core components and manages their lifecycle. An existing
+    QApplication is borrowed without replacing host logging or global styling.
     """
+
+    _key_processor: KeyProcessor
 
     def __init__(
         self,
-        node_registry: dict[str, type[EntityNode]] | None = None,
+        node_registry: Mapping[str, type[EntityNode]] | None = None,
         log_level: str = "DEBUG",
     ) -> None:
-        # Initialize logging as the first step to capture all subsequent initialization messages.
-        self._setup_logging(log_level)
+        # A host (including pytest-qt) may already own Qt and its global hooks.
+        self._owns_qt_application: bool = QApplication.instance() is None
+        if self._owns_qt_application:
+            self._setup_logging(log_level)
 
         logger.info("Initializing EdonApplication...")
 
-        # Initialize Qt application and UI components
         self._qt_app: QApplication = self._create_qt_application()
-        self._qt_app.setStyleSheet(theme.APPLICATION_STYLESHEET)
+        if self._owns_qt_application:
+            self._qt_app.setStyleSheet(theme.APPLICATION_STYLESHEET)
 
         # We're setting up the controller with it's view and node registry
-        self._node_registry: dict[str, type[EntityNode]] = node_registry or {}
+        self._node_registry: dict[str, type[EntityNode]] = dict(node_registry or {})
         self._controller = WorkspaceController(
             node_type_registry=self._node_registry,
         )
 
         # Initialize public API components
         self.main_window = MainWindow(self._controller.view)
+        if not self._owns_qt_application:
+            self.main_window.setStyleSheet(theme.APPLICATION_STYLESHEET)
         self.command_registry: CommandRegistry = default_command_registry
         self.key_mapping = KeyMapping()
 
@@ -210,7 +225,14 @@ class EdonApplication:
         logger.debug("Logging system initialized")
 
     def _create_qt_application(self) -> QApplication:
-        return EdonLoggingApplication(sys.argv)
+        existing_app: QCoreApplication | None = QApplication.instance()
+        if existing_app is None:
+            return EdonLoggingApplication(sys.argv)
+        if not isinstance(existing_app, QApplication):
+            raise RuntimeError(
+                "Edon requires QApplication; an existing non-widget Qt application cannot be reused."
+            )
+        return existing_app
 
     def _setup_command_system(self) -> None:
         """Initializes the application's command system.
@@ -229,16 +251,15 @@ class EdonApplication:
         )
 
         # Create key processor for handling input events
-        self._key_processor: KeyProcessor = KeyProcessor(self.command_registry, self.key_mapping)
+        self._key_processor = KeyProcessor(self.command_registry, self.key_mapping)
         self._controller.view.key_processor = self._key_processor
 
     def run(self) -> int:
-        """Shows the main window and starts the Qt application event loop.
+        """Show the window, running Qt's event loop only when Edon owns it.
 
-        This method is the primary entry point to launch and operate the Edon UI.
-        It first ensures the visual graph is synchronized with the underlying data,
-        then displays the `main_window`, and finally initiates the Qt application's
-        event processing. The application's exit code is returned upon termination.
+        Standalone use returns the event loop's exit code. When reusing a host's
+        QApplication, return zero after showing the window; the host remains
+        responsible for event processing and application lifetime.
         """
         logger.info("Running EdonApplication...")
 
@@ -251,6 +272,9 @@ class EdonApplication:
         except Exception as e:
             logger.exception(f"Exception during main_window.show(): {e}")
             return 1  # Indicate error
+
+        if not self._owns_qt_application:
+            return 0
 
         logger.debug("About to call self._qt_app.exec()")
         exit_code = self._qt_app.exec()
