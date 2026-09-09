@@ -17,9 +17,14 @@ edon_ui  ->  edon
 - `EntityGraph` owns nodes and directed edges and enforces graph-linking rules.
 - `EntityNode` is the base class for executable nodes and owns its `EntitySocket` instances.
 - `EntitySocket`, `SocketAddress`, `SocketDef`, and `EdgeKey` define graph connections.
-- `ExecutionEngine` topologically orders and executes nodes.
+- `ExecutionEngine.execute_node()` executes a node's upstream dependency closure. Socket values are
+  authoritative; clean nodes reuse those values until an input or topology mutation marks execution
+  dirty. `execute_graph()` remains the whole-graph compatibility entry point.
 - `EntitySubGraphNode` contains an internal graph and maps exposed proxy sockets across the graph
   boundary. Nested execution has a configured depth limit.
+- Promotion/interface links derive from those proxy mappings and their associated promoter
+  socket addresses. They are not executable data flow and never belong to `EntityGraph.edges`.
+  Promotion is idempotent; explicit unexposure removes the proxy and its parent edges.
 
 The graph model is the source of truth. UI state must not redefine graph connectivity or domain
 validation.
@@ -34,6 +39,11 @@ validation.
 - `NodeItem`, `SocketItem`, and `EdgeItem` render graph objects.
 - The command registry, key mapping, and key processor translate user input into actions.
 - `WorkspaceContextStack` keeps each nested graph paired with its scene and UI registry.
+
+Promotion lines reuse the edge renderer but have a separate UI registry. Entering a subgraph
+rebuilds them from domain mappings; moving either endpoint updates their paths. They neither
+consume input cardinality nor change input widgets into the data-linked state. Deleting an
+internal node or its associated promoter unexposes the affected proxies and removes their lines.
 
 UI events should reach the graph through the controller. After a successful model mutation, the
 controller updates the scene and registry. Qt items should receive only the domain identifiers

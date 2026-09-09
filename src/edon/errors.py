@@ -13,6 +13,10 @@ The enums are categorized by the type of operation or object they pertain to:
 from enum import Enum, auto
 
 
+class GraphCycleError(RuntimeError):
+    """Raised when an execution subset contains a directed cycle."""
+
+
 class SocketLinkErrorReason(Enum):
     """Enumerates reasons why a socket connection attempt might fail."""
 

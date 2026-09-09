@@ -16,6 +16,7 @@ handles the instantiation of these sockets.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -44,10 +45,13 @@ class EntityNode:
     # and "provided as empty list []" (use the empty list).
     source_socket_definitions: list[SocketDef] | None = field(default=None)
     target_socket_definitions: list[SocketDef] | None = field(default=None)
+    position: tuple[float, float] | None = field(default=None)
 
     # --- Internal Attributes ---
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     sockets: dict[str, EntitySocket] = field(default_factory=dict, init=False)
+    execution_dirty: bool = field(default=True, init=False, repr=False, compare=False)
+    execution_error: Exception | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         cls = type(self)
@@ -120,7 +124,7 @@ class EntityNode:
     def target_sockets(self) -> list[EntitySocket]:
         return [sock for sock in self.sockets.values() if sock.role == SocketRole.TARGET]
 
-    def process(self) -> None:
+    def process(self) -> None | Awaitable[None]:
         """
         The core computational logic of the node. Returns None.
 

@@ -9,25 +9,23 @@ objects.
 
 from __future__ import annotations
 
-from collections.abc import MutableMapping
+from collections import deque
+from collections.abc import Collection, MutableMapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, TypeAlias
+from typing import Any, TypeAlias
 
-from edon.errors import GraphObjectErrorReason, SocketLinkErrorReason
+from edon.errors import GraphCycleError, GraphObjectErrorReason, SocketLinkErrorReason
 from edon.logging import logger
 from edon.node import EntityNode
 from edon.socket import EntitySocket
 from edon.types import (
+    EdgeKey,
     SocketAddress,
     SocketDef,
     SocketRole,
     SocketType,
     current_execution_engine_context,
 )
-
-if TYPE_CHECKING:
-    from edon.types import EdgeKey
-
 
 NodeMap: TypeAlias = MutableMapping[str, EntityNode]
 
@@ -57,6 +55,7 @@ class EntityGraph:
         )
 
         self.nodes[node.id] = node
+        self.invalidate_execution()
 
     def remove_node(self, node_id: str) -> None:
         """Removes a node, identified by `node_id`, from the graph.
@@ -83,8 +82,79 @@ class EntityGraph:
                 f"CORRUPTION: Edge {edge} still references remove node {node_id} after cleanup"
             )
 
+        self.invalidate_execution()
+
     def get_node(self, node_id: str) -> EntityNode:
         return self.nodes[node_id]
+
+    def resolve_socket_value(self, socket_address: SocketAddress) -> Any:
+        """Return a socket's effective value using this graph's connections."""
+        socket, _ = self._get_socket_and_node(socket_address)
+        if socket.role is SocketRole.SOURCE:
+            return socket.value
+
+        source_socket = self.get_source_socket_for_target(socket_address)
+        return socket.value if source_socket is None else source_socket.value
+
+    def set_input_value(self, socket_address: SocketAddress, value: Any) -> None:
+        """Set an unconnected input value and invalidate prior execution."""
+        socket, _ = self._get_socket_and_node(socket_address)
+        assert socket.role is SocketRole.TARGET, "Only target sockets accept input values"
+        assert not self.is_socket_linked(socket_address), "Connected inputs derive their value"
+        socket.value = value
+        self.invalidate_execution()
+
+    def invalidate_execution(self) -> None:
+        """Mark all node execution values as stale."""
+        for node in self.nodes.values():
+            node.execution_dirty = True
+            node.execution_error = None
+
+    def upstream_node_ids(self, node_id: str) -> set[str]:
+        """Return a node and all nodes that provide its inputs."""
+        assert node_id in self.nodes, f"Node '{node_id}' does not exist"
+        upstream_ids: set[str] = set()
+        pending: list[str] = [node_id]
+
+        while pending:
+            current_id = pending.pop()
+            if current_id in upstream_ids:
+                continue
+            upstream_ids.add(current_id)
+            pending.extend(
+                edge.source.node_id for edge in self.edges if edge.target.node_id == current_id
+            )
+
+        return upstream_ids
+
+    def topological_order(self, node_ids: Collection[str]) -> list[EntityNode]:
+        """Order a node subset so each dependency precedes its consumers."""
+        selected_ids = set(node_ids)
+        assert selected_ids <= self.nodes.keys(), "Execution subset contains unknown nodes"
+
+        in_degree: dict[str, int] = dict.fromkeys(selected_ids, 0)
+        outgoing: dict[str, list[str]] = {node_id: [] for node_id in selected_ids}
+        for edge in self.edges:
+            source_id = edge.source.node_id
+            target_id = edge.target.node_id
+            if source_id in selected_ids and target_id in selected_ids:
+                in_degree[target_id] += 1
+                outgoing[source_id].append(target_id)
+
+        ready = deque(node_id for node_id, degree in in_degree.items() if degree == 0)
+        ordered_ids: list[str] = []
+        while ready:
+            current_id = ready.popleft()
+            ordered_ids.append(current_id)
+            for target_id in outgoing[current_id]:
+                in_degree[target_id] -= 1
+                if in_degree[target_id] == 0:
+                    ready.append(target_id)
+
+        if len(ordered_ids) != len(selected_ids):
+            raise GraphCycleError("Cannot execute a graph subset containing a cycle")
+
+        return [self.nodes[node_id] for node_id in ordered_ids]
 
     def get_socket_links(self, socket_addr: SocketAddress) -> list[SocketAddress]:
         """Get all socket addresses linked to the given socket."""
@@ -247,6 +317,7 @@ class EntityGraph:
 
         # Add the edge
         self.edges.add(edge_key)
+        self.invalidate_execution()
         logger.debug(f"Graph linked sockets: {source_socket.address} -> {target_socket.address}")
 
         return True, None
@@ -258,6 +329,7 @@ class EntityGraph:
         )
 
         self.edges.discard(edge_key)
+        self.invalidate_execution()
 
     def can_form_link(
         self, prospective_source_addr: SocketAddress, prospective_target_addr: SocketAddress
@@ -342,6 +414,27 @@ class EntitySubGraphNode(EntityNode):
 
     internal_graph: EntityGraph = field(default_factory=EntityGraph)
     _proxy_mappings: dict[str, EntitySocket] = field(default_factory=dict)
+    _proxy_promoters: dict[str, SocketAddress] = field(default_factory=dict)
+
+    @property
+    def promotion_links(self) -> dict[str, EdgeKey]:
+        """Interface lines derived from proxy mappings, never executable edges."""
+        links: dict[str, EdgeKey] = {}
+        for name, promoter in self._proxy_promoters.items():
+            internal = self._proxy_mappings[name].address
+            links[name] = (
+                EdgeKey(promoter, internal)
+                if internal.role is SocketRole.TARGET
+                else EdgeKey(internal, promoter)
+            )
+        return links
+
+    def set_proxy_promoter(self, proxy_name: str, promoter: SocketAddress) -> None:
+        """Associate an exposed socket with its visual interface endpoint."""
+        internal = self._proxy_mappings[proxy_name]
+        promoter_socket = self._get_internal_socket(promoter)
+        assert internal.role is not promoter_socket.role
+        self._proxy_promoters[proxy_name] = promoter
 
     def _get_internal_socket(self, socket_addr: SocketAddress) -> EntitySocket:
         """Get a socket from the internal graph by its address."""
@@ -405,6 +498,7 @@ class EntitySubGraphNode(EntityNode):
         logger.debug(f"Added {internal_socket.role} proxy socket '{proxy_name}'")
 
     def remove_proxy_socket(self, proxy_name: str) -> None:
+        self._proxy_promoters.pop(proxy_name, None)
         internal_socket = self._proxy_mappings.pop(proxy_name)
         self.sockets.pop(proxy_name)
         internal_socket.exposed = internal_socket in self._proxy_mappings.values()

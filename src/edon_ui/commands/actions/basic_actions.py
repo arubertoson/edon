@@ -141,6 +141,16 @@ def action_show_node_spawner(context: EditorContext) -> bool:
     return True
 
 
+def action_execute_node(context: EditorContext) -> bool:
+    """Execute the selected node and its required dependencies."""
+    selected_nodes = [item for item in context.selected_items if isinstance(item, NodeItem)]
+    if len(selected_nodes) != 1:
+        return False
+
+    context.controller.execute_node(selected_nodes[0].entity_id)
+    return True
+
+
 def action_enter_subgraph(context: EditorContext) -> bool:
     """
     Action to enter the selected SubGraphNode.

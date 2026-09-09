@@ -64,6 +64,7 @@ class NodeItem(QGraphicsObject):
 
         self._width: float = 0
         self._height: float = 0
+        self._has_execution_error = False
 
         # self._on_socket_row_layout_changed()
 
@@ -190,6 +191,26 @@ class NodeItem(QGraphicsObject):
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._width, self._height)
 
+    def set_execution_error(self, active: bool) -> None:
+        """Update the node's execution-error presentation."""
+        if self._has_execution_error == active:
+            return
+        self._has_execution_error = active
+        self.update()
+
+    def _border_pen(self) -> tuple[QPen, float]:
+        if self._has_execution_error:
+            return QPen(
+                theme.ACCENT_ERROR, theme.NODE_BORDER_WIDTH_SELECTED
+            ), theme.NODE_BORDER_WIDTH_SELECTED
+        if self.isSelected():
+            return QPen(
+                theme.NODE_BORDER_SELECTED, theme.NODE_BORDER_WIDTH_SELECTED
+            ), theme.NODE_BORDER_WIDTH_SELECTED
+        return QPen(
+            theme.NODE_BORDER_DEFAULT, theme.NODE_BORDER_WIDTH_DEFAULT
+        ), theme.NODE_BORDER_WIDTH_DEFAULT
+
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: Any) -> Any:
         """
         Handles item state changes, like position changes.
@@ -211,12 +232,7 @@ class NodeItem(QGraphicsObject):
         painter.setBrush(QBrush(theme.NODE_BACKGROUND))
 
         # Border
-        border_width = theme.NODE_BORDER_WIDTH_DEFAULT
-        if self.isSelected():
-            pen = QPen(theme.NODE_BORDER_SELECTED, theme.NODE_BORDER_WIDTH_SELECTED)
-            border_width = theme.NODE_BORDER_WIDTH_SELECTED  # For consistency if used elsewhere
-        else:
-            pen = QPen(theme.NODE_BORDER_DEFAULT, theme.NODE_BORDER_WIDTH_DEFAULT)
+        pen, border_width = self._border_pen()
         painter.setPen(pen)
         painter.drawRoundedRect(node_rect, theme.NODE_BORDER_RADIUS, theme.NODE_BORDER_RADIUS)
 
@@ -300,12 +316,7 @@ class SubGraphNodeItem(NodeItem):
         painter.setBrush(QBrush(theme.SUBGRAPH_NODE_BACKGROUND))  # Changed line
 
         # Border (same as NodeItem)
-        border_width = theme.NODE_BORDER_WIDTH_DEFAULT
-        if self.isSelected():
-            pen = QPen(theme.NODE_BORDER_SELECTED, theme.NODE_BORDER_WIDTH_SELECTED)
-            border_width = theme.NODE_BORDER_WIDTH_SELECTED
-        else:
-            pen = QPen(theme.NODE_BORDER_DEFAULT, theme.NODE_BORDER_WIDTH_DEFAULT)
+        pen, border_width = self._border_pen()
         painter.setPen(pen)
         painter.drawRoundedRect(node_rect, theme.NODE_BORDER_RADIUS, theme.NODE_BORDER_RADIUS)
 

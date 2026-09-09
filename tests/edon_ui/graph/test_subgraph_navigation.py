@@ -2,10 +2,12 @@
 
 import pytest
 from pytestqt.qtbot import QtBot
+from PySide6.QtCore import QPointF
 
+from edon.executor import ExecutionEngine
 from edon.graph import EntityGraph, EntitySubGraphNode
 from edon.nodes.utility import SubgraphPromoterNode
-from edon.types import SocketDisplayState
+from edon.types import SocketDisplayState, SocketRole
 from edon_ui.commands.actions.basic_actions import action_enter_subgraph, action_exit_subgraph
 from edon_ui.graph.controller import WorkspaceController
 from edon_ui.items.node import NodeItem
@@ -18,6 +20,31 @@ def workspace_controller(qtbot: QtBot) -> WorkspaceController:
     controller: WorkspaceController = WorkspaceController()
     qtbot.addWidget(controller.view)
     return controller
+
+
+def test_loaded_subgraph_output_has_no_value_editor(
+    workspace_controller: WorkspaceController,
+) -> None:
+    internal = AddNode(name="Internal")
+    subgraph = EntitySubGraphNode(name="Subgraph")
+    subgraph.internal_graph.add_node(internal)
+    subgraph.add_proxy_socket("input", internal.sockets["a"].address)
+    subgraph.add_proxy_socket("output", internal.sockets["result"].address)
+    root = EntityGraph()
+    root.add_node(subgraph)
+
+    workspace_controller.load_graph(root)
+
+    input_item = workspace_controller.registry.socket_item_for_address(
+        subgraph.sockets["input"].address
+    )
+    output_item = workspace_controller.registry.socket_item_for_address(
+        subgraph.sockets["output"].address
+    )
+    assert input_item.components.display_state is SocketDisplayState.ALL
+    assert input_item.components.widget.isVisible()
+    assert output_item.components.display_state is SocketDisplayState.LINK_LABEL
+    assert not output_item.components.widget.isVisible()
 
 
 def test_full_enter_and_exit_subgraph_workflow(
@@ -87,14 +114,23 @@ def test_promoter_exposes_both_roles_without_internal_edges(
         promoter.sockets["src_promoter"].address,
         parameter.sockets["trg_int"].address,
     )
-    # Re-promoting toggles the interface socket off; another promotion restores it.
-    for _ in range(2):
+    # Repeated promotion must not remove the existing interface socket.
+    original_proxy = subgraph.sockets["a"]
+    for _ in range(3):
         controller.handle_ui_edge_link_request(
             promoter.sockets["src_promoter"].address,
             first.sockets["a"].address,
         )
 
+    assert subgraph.sockets["a"] is original_proxy
+    assert len(controller.registry.promotion_links) == 5
+    assert not controller.registry.edges
     assert not subgraph.internal_graph.edges
+    for item in controller.registry.promotion_links.values():
+        assert item.scene() is controller.scene
+        source, target = item.edge_key.source, item.edge_key.target
+        assert target in controller.partition_socket_drop_targets(source)[0]
+        assert source in controller.partition_socket_drop_targets(target)[0]
     assert set(subgraph.sockets) == {"a", "a_2", "result", "result_2", "trg_int"}
     assert {socket.name for socket in subgraph.target_sockets} == {"a", "a_2", "trg_int"}
     assert {socket.name for socket in subgraph.source_sockets} == {"result", "result_2"}
@@ -104,7 +140,13 @@ def test_promoter_exposes_both_roles_without_internal_edges(
     for socket in subgraph.sockets.values():
         socket_item = parent_state.registry.socket_item_for_address(socket.address)
         assert socket_item.role is socket.role
-        assert socket_item.components.display_state is SocketDisplayState.ALL
+        expected_state = (
+            SocketDisplayState.LINK_LABEL
+            if socket.role is SocketRole.SOURCE
+            else SocketDisplayState.ALL
+        )
+        assert socket_item.components.display_state is expected_state
+        assert socket_item.components.widget.isVisible() is (socket.role is SocketRole.TARGET)
 
 
 def test_deleting_internal_node_removes_proxy_and_parent_edges(
@@ -145,8 +187,100 @@ def test_deleting_internal_node_removes_proxy_and_parent_edges(
     assert parent_state is not None
     assert internal.id not in subgraph.internal_graph.nodes
     assert "a" not in subgraph.sockets
+    assert not subgraph.promotion_links
+    assert not controller.registry.promotion_links
     assert not parent_state.graph.edges
     assert proxy_address not in {item.address for item in parent_state.registry.sockets}
+
+
+@pytest.mark.parametrize("remove", ["proxy", "line", "internal", "promoter"])
+def test_promotion_link_lifecycle(workspace_controller: WorkspaceController, remove: str) -> None:
+    controller = workspace_controller
+    internal = IntegerNode()
+    promoter = SubgraphPromoterNode()
+    other_promoter = SubgraphPromoterNode()
+    subgraph = EntitySubGraphNode()
+    for node in (internal, other_promoter, promoter):
+        subgraph.internal_graph.add_node(node)
+    root = EntityGraph()
+    root.add_node(subgraph)
+    controller.load_graph(root)
+    controller.enter_subgraph(controller.registry.node_item_for_id(subgraph.id))
+    for source, target in (
+        (promoter.sockets["src_promoter"], internal.sockets["trg_int"]),
+        (internal.sockets["src_int"], promoter.sockets["trg_promoter"]),
+    ):
+        controller.handle_ui_edge_link_request(source.address, target.address)
+
+    # Domain mappings survive both navigation and a root UI reload.
+    expected_links = subgraph.promotion_links
+    controller.exit_subgraph()
+    controller.load_graph(root)
+    controller.enter_subgraph(controller.registry.node_item_for_id(subgraph.id))
+    assert {
+        name: item.edge_key for name, item in controller.registry.promotion_links.items()
+    } == expected_links
+    assert not controller.registry.edges
+    assert not subgraph.internal_graph.edges
+
+    for node in (internal, promoter):
+        item = controller.registry.promotion_links["trg_int"]
+        old_path = item.path()
+        controller.registry.node_item_for_id(node.id).moveBy(120, 70)
+        assert item.path() != old_path
+        assert item.path().pointAtPercent(0) == item.source_socket_item.link_item.scenePos()
+        assert item.path().pointAtPercent(1) == item.target_socket_item.link_item.scenePos()
+
+    subgraph.sockets["trg_int"].value = 42
+    ExecutionEngine().execute_graph(root)
+    assert subgraph.sockets["src_int"].value == 42
+
+    removed_items = list(controller.registry.promotion_links.values())
+    if remove == "proxy":
+        for name in list(subgraph.sockets):
+            controller.request_remove_socket_from_subgraph(name)
+    elif remove == "line":
+        controller.handle_ui_edge_deletion_request(removed_items)
+    else:
+        controller.request_remove_node(internal.id if remove == "internal" else promoter.id)
+    assert not subgraph.sockets
+    assert not subgraph.promotion_links
+    assert not controller.registry.promotion_links
+    assert all(item.scene() is None for item in removed_items)
+    controller.exit_subgraph()
+    controller.enter_subgraph(controller.registry.node_item_for_id(subgraph.id))
+    assert not controller.registry.promotion_links
+
+
+def test_promotion_does_not_replace_data_edges(
+    workspace_controller: WorkspaceController,
+) -> None:
+    controller = workspace_controller
+    internal = IntegerNode()
+    upstream = IntegerNode()
+    promoter = SubgraphPromoterNode()
+    subgraph = EntitySubGraphNode()
+    for node in (internal, upstream, promoter):
+        subgraph.internal_graph.add_node(node)
+    root = EntityGraph()
+    root.add_node(subgraph)
+    controller.load_graph(root)
+    controller.enter_subgraph(controller.registry.node_item_for_id(subgraph.id))
+    source = upstream.sockets["src_int"].address
+    target = internal.sockets["trg_int"].address
+    interface = promoter.sockets["src_promoter"].address
+    controller.handle_ui_edge_link_request(source, target)
+    data_edges = set(controller.graph.edges)
+    assert target in controller.partition_socket_drop_targets(interface)[0]
+    assert interface in controller.partition_socket_drop_targets(target)[0]
+    controller.handle_ui_edge_link_request(interface, target)
+    assert controller.graph.edges == data_edges
+    assert len(controller.registry.edges) == 1
+    assert len(controller.registry.promotion_links) == 1
+    # A promoter drag never lifts an interface line as though it were a data edge.
+    controller.handle_ui_init_edge_drag_action(interface, QPointF(), controller.scene)
+    assert len(controller.registry.promotion_links) == 1
+    assert controller.graph.edges == data_edges
 
 
 @pytest.mark.parametrize("selection", ["none", "regular", "multiple"])

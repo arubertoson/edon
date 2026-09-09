@@ -11,19 +11,24 @@ manages the context when navigating into and out of subgraphs.
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping, Sequence
+from functools import partial
 from typing import TYPE_CHECKING, Type, cast
 
 from loguru import logger
 from PySide6.QtCore import QPointF, Slot
 
+from edon.executor import ExecutionEngine
 from edon.graph import EntityGraph, EntitySubGraphNode
 from edon.node import EntityNode
-from edon.types import EdgeKey, SocketAddress, SocketDisplayState, SocketRole
+from edon.nodes.utility import SubgraphPromoterNode
+from edon.types import EdgeKey, SocketAddress, SocketRole
 from edon_ui import theme
+from edon_ui.execution import NodeExecutionThread
 from edon_ui.graph.context import ContextState, WorkspaceContextStack
 from edon_ui.graph.registry import WorkspaceUIDataRegistry
 from edon_ui.items.edge import EdgeItem
 from edon_ui.items.factory import create_node_item
+from edon_ui.items.inspector import NodeInspectorItem
 from edon_ui.items.node import NodeItem
 from edon_ui.views.scene import EdgeDragContext, GraphicsScene
 from edon_ui.views.viewer import GraphicsView
@@ -55,6 +60,9 @@ class WorkspaceController:
         Graph content can be loaded subsequently via load_graph().
         """
         self._view = GraphicsView(self)
+        self.execution_engine = ExecutionEngine()
+        self._execution_thread: NodeExecutionThread | None = None
+        self._node_inspector: NodeInspectorItem | None = None
 
         self.context_stack = WorkspaceContextStack()
         self.node_registry: NodeRegistryMap = dict(node_type_registry or {})
@@ -97,6 +105,105 @@ class WorkspaceController:
     def registry(self) -> WorkspaceUIDataRegistry:
         return self.context_stack.current.registry
 
+    def execute_node(self, node_id: str) -> None:
+        """Execute one node dependency closure without blocking the UI thread."""
+        if self._execution_thread is not None:
+            logger.warning("An execution is already active")
+            return
+
+        self.graph.get_node(node_id)
+        self._clear_node_inspector()
+        self.view.setEnabled(False)
+        execution_thread = NodeExecutionThread(
+            self.execution_engine,
+            self.graph,
+            node_id,
+            parent=self.view,
+        )
+        execution_thread.completed.connect(self._handle_execution_completed)
+        execution_thread.failed.connect(self._handle_execution_failed)
+        execution_thread.cancelled.connect(self._handle_execution_cancelled)
+        execution_thread.finished.connect(self._handle_execution_finished)
+        self._execution_thread = execution_thread
+        execution_thread.start()
+
+    def cancel_execution(self) -> None:
+        """Request cancellation at the next node boundary."""
+        if self._execution_thread is not None:
+            self._execution_thread.cancel()
+
+    @Slot(str)
+    def _handle_execution_completed(self, node_id: str) -> None:
+        self._sync_node_execution_errors()
+        node = self.graph.get_node(node_id)
+        sockets = node.source_sockets or node.target_sockets
+        rows = [
+            (
+                socket.name,
+                self._format_inspector_value(self.graph.resolve_socket_value(socket.address)),
+            )
+            for socket in sockets
+        ]
+        title = "Outputs" if node.source_sockets else "Inputs"
+        self._show_node_inspector(node_id, title, rows)
+
+    @Slot(str)
+    def _handle_execution_failed(self, node_id: str) -> None:
+        self._sync_node_execution_errors()
+        node = self.graph.get_node(node_id)
+        error = node.execution_error
+        assert error is not None, "Failed execution node must own its error"
+        rows = [(type(error).__name__, self._format_inspector_value(str(error)))]
+        self._show_node_inspector(node_id, "Execution failed", rows, error=True)
+
+    @Slot()
+    def _handle_execution_cancelled(self) -> None:
+        logger.info("Node execution cancelled")
+
+    @Slot()
+    def _handle_execution_finished(self) -> None:
+        execution_thread = self._execution_thread
+        assert execution_thread is not None
+        self._execution_thread = None
+        self.view.setEnabled(True)
+        execution_thread.deleteLater()
+
+    def _sync_node_execution_errors(self) -> None:
+        for node in self.graph.nodes.values():
+            self.registry.node_item_for_id(node.id).set_execution_error(
+                node.execution_error is not None
+            )
+
+    def _show_node_inspector(
+        self,
+        node_id: str,
+        title: str,
+        rows: Sequence[tuple[str, str]],
+        *,
+        error: bool = False,
+    ) -> None:
+        self._clear_node_inspector()
+        node_item = self.registry.node_item_for_id(node_id)
+        self._node_inspector = NodeInspectorItem(
+            title,
+            rows,
+            error=error,
+            parent=node_item,
+        )
+
+    def _clear_node_inspector(self) -> None:
+        if self._node_inspector is None:
+            return
+        scene = self._node_inspector.scene()
+        if scene is not None:
+            scene.removeItem(self._node_inspector)
+        self._node_inspector = None
+
+    @staticmethod
+    def _format_inspector_value(value: object) -> str:
+        rendered = repr(value)
+        return rendered if len(rendered) <= 120 else f"{rendered[:117]}..."
+
     def _clear_all_ui(self) -> None:
         """
         Removes all UI elements and clears the registry.
@@ -108,6 +215,9 @@ class WorkspaceController:
         # XXX: We should look into scene reset that is prettier than this.
         # I don't think we have to go through everything and delete it.
         # But if we do we should delegate it to scene either way.
+        self._clear_node_inspector()
+        for item in self.registry.promotion_links.values():
+            self.scene.removeItem(item)
         edge_items_to_remove = list(self.registry.edges)
         for edge_item in edge_items_to_remove:
             self.scene.remove_edge(edge_item)
@@ -137,6 +247,7 @@ class WorkspaceController:
             "load_graph can only be called when at the root navigation level."
         )
 
+        self._clear_node_inspector()
         state = ContextState(
             graph=EntityGraph(),
             scene=self._create_wired_scene(),
@@ -171,17 +282,32 @@ class WorkspaceController:
         # XXX: we do this if we are populating a scene from existing graph
         if entity_node.id not in self.graph.nodes:
             self.graph.add_node(entity_node)
+            self.context_stack.invalidate_ancestor_execution()
 
         self.registry.register_node_with_sockets(node_item)
+        for socket_item in node_item.target_sockets:
+            socket_item.components.widget.value_committed.connect(
+                partial(self._commit_input_value, self.graph, socket_item.address)
+            )
 
         # Finally update graphics layers, scene/view behavior, if this is the first node added this will
         # enable interactivity etc.
         self.scene.add_node(node_item)
+        node_item.setPos(scene_position)
+        entity_node.position = (scene_position.x(), scene_position.y())
 
         if not self.view.is_interactive:
             self.view.set_interactive_scene(True)
 
         return node_item
+
+    def _commit_input_value(
+        self, graph: EntityGraph, socket_address: SocketAddress, value: object
+    ) -> None:
+        if graph.is_socket_linked(socket_address):
+            return
+        graph.set_input_value(socket_address, value)
+        self.context_stack.invalidate_ancestor_execution()
 
     def _register_edge_internal(self, edge_key: EdgeKey) -> EdgeItem:
         """
@@ -204,6 +330,23 @@ class WorkspaceController:
 
         return edge_item
 
+    def _sync_promotion_links(self) -> None:
+        """Rebuild interface lines from domain mappings, separately from data flow."""
+        for item in self.registry.promotion_links.values():
+            self.scene.removeItem(item)
+        self.registry.promotion_links.clear()
+        subgraph = self.context_stack.current.origin_subgraph_node
+        if subgraph is None:
+            return
+        for proxy_name, key in subgraph.promotion_links.items():
+            item = EdgeItem(
+                self.registry.socket_item_for_address(key.source),
+                self.registry.socket_item_for_address(key.target),
+            )
+            self.registry.promotion_links[proxy_name] = item
+            # Interface lines must not put input widgets into the data-linked state.
+            self.scene.addItem(item)
+
     def _populate_scene_from_graph_data(self, source_graph: EntityGraph | None = None) -> None:
         """
         Populates the GraphicsScene with NodeItems and EdgeItems based on the
@@ -222,9 +365,12 @@ class WorkspaceController:
         nodes_per_row = 5
 
         # Add all nodes using existing request method
-        for i, (_, entity_node) in enumerate(graph_to_read.nodes.items()):
-            pos_x = default_x + (i % nodes_per_row) * spacing_x
-            pos_y = default_y + (i // nodes_per_row) * spacing_y
+        for index, entity_node in enumerate(graph_to_read.nodes.values()):
+            fallback_position = (
+                default_x + (index % nodes_per_row) * spacing_x,
+                default_y + (index // nodes_per_row) * spacing_y,
+            )
+            pos_x, pos_y = entity_node.position or fallback_position
 
             # We are working with existing entity_nodes, request_add_node will create the
             # entity node, we simply want to register it.
@@ -232,13 +378,18 @@ class WorkspaceController:
 
         # Add all edges using existing request method
         for edge_key in graph_to_read.edges:
+            if edge_key not in self.graph.edges:
+                linked, reason = self.graph.link_sockets(edge_key)
+                assert linked, f"Failed to load edge {edge_key}: {reason}"
             self._register_edge_internal(edge_key)
+        self._sync_promotion_links()
 
     def enter_subgraph(self, subgraph_node_item: NodeItem) -> None:
         """
         Switches the controller's context to the internal graph of the given SubGraphNodeItem.
         """
         logger.trace(f"Entering subgraph from depth {self.context_stack.depth}")
+        self._clear_node_inspector()
 
         # The graph and UI registry should be in sync; if node_item exists, entity_node must exist.
         entity_id = subgraph_node_item.entity_id
@@ -276,6 +427,7 @@ class WorkspaceController:
         Exits the current subgraph view and returns to the parent graph view.
         """
         logger.trace(f"Leaving subgraph from depth {self.context_stack.depth}")
+        self._clear_node_inspector()
 
         assert not self.context_stack.is_at_root(), (
             "Cannot exit subgraph: Already at the root graph."
@@ -329,8 +481,6 @@ class WorkspaceController:
         edge_key = EdgeKey(source_socket_addr, target_socket_addr)
 
         if not self.context_stack.is_at_root():
-            from edon.nodes.utility import SubgraphPromoterNode
-
             source_node_entity = self.graph.get_node(source_socket_addr.node_id)
             target_node_entity = self.graph.get_node(target_socket_addr.node_id)
             source_is_promoter = isinstance(source_node_entity, SubgraphPromoterNode)
@@ -341,7 +491,12 @@ class WorkspaceController:
                     internal_socket_addr = (
                         target_socket_addr if source_is_promoter else source_socket_addr
                     )
-                    self.request_expose_socket_from_subgraph(internal_socket_addr)
+                    if source_socket_addr.role is target_socket_addr.role:
+                        return
+                    promoter_addr = (
+                        source_socket_addr if source_is_promoter else target_socket_addr
+                    )
+                    self.request_expose_socket_from_subgraph(internal_socket_addr, promoter_addr)
                 return
 
         # Inputs accept one edge. A new edge replaces the existing connection.
@@ -402,6 +557,7 @@ class WorkspaceController:
         assert link_success, (
             f"CORRUPTION: EntityGraph.link_sockets failed for {edge_key} with reason {reason}"
         )
+        self.context_stack.invalidate_ancestor_execution()
 
         return self._register_edge_internal(edge_key)
 
@@ -411,11 +567,18 @@ class WorkspaceController:
         entity graph and the UI scene.
         """
         logger.debug(f"GraphController: Requesting to remove node with ID: {entity_node_id}")
+        self._clear_node_inspector()
 
         if not self.context_stack.is_at_root():
             subgraph = self.context_stack.current.origin_subgraph_node
             assert subgraph is not None
-            for proxy_name in subgraph.proxy_names_for_internal_node(entity_node_id):
+            proxy_names = set(subgraph.proxy_names_for_internal_node(entity_node_id))
+            proxy_names.update(
+                name
+                for name, link in subgraph.promotion_links.items()
+                if entity_node_id in (link.source.node_id, link.target.node_id)
+            )
+            for proxy_name in proxy_names:
                 self.request_remove_socket_from_subgraph(proxy_name)
 
         # Unregister from UI registry; this will assert if node_id is not found.
@@ -437,6 +600,7 @@ class WorkspaceController:
             self.scene.remove_edge(edge_item)
 
         self.graph.remove_node(entity_node_id)
+        self.context_stack.invalidate_ancestor_execution()
         self.scene.remove_node(node_item_to_remove)
 
         # Finally update view behavior, if this is the first node added this will
@@ -449,16 +613,24 @@ class WorkspaceController:
         """
         logger.debug(f"GraphController: Requesting to remove edge: {edge_key}")
 
+        for proxy_name, item in self.registry.promotion_links.items():
+            if item.edge_key == edge_key:
+                self.request_remove_socket_from_subgraph(proxy_name)
+                return
+
         # XXX: This should be handled by assertions in the `entity_graph`, not by upstream checks.
         # Unlink sockets in the entity graph first. Refactor necessary.
         self.graph.unlink_sockets(edge_key)
+        self.context_stack.invalidate_ancestor_execution()
 
         edge_item = self.registry.unregister_edge(edge_key)
         self.scene.remove_edge(edge_item)
 
         logger.debug(f"UI EdgeItem for {edge_key} removed from graphics scene and UI registry.")
 
-    def request_expose_socket_from_subgraph(self, internal_socket_addr: SocketAddress) -> None:
+    def request_expose_socket_from_subgraph(
+        self, internal_socket_addr: SocketAddress, promoter_addr: SocketAddress | None = None
+    ) -> None:
         """Expose an internal socket without creating an internal graph edge."""
         current_stack_state = self.context_stack.current
         assert current_stack_state.origin_subgraph_node is not None, (
@@ -470,7 +642,9 @@ class WorkspaceController:
             internal_socket_addr
         )
         if existing_proxy_name is not None:
-            self.request_remove_socket_from_subgraph(existing_proxy_name)
+            if promoter_addr is not None:
+                subgraph_node_entity.set_proxy_promoter(existing_proxy_name, promoter_addr)
+                self._sync_promotion_links()
             return
 
         proxy_name = self._available_proxy_name(internal_socket_addr.name, subgraph_node_entity)
@@ -481,15 +655,18 @@ class WorkspaceController:
             "CORRUPTION: Attempting to expose subgraph socket when not editing within a subgraph context."
         )
 
-        from edon_ui.items.factory import create_socket_item
+        from edon_ui.items.factory import create_subgraph_socket_item
 
         socket_entity = subgraph_node_entity.sockets[proxy_name]
-        new_socket_item = create_socket_item(socket_entity, SocketDisplayState.ALL)
+        new_socket_item = create_subgraph_socket_item(socket_entity)
 
         parent_stack_state.registry.register_socket_item_for_node(new_socket_item)
 
         subgraph_item = parent_stack_state.registry.node_item_for_id(subgraph_node_entity.id)
         subgraph_item.add_socket_item(new_socket_item)
+        if promoter_addr is not None:
+            subgraph_node_entity.set_proxy_promoter(proxy_name, promoter_addr)
+        self._sync_promotion_links()
 
     def request_remove_socket_from_subgraph(self, proxy_name: str) -> None:
         """Remove a subgraph interface socket and all parent edges using it."""
@@ -512,6 +689,7 @@ class WorkspaceController:
         for edge_key in connected_edges:
             parent_state.graph.unlink_sockets(edge_key)
         subgraph.remove_proxy_socket(proxy_name)
+        self._sync_promotion_links()
 
         for edge_key in connected_edges:
             edge_item = parent_state.registry.unregister_edge(edge_key)
@@ -537,6 +715,11 @@ class WorkspaceController:
     def handle_ui_node_redraw_request(self, node_id: str, scene: GraphicsScene) -> None:
         state = self.context_stack.context_state_for_scene(scene)
         node_item = state.registry.node_item_for_id(node_id)
+        position = node_item.pos()
+        state.graph.get_node(node_id).position = (position.x(), position.y())
+        for item in state.registry.promotion_links.values():
+            if node_id in (item.edge_key.source.node_id, item.edge_key.target.node_id):
+                item.update_path()
 
         for socket_item in node_item.source_sockets + node_item.target_sockets:
             edges = state.registry.edge_items_for_socket(socket_item.address)
@@ -613,6 +796,22 @@ class WorkspaceController:
         valid_targets, invalid_targets = self.graph.partition_valid_link_targets(
             drag_origin_socket_addr
         )
+
+        if not self.context_stack.is_at_root():
+            origin_is_promoter = isinstance(
+                self.graph.get_node(drag_origin_socket_addr.node_id), SubgraphPromoterNode
+            )
+            for node in self.graph.nodes.values():
+                candidate_is_promoter = isinstance(node, SubgraphPromoterNode)
+                if not (origin_is_promoter or candidate_is_promoter):
+                    continue
+                for socket in node.sockets.values():
+                    valid = (
+                        origin_is_promoter != candidate_is_promoter
+                        and socket.role is not drag_origin_socket_addr.role
+                    )
+                    (valid_targets if valid else invalid_targets).add(socket.address)
+                    (invalid_targets if valid else valid_targets).discard(socket.address)
 
         logger.debug(
             f"Found {len(valid_targets)} valid drop targets for {drag_origin_socket_addr} via EntityGraph: {valid_targets}"

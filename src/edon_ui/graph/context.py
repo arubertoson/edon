@@ -110,6 +110,14 @@ class WorkspaceContextStack:
         )
         return context_state
 
+    def invalidate_ancestor_execution(self) -> None:
+        """Mark each subgraph containing the current context as stale."""
+        for state in self._stacks[1:]:
+            subgraph = state.origin_subgraph_node
+            assert subgraph is not None
+            subgraph.execution_dirty = True
+            subgraph.execution_error = None
+
     def is_at_root(self) -> bool:
         """Checks if the current navigation level is the root."""
         return len(self._stacks) == 1

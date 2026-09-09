@@ -91,6 +91,18 @@ def create_socket_item(
     )
 
 
+def create_subgraph_socket_item(entity_socket: EntitySocket) -> SocketItem:
+    """Create a proxy socket row appropriate for its producer or consumer role."""
+    from edon.types import SocketDisplayState, SocketRole
+
+    display_state = (
+        SocketDisplayState.LINK_LABEL
+        if entity_socket.role is SocketRole.SOURCE
+        else SocketDisplayState.ALL
+    )
+    return create_socket_item(entity_socket, display_state)
+
+
 def _get_socketdef(socket_defs: list[SocketDef], name: str) -> SocketDef | None:
     for sd in socket_defs:
         if sd.name == name:
@@ -110,32 +122,11 @@ def create_node_item(
     # XXX: This will most likely change when we start with serialization.
     if isinstance(entity_node, EntitySubGraphNode):
         actual_node_item_class = SubGraphNodeItem
-        # For SubGraphNode, its sockets (proxies) are dynamically created.
-        # We need to create SocketDef instances on-the-fly for the UI factory,
-        # as SubGraphNode doesn't rely on class-level socket_definitions for its proxy sockets' UI.
-        # The EntitySocket instances on SubGraphNode already have type_info and default_value.
-        from edon.types import SocketDef, SocketDisplayState
+        for entity_socket in entity_node.target_sockets:
+            target_sockets_ui.append(create_subgraph_socket_item(entity_socket))
 
-        for entity_socket_instance in entity_node.target_sockets:
-            # Create a SocketDef based on the EntitySocket's properties
-            temp_socket_def = SocketDef(
-                name=entity_socket_instance.name,
-                socket_type=entity_socket_instance.type_info,  # entity_socket.type_info is SocketType
-                default=entity_socket_instance.default_value,
-                display_state=SocketDisplayState.ALL,  # Explicitly set, or rely on SocketDef default
-            )
-            row = create_socket_item(entity_socket_instance, temp_socket_def.display_state)
-            target_sockets_ui.append(row)
-
-        for entity_socket_instance in entity_node.source_sockets:
-            temp_socket_def = SocketDef(
-                name=entity_socket_instance.name,
-                socket_type=entity_socket_instance.type_info,
-                default=entity_socket_instance.default_value,
-                display_state=SocketDisplayState.ALL,  # Explicitly set
-            )
-            row = create_socket_item(entity_socket_instance, temp_socket_def.display_state)
-            source_sockets_ui.append(row)
+        for entity_socket in entity_node.source_sockets:
+            source_sockets_ui.append(create_subgraph_socket_item(entity_socket))
     else:
         actual_node_item_class = NodeItem
         # Existing logic for regular EntityNodes that use class-level socket_definitions

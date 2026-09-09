@@ -34,6 +34,8 @@ class WorkspaceUIDataRegistry:
     def __init__(self) -> None:
         self._node_items: dict[str, NodeItem] = {}
         self._edge_items: dict[EdgeKey, EdgeItem] = {}
+        # Interface lines are excluded from executable-edge lookup and cardinality.
+        self.promotion_links: dict[str, EdgeItem] = {}
         self._socket_items: dict[SocketAddress, SocketItem] = {}
         self._socket_to_edge_keys: dict[SocketAddress, set[EdgeKey]] = defaultdict(set)
 
