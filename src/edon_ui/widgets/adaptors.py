@@ -10,8 +10,19 @@ These adaptors ensure consistent behavior and layout for different types of sock
 components while maintaining the flexibility of the underlying Qt graphics system.
 """
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsProxyWidget, QWidget
+from typing import Any
+
+from loguru import logger
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QDoubleValidator, QIntValidator, QPainter
+from PySide6.QtWidgets import (
+    QGraphicsItem,
+    QGraphicsObject,
+    QGraphicsProxyWidget,
+    QLineEdit,
+    QStyleOptionGraphicsItem,
+    QWidget,
+)
 
 from edon_ui import theme
 from edon_ui.base import BaseEdonGraphicsObject
@@ -47,12 +58,22 @@ class SocketTextAdaptor(BaseEdonGraphicsObject):
         height = self.get_required_component_height()
         return QRectF(0, 0, width, height)
 
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionGraphicsItem,
+        widget: QWidget | None = None,
+    ) -> None:
+        """Draw nothing; the child label renders the content."""
+
     def set_text_alignment(self, alignment: Qt.AlignmentFlag) -> None:
         self._text_item.set_text_alignment(alignment)
 
 
 class SocketWidgetAdaptor(BaseEdonGraphicsObject):
     """Adapts a QWidget to be used as a SocketComponent via QGraphicsProxyWidget."""
+
+    value_committed = Signal(object)
 
     def __init__(
         self,
@@ -74,6 +95,25 @@ class SocketWidgetAdaptor(BaseEdonGraphicsObject):
 
         if isinstance(widget, ProxyAttributeMixin):
             widget.proxy = self.proxy
+        if isinstance(widget, QLineEdit):
+            widget.editingFinished.connect(self._emit_committed_value)
+
+    def _emit_committed_value(self) -> None:
+        assert isinstance(self._widget, QLineEdit)
+        text = self._widget.text()
+        validator = self._widget.validator()
+        try:
+            value: Any
+            if isinstance(validator, QIntValidator):
+                value = int(text)
+            elif isinstance(validator, QDoubleValidator):
+                value = float(text)
+            else:
+                value = text
+        except ValueError:
+            logger.warning(f"Ignoring invalid socket input value: {text!r}")
+            return
+        self.value_committed.emit(value)
 
     def get_required_component_width(self) -> float:
         width = self._widget.width() or self._widget.sizeHint().width()
@@ -81,6 +121,14 @@ class SocketWidgetAdaptor(BaseEdonGraphicsObject):
 
     def get_required_component_height(self) -> float:
         return self._widget.height() or self._widget.sizeHint().height()
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionGraphicsItem,
+        widget: QWidget | None = None,
+    ) -> None:
+        """Draw nothing; the child proxy widget renders the content."""
 
     def boundingRect(self) -> QRectF:
         return QRectF(

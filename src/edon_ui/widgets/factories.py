@@ -80,7 +80,7 @@ def create_string_socket_component(
     line_edit = FocusSelectLineEdit(None)
     line_edit.setObjectName(f"le_str_{node_id}_{socket_name}")
     line_edit.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-    line_edit.setText(str(initial_value if initial_value is not None else ""))
+    line_edit.setText(initial_value if initial_value is not None else "")
 
     # FontMetrics calculation for logging purposes, can be removed if not essential here
     fm = line_edit.fontMetrics()

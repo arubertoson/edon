@@ -454,33 +454,29 @@ class ExpandLineEdit(ProxyAttributeMixin, QLineEdit):
         self.setReadOnly(True)
 
         self.widget_factory = widget_factory
-        self.value: Any = None
         self._ellipsis_place = Qt.TextElideMode.ElideRight
         self.icon = FontIcon(icon_name, QColor(theme.ICON_COLOR))
 
+    @property
+    def value(self) -> str:
+        """Return the editor value stored by the underlying line edit."""
+        return self.text()
+
+    @value.setter
+    def value(self, value: Any) -> None:
+        self.setText("" if value is None else str(value))
+
     def _open_text_dialog(self) -> None:
-        # Get the top-level window (the main window)
-        window = self.window()  # self.window() is the top-level window containing this widget
-        if not window:
-            logger.error("ExpandLineEdit: Could not determine parent window.")
-            return
+        # Embedded widgets have no useful QWidget parent chain. Their proxy is the
+        # authoritative source for both the scene and its containing window.
+        scene = self.proxy.scene()
+        views = scene.views() if scene is not None else []
+        window = views[0].window() if views else self.window()
 
-        # Try to get the scene from the window, or from this widget's direct parent if part of a GFX view
-        scene = getattr(window, "scene", None)
-        parent_widget = self.parentWidget()
-        if scene is None and parent_widget is not None:
-            scene_getter = getattr(parent_widget, "scene", None)
-            if callable(scene_getter):
-                scene = scene_getter()
-
-        if not isinstance(scene, QGraphicsScene):
-            scene = None
-            # If scene is still not found, it's a problem for the current overlay logic.
-            # Log a warning. The dialog might still show, but overlay will be missing.
+        if scene is None:
             logger.warning(
                 "ExpandLineEdit: Could not determine QGraphicsScene for CustomDialogWidget's overlay."
             )
-            # scene will be None, CustomDialogWidget's show() method should handle this.
 
         logger.debug(
             f"ExpandLineEdit: Opening text dialog. Parent window: {window}, Scene: {scene}"
@@ -494,7 +490,7 @@ class ExpandLineEdit(ProxyAttributeMixin, QLineEdit):
 
         dialog = CustomDialogWidget(
             parent=window,
-            scene=scene,  # scene can be None
+            scene=scene,
             title=widget.title,
             content=widget,
         )
